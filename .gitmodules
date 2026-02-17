@@ -3,4 +3,4 @@
 	url = https://gitproxy.mcurobot.com/kungraduate/esp32-ble-beacon.git
 [submodule "room-agent"]
 	path = room-agent
-	url = https://kunkun:Shuokun75!@gitproxy.mcurobot.com/kungraduate/room-agent.git
+	url = https://gitproxy.mcurobot.com/kungraduate/room-agent.git
