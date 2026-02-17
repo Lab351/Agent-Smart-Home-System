@@ -4,3 +4,6 @@
 [submodule "room-agent"]
 	path = room-agent
 	url = https://gitproxy.mcurobot.com/kungraduate/room-agent.git
+[submodule "home-agent"]
+	path = home-agent
+	url = https://gitproxy.mcurobot.com/kungraduate/home-agent.git
