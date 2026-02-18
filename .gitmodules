@@ -7,3 +7,4 @@
 [submodule "home-agent"]
 	path = home-agent
 	url = https://gitproxy.mcurobot.com/kungraduate/home-agent.git
+	branch = master

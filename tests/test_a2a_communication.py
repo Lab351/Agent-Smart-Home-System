@@ -64,7 +64,7 @@ class A2ATest:
         client.subscribe("room/+/agent/+/state", qos=0)
         print("✅ Subscribed to heartbeat and state topics")
 
-    def on_disconnect(self, client, userdata, reason_code):
+    def on_disconnect(self, client, userdata, reason_code, properties):
         """断开连接回调"""
         self.connected = False
         print(f"❌ Disconnected (reason code: {reason_code})")
