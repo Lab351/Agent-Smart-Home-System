@@ -8,3 +8,6 @@
 	path = home-agent
 	url = https://gitproxy.mcurobot.com/kungraduate/home-agent.git
 	branch = master
+[submodule "watch-agent"]
+	path = watch-agent
+	url = https://gitproxy.mcurobot.com/kungraduate/watch-agent.git
