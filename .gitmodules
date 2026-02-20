@@ -11,3 +11,6 @@
 [submodule "watch-agent"]
 	path = watch-agent
 	url = https://gitproxy.mcurobot.com/kungraduate/watch-agent.git
+[submodule "mqtt-broker"]
+	path = mqtt-broker
+	url = https://gitproxy.mcurobot.com/kungraduate/home-system-mqtt-broker.git
