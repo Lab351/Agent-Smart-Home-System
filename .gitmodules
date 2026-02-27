@@ -14,3 +14,6 @@
 [submodule "mqtt-broker"]
 	path = mqtt-broker
 	url = https://gitproxy.mcurobot.com/kungraduate/home-system-mqtt-broker.git
+[submodule "qwen-backend"]
+	path = qwen-backend
+	url = https://gitproxy.mcurobot.com/kungraduate/qwen-backend.git
