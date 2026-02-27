@@ -11,7 +11,7 @@
 │  MQTT (Message Queuing Telemetry Transport)                 │
 ├─────────────────────────────────────────────────────────────┤
 │                    发现层 (Discovery)                        │
-│  mDNS (Multicast DNS)                                       │
+│  HTTP API (qwen-backend Beacon Service)                     │
 ├─────────────────────────────────────────────────────────────┤
 │                    感知层 (Perception)                       │
 │  BLE Beacon (iBeacon)                                       │
@@ -74,37 +74,94 @@ def determine_current_space(beacons, current_space):
 | 测量功率 | -59 dBm | 1米处校准值 |
 | 发射功率 | 0 dBm | 平衡功耗与覆盖 |
 
-## 3. mDNS 协议（服务发现层）
+## 3. qwen-backend Beacon API（服务发现层）
 
-### 3.1 服务定义
+### 3.1 API 端点
 
-| 字段 | 值 | 示例 |
-|------|---|------|
-| 服务类型 | `_room-agent._tcp.local` | Room Agent 服务 |
-| 实例名称 | `{room}-room-agent` | `bedroom-room-agent` |
-| 端口 | 1883 | MQTT Broker 端口 |
+| 端点 | 方法 | 描述 |
+|------|------|------|
+| `/api/beacon` | POST | 注册/更新 Beacon 信息（Room Agent 调用） |
+| `/api/beacon/{beacon_id}` | GET | 查询 Beacon 信息（Personal Agent 调用） |
+| `/api/beacon/{beacon_id}/heartbeat` | POST | 更新心跳 |
+| `/api/beacon` | GET | 获取所有 Beacon 列表 |
+| `/api/beacon/{beacon_id}` | DELETE | 删除 Beacon |
 
-### 3.2 TXT 记录
+### 3.2 Beacon 注册（Room Agent 启动时）
 
-```python
-txt_records = {
-    "room_id": "bedroom",
-    "mqtt_port": "1883",
-    "mqtt_ws_port": "9001",
-    "agent_id": "room-agent-bedroom",
-    "version": "1.0.0",
-    "capabilities": "light,curtain,climate"
+**请求**:
+```http
+POST /api/beacon
+Content-Type: application/json
+
+{
+  "beacon_id": "01234567-89ab-cdef-0123456789abcdef-2-0",
+  "room_id": "bedroom_01",
+  "agent_id": "room-agent-bedroom",
+  "mqtt_broker": "192.168.1.100",
+  "mqtt_ws_port": 9001,
+  "capabilities": ["light", "curtain", "climate"],
+  "devices": [
+    {"id": "light_1", "name": "主灯", "type": "light"},
+    {"id": "curtain_1", "name": "窗帘", "type": "curtain"}
+  ]
 }
 ```
 
-### 3.3 发现流程
+**响应**:
+```http
+HTTP/1.1 201 Created
+Content-Type: application/json
+
+{
+  "beacon_id": "01234567-89ab-cdef-0123456789abcdef-2-0",
+  "room_id": "bedroom_01",
+  "agent_id": "room-agent-bedroom",
+  "mqtt_broker": "192.168.1.100",
+  "mqtt_ws_port": 9001,
+  "capabilities": ["light", "curtain", "climate"],
+  "devices": [
+    {"id": "light_1", "name": "主灯", "type": "light"}
+  ],
+  "registered_at": "2024-01-15T10:00:00Z",
+  "last_heartbeat": "2024-01-15T10:00:00Z"
+}
+```
+
+### 3.3 Beacon 查询（Personal Agent 发现时）
+
+**请求**:
+```http
+GET /api/beacon/{beacon_id}
+```
+
+**响应**:
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "beacon_id": "01234567-89ab-cdef-0123456789abcdef-2-0",
+  "room_id": "bedroom_01",
+  "agent_id": "room-agent-bedroom",
+  "mqtt_broker": "192.168.1.100",
+  "mqtt_ws_port": 9001,
+  "capabilities": ["light", "curtain", "climate"],
+  "devices": [
+    {"id": "light_1", "name": "主灯", "type": "light"}
+  ],
+  "registered_at": "2024-01-15T10:00:00Z",
+  "last_heartbeat": "2024-01-15T10:30:00Z"
+}
+```
+
+### 3.4 发现流程
 
 ```
-1. Personal Agent 扫描 Beacon → 确定 room_id = "bedroom"
-2. Personal Agent mDNS 浏览 → _room-agent._tcp.local
-3. 过滤 TXT 记录 → room_id == "bedroom"
-4. 解析服务 → 获取 IP + Port
-5. 连接 MQTT → 192.168.1.100:1883
+1. Personal Agent 扫描 Beacon → 提取 beacon_id
+2. Personal Agent 调用 GET /api/beacon/{beacon_id}
+3. qwen-backend 返回 mqtt_broker、room_id、agent_id、capabilities
+4. Personal Agent 使用返回的 mqtt_broker 地址建立 MQTT 连接
+5. Personal Agent 订阅房间状态和设备控制主题
 ```
 
 ## 4. MQTT 协议（通信层）
@@ -374,28 +431,31 @@ home/
 ### 6.1 Personal Agent 连接流程
 
 ```
-Personal Agent                    Room Agent
-     │                                 │
-     │◄────── BLE Beacon (RSSI) ───────┤
-     │                                 │
-     │  [Determine: Space=Bedroom]     │
-     │                                 │
-     │──── mDNS Query ─────────────────►│
-     │                                 │
-     │◄──── mDNS Response ──────────────┤
-     │  (IP: 192.168.1.100, Port:1883) │
-     │                                 │
-     │──── MQTT CONNECT ───────────────►│
-     │                                 │
-     │◄──── CONNACK ────────────────────┤
-     │                                 │
-     │──── SUBSCRIBE state/description  │
-     │─────────────────────────────────►│
-     │                                 │
-     │──── PUBLISH describe ───────────►│
-     │                                 │
-     │◄──── PUBLISH description ────────┤
-     │  (Capabilities received)         │
+Personal Agent           qwen-backend          Room Agent
+     │                         │                     │
+     │◄── BLE Beacon ──────────┼─────────────────────┤
+     │   (beacon_id)           │                     │
+     │                         │                     │
+     │──── GET /api/beacon/────►│                     │
+     │     {beacon_id}          │                     │
+     │                         │───── Heartbeat ────►│
+     │                         │                     │
+     │◄─── 200 OK ─────────────┤                     │
+     │   (mqtt_broker,         │                     │
+     │    room_id,             │                     │
+     │    agent_id,            │                     │
+     │    capabilities)        │                     │
+     │                         │                     │
+     │──── MQTT CONNECT ─────────────────────────────►│
+     │                         │                     │
+     │◄─── CONNACK ──────────────────────────────────┤
+     │                         │                     │
+     │──── SUBSCRIBE state/description ──────────────►│
+     │                         │                     │
+     │──── PUBLISH describe ─────────────────────────►│
+     │                         │                     │
+     │◄─── PUBLISH description ───────────────────────┤
+     │     (Capabilities received)                    │
 ```
 
 ### 6.2 带仲裁的控制流程
@@ -509,7 +569,7 @@ encryption:
 
 | 指标 | 目标 | 测量方法 |
 |------|------|---------|
-| mDNS 发现延迟 | < 100ms | 查询到响应 |
+| Beacon API 发现延迟 | < 200ms | HTTP 请求到响应 |
 | MQTT 连接延迟 | < 200ms | CONNECT 到 CONNACK |
 | 控制端到端延迟 | < 500ms | 意图到状态更新 |
 | 消息吞吐量 | 100 msg/s | 每房间 |
