@@ -206,40 +206,126 @@ get_room_capability() -> Capability
 
 ## 6. Beacon 与发现机制
 
-### 6.1 Beacon 目标
+### 6.1 Beacon 实现架构
 
-Beacon 的首要目标是服务 **Personal Agent 的快速感知与决策**，而非 Agent 之间的泛发现。
+**Beacon 功能由外接 ESP32 硬件实现**，配合 **qwen-backend** 服务完成设备发现。
 
-### 6.2 Beacon 内容（最小）
+```
+┌─────────────┐         ┌─────────────┐         ┌──────────────────┐
+│  ESP32      │         │qwen-backend │         │ Personal Agent   │
+│  Beacon     │ BLE     │ Beacon API  │◄── HTTP │                  │
+└─────────────┘         └──────┬──────┘         └────────┬─────────┘
+   BLE 广播                    │                         │
+   (beacon_id)          ┌──────┴──────┐                  │
+                       │ Room Agent  │                  │
+                       │ MQTT Broker │◄─────────────────┘
+                       └─────────────┘     MQTT 连接
+```
 
-Beacon 内容应围绕 **"是否值得 Personal Agent 介入"** 这一问题设计。
+**发现流程**:
+1. **ESP32**: 广播 BLE Beacon（仅包含 beacon_id，编码为 UUID/Major/Minor）
+2. **Personal Agent**: 扫描 Beacon，提取 beacon_id
+3. **Personal Agent**: 调用 `GET /api/beacon/{beacon_id}` 查询详细信息
+4. **qwen-backend**: 返回 mqtt_broker、room_id、agent_id 等信息
+5. **Personal Agent**: 使用返回的地址连接到 Room Agent 的 MQTT Broker
 
+### 6.2 Beacon 广播内容（最小化）
+
+Beacon **仅广播唯一标识符**，不包含任何房间状态信息。
+
+**iBeacon 格式**:
 ```json
 {
-  "agent": "room",
-  "room_id": "bedroom_01",
-  "mode": "sleep",
-  "occupancy": true
+  "uuid": "01234567-89AB-CDEF-0123456789ABCDEF",
+  "major": 2,    // 房间类型：2 = Bedroom
+  "minor": 0,    // 区域标识符
+  "tx_power": -59  // 1米处校准的 RSSI
 }
 ```
 
 **设计原则**:
-- ✅ 广播房间级状态摘要
-- ✅ 支持 Personal Agent 无连接决策
-- ❌ 不广播设备级细节
-- ❌ 不广播隐私信息
+- ✅ 广播最小化信息（仅 beacon_id）
+- ✅ 避免频繁更新 BLE 广播内容
+- ✅ 房间状态通过 MQTT 获取
+- ❌ 不在 Beacon 中塞入动态状态
 
-### 6.3 Beacon 配置
+### 6.3 qwen-backend Beacon API
 
+**注册 Beacon** (Room Agent 启动时调用):
+```http
+POST /api/beacon
+Content-Type: application/json
+
+{
+  "beacon_id": "01234567-89ab-cdef-0123456789abcdef-2-0",
+  "room_id": "bedroom_01",
+  "agent_id": "room-agent-bedroom",
+  "mqtt_broker": "192.168.1.100",
+  "mqtt_ws_port": 9001,
+  "capabilities": ["light", "curtain", "climate"],
+  "devices": [
+    {"id": "light_1", "name": "主灯", "type": "light"},
+    {"id": "curtain_1", "name": "窗帘", "type": "curtain"}
+  ]
+}
+```
+
+**查询 Beacon** (Personal Agent 调用):
+```http
+GET /api/beacon/{beacon_id}
+
+Response:
+{
+  "beacon_id": "01234567-89ab-cdef-0123456789abcdef-2-0",
+  "room_id": "bedroom_01",
+  "agent_id": "room-agent-bedroom",
+  "mqtt_broker": "192.168.1.100",
+  "mqtt_ws_port": 9001,
+  "capabilities": ["light", "curtain", "climate"],
+  "devices": [
+    {"id": "light_1", "name": "主灯", "type": "light"}
+  ],
+  "registered_at": "2024-01-15T10:00:00Z",
+  "last_heartbeat": "2024-01-15T10:30:00Z"
+}
+```
+
+### 6.4 Room Agent 配置
+
+**Room Agent 启动时自动注册**:
 ```yaml
 beacon:
   enabled: true
+  hardware: "esp32"
+  device_id: "esp32_beacon_01"
+
+  # iBeacon 参数
   uuid: "01234567-89AB-CDEF-0123456789ABCDEF"
   major: 2  # Bedroom = 2
   minor: 0
-  measured_power: -59  # RSSI at 1m
-  interval: 1  # second
+  measured_power: -59
+
+  # qwen-backend 配置
+  backend:
+    url: "http://192.168.1.50:3000"
+    register_on_startup: true
+    heartbeat_interval: 60  # 秒
 ```
+
+### 6.5 ESP32 硬件要求
+
+| 要求 | 规格 | 说明 |
+|------|------|------|
+| 芯片 | ESP32-C3/ESP32-S3 | 支持 BLE 5.0 |
+| BLE | iBeacon 广播 | 仅需广播，无需连接 |
+| 功耗 | < 1W | USB 供电或电池 |
+| 固件 | 简化固件 | 仅广播，无需 MQTT |
+
+**ESP32 固件职责**:
+- ✅ 定时广播 iBeacon 信号
+- ✅ 纯硬件实现，无需连接网络
+- ❌ 不需要连接 Room Agent
+- ❌ 不需要动态更新广播内容
 
 ## 7. 协作模型
 
@@ -372,11 +458,20 @@ mqtt:
 
 beacon:
   enabled: true
+  hardware: "esp32"
+  device_id: "esp32_beacon_01"
+
+  # iBeacon 参数（用于 BLE 广播）
   uuid: "01234567-89AB-CDEF-0123456789ABCDEF"
-  major: 2  # Bedroom
+  major: 2  # Bedroom = 2
   minor: 0
-  measured_power: -59
-  interval: 1
+  measured_power: -59  # RSSI at 1m
+
+  # qwen-backend 注册配置
+  backend:
+    url: "http://192.168.1.50:3000"
+    register_on_startup: true
+    heartbeat_interval: 60  # 秒
 
 modes:
   idle:
