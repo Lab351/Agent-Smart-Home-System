@@ -80,17 +80,17 @@ def determine_current_space(beacons, current_space):
 
 | 端点 | 方法 | 描述 |
 |------|------|------|
-| `/api/beacon` | POST | 注册/更新 Beacon 信息（Room Agent 调用） |
+| `/api/beacon/register` | POST | 注册/更新 Beacon 信息（Room Agent 调用） |
 | `/api/beacon/{beacon_id}` | GET | 查询 Beacon 信息（Personal Agent 调用） |
 | `/api/beacon/{beacon_id}/heartbeat` | POST | 更新心跳 |
-| `/api/beacon` | GET | 获取所有 Beacon 列表 |
+| `/api/beacon/list` | GET | 获取所有 Beacon 列表 |
 | `/api/beacon/{beacon_id}` | DELETE | 删除 Beacon |
 
 ### 3.2 Beacon 注册（Room Agent 启动时）
 
 **请求**:
 ```http
-POST /api/beacon
+POST /api/beacon/register
 Content-Type: application/json
 
 {
