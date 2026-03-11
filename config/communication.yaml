@@ -1,0 +1,75 @@
+# 通信配置文件
+# 
+# 此配置文件存储各通信backend的参数配置
+# Agent在初始化时通过参数选择使用哪个backend
+
+# 服务注册中心URL（可选，用于Agent发现）
+registry_url: "http://localhost:3000"
+
+# MQTT配置
+# 当Agent选择 backend="mqtt" 时使用
+mqtt:
+  broker:
+    host: "localhost"
+    port: 1883
+    username: null  # 可选
+    password: null  # 可选
+  
+  # MQTT特定的其他配置
+  keepalive: 60
+  reconnect_delay: 5
+
+# A2A SDK配置
+# 当Agent选择 backend="a2a_sdk" 时使用
+a2a_sdk:
+  # Agent HTTP Server端口
+  # 每个Agent应该使用不同的端口
+  server_port: 8000
+  
+  # Agent Card模板（可选，会被agent_config覆盖）
+  agent_card:
+    documentation_url: null
+  
+  # 服务发现配置
+  discovery:
+    enabled: true
+    # 可以覆盖顶层的registry_url
+    registry_url: null
+  
+  # 认证配置
+  authentication: null
+
+# 示例：如何使用此配置文件
+# 
+# Python代码示例：
+# ```python
+# from shared.communication import CommunicationFactory, CommunicationConfig
+# from shared.models import AgentCard, AgentType
+#
+# # 加载配置
+# config = CommunicationConfig()  # 自动加载此文件
+#
+# # 创建Agent Card
+# agent_card = AgentCard(
+#     id="room-agent-bedroom-01",
+#     name="卧室房间代理",
+#     description="管理卧室智能设备",
+#     agent_type=AgentType.ROOM,
+#     capabilities=["light_control", "curtain_control"]
+# )
+#
+# # 创建MQTT适配器
+# mqtt_adapter = CommunicationFactory.create_adapter(
+#     backend="mqtt",
+#     agent_card=agent_card,
+#     config=config
+# )
+#
+# # 或创建A2A SDK适配器
+# a2a_adapter = CommunicationFactory.create_adapter(
+#     backend="a2a_sdk",
+#     agent_card=agent_card,
+#     config=config,
+#     server_port=8001  # 覆盖默认端口
+# )
+# ```
