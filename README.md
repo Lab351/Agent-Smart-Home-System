@@ -1,6 +1,6 @@
 # Agent Home System - 智能家居多 Agent 协作系统
 
-一个基于空间感知的分布式智能家居多 Agent 协作系统，通过 BLE Beacon、mDNS 和 MQTT 实现自适应的空间绑定和设备控制。
+一个基于空间感知的分布式智能家居多 Agent 协作系统，通过 BLE Beacon、qwen-backend Beacon Registry API 和 MQTT 实现自适应的空间绑定和设备控制。
 
 ## 系统概述
 
@@ -29,7 +29,7 @@
 │       ▼                 ▼                                       │
 │  ┌─────────────────────────────────────────────────────────┐  │
 │  │           三层协议栈                                     │  │
-│  │  BLE Beacon ──► mDNS Discovery ──► MQTT Communication  │  │
+│  │  BLE Beacon ──► Beacon Registry API ──► MQTT Communication  │  │
 │  └─────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -52,7 +52,7 @@
   - 房间状态管理（统一 Room State）
   - 设备抽象与控制
   - MQTT Broker 管理（房间级）
-  - mDNS 服务广播
+  - Beacon Registry 注册/心跳维护
   - 局部决策执行
 - **仓库**: [room-agent/](room-agent/)
 - **规格**: [docs/agents/room-agent.md](docs/agents/room-agent.md)
@@ -257,13 +257,13 @@ uv run ruff check .
 - **[Personal Agent 规格](docs/agents/personal-agent.md)** - 随身 Agent 详细设计
 - **[Room Agent 规格](docs/agents/room-agent.md)** - 房间 Agent 详细设计
 - **[Central Agent 规格](docs/agents/central-agent.md)** - 中央 Agent 详细设计
-- **[通信协议](docs/communication.md)** - MQTT、BLE、mDNS 协议规范
+- **[通信协议](docs/communication.md)** - MQTT、BLE、Beacon Registry API 规范
 - **[测试用例](docs/TEST_CASES.md)** - 完整测试场景
 
 ## 技术栈
 
 - **语言**: Python 3.12
-- **通信**: MQTT (paho-mqtt), mDNS (zeroconf)
+- **通信**: MQTT (paho-mqtt), Beacon Registry API (qwen-backend)
 - **空间感知**: BLE Beacon (bluepy)
 - **数据验证**: Pydantic
 - **异步**: asyncio

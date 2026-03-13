@@ -1,5 +1,31 @@
 # Room Agent (房间 Agent) 技术规格
 
+## OpenSpec 规范化描述
+
+### Requirement: Room State Authority
+The Room Agent SHALL maintain a Room State as the single source of truth for the room.
+
+#### Scenario: State update
+- **GIVEN** a device state change in the room
+- **WHEN** the Room Agent receives the update
+- **THEN** the Room State is updated and published
+
+### Requirement: Minimal External Interface
+The Room Agent SHALL expose a minimal interface for state query, mode setting, and capability description.
+
+#### Scenario: Capability discovery
+- **GIVEN** a Personal Agent requests capabilities
+- **WHEN** the Room Agent receives a describe request
+- **THEN** it responds with the room capability summary
+
+### Requirement: Local Decision Execution
+The Room Agent SHALL execute room-level rules and actions locally.
+
+#### Scenario: Mode switch
+- **GIVEN** the room mode is set to sleep
+- **WHEN** the Room Agent applies room rules
+- **THEN** the lights are turned off and curtains are closed per local policy
+
 ## 1. 设计原则
 
 ### 1.1 核心原则
@@ -405,7 +431,7 @@ for action in device_actions:
 资源占用:
   CPU: 空闲 < 5%, 负载 < 30%
   内存: < 200MB
-  网络: MQTT + mDNS
+  网络: MQTT + Beacon Registry API
 ```
 
 ## 9. 非功能性要求
@@ -502,14 +528,14 @@ devices:
     protocol: "http"
     address: "http://192.168.1.201/api"
 
-mdns:
-  service_name: "bedroom-room-agent"
-  service_type: "_room-agent._tcp.local"
-  port: 1883
-  txt_records:
-    room_id: "bedroom_01"
-    mqtt_port: "1883"
-    version: "1.0.0"
+beacon_registry:
+  base_url: "http://qwen-backend:3000"
+  register_path: "/api/beacon/register"
+  heartbeat_path: "/api/beacon/{beacon_id}/heartbeat"
+  room_id: "bedroom_01"
+  agent_id: "room-agent-bedroom"
+  mqtt_port: 1883
+  mqtt_ws_port: 9001
 ```
 
 ## 12. 与数字人 Agent 的关系

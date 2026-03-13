@@ -302,29 +302,29 @@
 
 ---
 
-## 六、mDNS服务发现测试
+## 六、Beacon Registry 服务发现测试
 
-### 6.1 mDNS广播测试
+### 6.1 Beacon 注册测试
 
-| 用例ID | TC-MDNS-001 | 优先级 | P1 |
+| 用例ID | TC-DISC-001 | 优先级 | P1 |
 |--------|--------------|--------|-----|
-| **测试目的** | 验证Room Agent通过mDNS广播服务 |
-| **前置条件** | Room Agent已启动，在同一局域网 |
-| **测试步骤** | 1. 在同一网络使用 `avahi-browse _room-agent._tcp`<br>2. 查看服务列表 |
-| **预期结果** | - 发现"bedroom-room-agent"服务<br>- 服务类型为"_room-agent._tcp"<br>- 包含正确的端口号 |
+| **测试目的** | 验证 Room Agent 启动时能注册 Beacon 到 qwen-backend |
+| **前置条件** | qwen-backend 已启动，Room Agent 可访问 |
+| **测试步骤** | 1. Room Agent 启动并调用 `POST /api/beacon/register`<br>2. 检查返回数据<br>3. 观察记录是否可查询 |
+| **预期结果** | - 注册成功并返回 `beacon_id`<br>- 返回 `mqtt_broker`/`mqtt_ws_port`<br>- `registered_at`/`last_heartbeat` 正确 |
 | **实际结果** | |
 | **测试状态** | ⬜ 未测试 / ✅ 通过 / ❌ 失败 |
 
 ---
 
-### 6.2 服务解析测试
+### 6.2 Beacon 查询测试
 
-| 用例ID | TC-MDNS-002 | 优先级 | P2 |
+| 用例ID | TC-DISC-002 | 优先级 | P2 |
 |--------|--------------|--------|-----|
-| **测试目的** | 验证能解析mDNS服务并获取详细信息 |
-| **前置条件** | mDNS服务正在广播 |
-| **测试步骤** | 1. 解析服务<br>2. 获取IP地址和端口<br>3. 验证TXT记录 |
-| **预期结果** | - 获取正确的IP地址<br>- 获取MQTT端口<br>- TXT记录包含room_id等信息 |
+| **测试目的** | 验证 Personal Agent 可通过 Beacon Registry 查询 Room Agent |
+| **前置条件** | Beacon 已注册且心跳正常 |
+| **测试步骤** | 1. 调用 `GET /api/beacon/{beacon_id}`<br>2. 校验返回字段 |
+| **预期结果** | - 返回 `mqtt_broker` 与端口信息<br>- 返回 `room_id` 与 `agent_id`<br>- `capabilities` 与 `devices` 可用 |
 | **实际结果** | |
 | **测试状态** | ⬜ 未测试 / ✅ 通过 / ❌ 失败 |
 
@@ -540,7 +540,7 @@
 
 ### Phase 4: 集成与性能测试 (Week 4)
 - TC-E2E-004: 场景激活
-- TC-MDNS-001~002: mDNS功能
+- TC-DISC-001~002: Beacon Registry 功能
 - TC-PERF-001~003: 性能测试
 - TC-SEC-001~002: 安全测试
 - 回归测试所有用例

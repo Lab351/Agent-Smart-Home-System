@@ -1,9 +1,27 @@
 # HomeSystemAgent A2A (Agent-to-Agent) Specification
 
+## OpenSpec 规范化描述
+
+### Requirement: A2A Transport
+The system SHALL use MQTT as the primary A2A transport for control, state, and arbitration messages.
+
+#### Scenario: A2A message transport
+- **GIVEN** two agents are connected to the same room broker
+- **WHEN** one publishes a control message
+- **THEN** the target agent receives and validates the message
+
+### Requirement: Space-Aware Discovery
+The system SHALL bind agents to space context via BLE beacons and discovery metadata.
+
+#### Scenario: Space-aware binding
+- **GIVEN** a Personal Agent detects a beacon for a room
+- **WHEN** it resolves the beacon to a Room Agent endpoint
+- **THEN** it connects to that room's broker for scoped interaction
+
 ## 1. System Overview
 
 ### 1.1 Vision Statement
-Build a spatially scoped, decentralized multi-agent communication architecture for smart home environments, where BLE enables proximity-based space binding, mDNS supports in-space agent discovery, and MQTT provides structured semantic interaction among agents. A Central Agent maintains global consistency and policy coordination without breaking local autonomy, enabling scalable and robust home intelligence.
+Build a spatially scoped, decentralized multi-agent communication architecture for smart home environments, where BLE enables proximity-based space binding, the qwen-backend Beacon Registry API supports in-space agent discovery, and MQTT provides structured semantic interaction among agents. A Central Agent maintains global consistency and policy coordination without breaking local autonomy, enabling scalable and robust home intelligence.
 
 ### 1.2 System Architecture
 
@@ -34,7 +52,7 @@ Build a spatially scoped, decentralized multi-agent communication architecture f
 │         ▼                        ▼                       ▼               │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
 │  │                    Space Layer                                   │    │
-│  │  BLE Beacon ───────► Spatial Binding ───────► mDNS Discovery     │    │
+│  │  BLE Beacon ───────► Spatial Binding ───────► Beacon Registry API│    │
 │  └─────────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -88,12 +106,10 @@ capabilities:
   - device_management:
       supported_protocols: [HTTP, MQTT, CoAP, Zigbee]
       device_discovery: true
-  - mdns_advertiser:
-      service_type: _room-agent._tcp.local
-      txt_records:
-        - room_id
-        - mqtt_port
-        - agent_id
+  - beacon_registry_client:
+      base_url: "http://qwen-backend:3000"
+      register_path: "/api/beacon/register"
+      heartbeat_path: "/api/beacon/{beacon_id}/heartbeat"
 ```
 
 ### 2.3 Robot Agent (机器人 Agent)
@@ -229,43 +245,42 @@ def determine_current_space(beacons):
 
 **Purpose**: Answer "Which agents are in this space?"
 
-**Technology**: mDNS (Multicast DNS)
+**Technology**: Beacon Registry API (qwen-backend)
 
-**Service Advertisement**:
-```
-Service Type: _room-agent._tcp.local
-Instance Name: bedroom-room-agent-1._room-agent._tcp.local
-
-TXT Records:
-  - room_id=bedroom
-  - mqtt_port=1883
-  - mqtt_ws_port=9001
-  - agent_id=room-agent-1
-  - version=1.0.0
-  - capabilities=light,curtain,climate
+**API Response Example**:
+```json
+{
+  "success": true,
+  "data": {
+    "beacon_id": "01234567-89ab-cdef-0123456789abcdef-2-0",
+    "room_id": "bedroom",
+    "agent_id": "room-agent-bedroom",
+    "mqtt_broker": "192.168.1.100",
+    "mqtt_ws_port": 9001,
+    "capabilities": ["light", "curtain", "climate"]
+  }
+}
 ```
 
 **Discovery Flow**:
 ```python
 # Personal Agent discovery logic
-async def discover_room_agent(room_id):
+async def discover_room_agent(beacon_id):
     """
-    1. Query mDNS for _room-agent._tcp.local services
-    2. Filter by room_id in TXT records
-    3. Return MQTT broker connection details
+    1. Query Beacon Registry API by beacon_id
+    2. Return MQTT broker connection details
     """
-    services = await mdns.browse('_room-agent._tcp.local')
+    info = await http.get(f"/api/beacon/{beacon_id}")
+    if not info.get("success"):
+        raise RoomAgentNotFound(f"No Room Agent found for {beacon_id}")
 
-    for service in services:
-        if service.txt.get('room_id') == room_id:
-            return {
-                'host': service.address,
-                'mqtt_port': int(service.txt.get('mqtt_port', 1883)),
-                'agent_id': service.txt.get('agent_id'),
-                'capabilities': service.txt.get('capabilities', '').split(',')
-            }
-
-    raise RoomAgentNotFound(f"No Room Agent found for {room_id}")
+    data = info["data"]
+    return {
+        "host": data["mqtt_broker"],
+        "mqtt_port": int(data.get("mqtt_port", 1883)),
+        "agent_id": data["agent_id"],
+        "capabilities": data.get("capabilities", [])
+    }
 ```
 
 ### 3.3 Layer 3: Agent Communication (智能体通信层)
@@ -541,9 +556,9 @@ Personal Agent                    Room Agent                     Central Agent
      │                                 │                               │
      │  [Determine: Space=Bedroom]     │                               │
      │                                 │                               │
-     │──── mDNS Query ─────────────────►│                               │
+     │──── Beacon Registry Query ───────►│                               │
      │                                 │                               │
-     │◄──── mDNS Response ──────────────┤                               │
+     │◄──── Beacon Registry Response ───┤                               │
      │  (IP: 192.168.1.100, Port:1883) │                               │
      │                                 │                               │
      │──── MQTT CONNECT ───────────────►│                               │
@@ -604,8 +619,8 @@ Time: T1 to T1 + ~100ms
 Duration: < 1 second
 
 Events:
-1. Personal Agent sends mDNS query
-2. Room Agent responds with connection details
+1. Personal Agent calls Beacon Registry API
+2. Receives broker address and agent metadata
 
 Output: mqtt_broker = { host: "192.168.1.100", port: 1883 }
 ```
@@ -657,7 +672,7 @@ if no_beacons_detected:
 ```
 
 ### 6.2 Room Agent Unreachable
-**Scenario**: mDNS fails to find Room Agent
+**Scenario**: Beacon Registry API fails to resolve Room Agent
 
 **Handling**:
 ```python
@@ -781,7 +796,7 @@ encryption:
 | Operation | Target Latency | Maximum Acceptable |
 |-----------|----------------|-------------------|
 | Spatial detection | < 1s | 3s |
-| mDNS discovery | < 100ms | 500ms |
+| Beacon Registry discovery | < 200ms | 1s |
 | MQTT connect | < 200ms | 1s |
 | Control command | < 50ms (end-to-end) | 200ms |
 | State update | < 100ms | 500ms |
@@ -791,7 +806,7 @@ encryption:
 | Metric | Target | Measurement |
 |--------|--------|-------------|
 | MQTT delivery success rate | > 99.9% | QoS 1/2 messages |
-| mDNS discovery success | > 99% | In stable LAN |
+| Beacon Registry discovery success | > 99% | In stable LAN |
 | Beacon detection accuracy | > 95% | Correct room identification |
 
 ### 8.3 Scalability Targets
@@ -867,9 +882,10 @@ mqtt:
     max_connections: 100
   qos_default: 1
 
-mdns:
-  service_name: "bedroom-room-agent"
-  service_type: "_room-agent._tcp.local"
+beacon_registry:
+  base_url: "http://qwen-backend:3000"
+  register_path: "/api/beacon/register"
+  heartbeat_path: "/api/beacon/{beacon_id}/heartbeat"
 
 devices:
   - id: "light_1"
@@ -986,7 +1002,7 @@ home_modes:
 ### 11.2 Integration Testing
 
 **Test Scenarios**:
-1. Full flow: Beacon → mDNS → MQTT → Control
+1. Full flow: Beacon → Beacon Registry API → MQTT → Control
 2. Multiple Personal Agents in same room
 3. Room Agent failure and recovery
 4. Network interruption handling
@@ -995,7 +1011,7 @@ home_modes:
 
 **Required Tests**:
 - Real BLE beacon detection accuracy
-- mDNS discovery across different network configurations
+- Beacon Registry API discovery across different network configurations
 - MQTT performance with target message rates
 
 ## 12. Deployment & Operations
@@ -1112,11 +1128,11 @@ health_check:
 - No pairing required
 - Good spatial resolution with RSSI
 
-**Why mDNS?**
-- Zero-configuration service discovery
-- Built into all major OSes
-- Works well on local networks
-- No external dependencies
+**Why Beacon Registry API?**
+- Explicit, auditable source of truth for room-to-agent binding
+- Works across network segments without multicast
+- Supports heartbeat and stale record handling
+- Aligns with existing qwen-backend deployment
 
 **Why MQTT?**
 - Lightweight, suitable for IoT
@@ -1130,7 +1146,7 @@ health_check:
 | Component | Chosen | Alternatives | Rationale |
 |-----------|--------|--------------|-----------|
 | Spatial | BLE Beacon | WiFi triangulation, UWB | BLE is power-efficient and sufficient for room-level accuracy |
-| Discovery | mDNS | Static config, central registry | mDNS is zero-config and works well on LAN |
+| Discovery | Beacon Registry API | mDNS, static config | API is explicit, centralized, and works across subnets |
 | Communication | MQTT | HTTP, CoAP, gRPC | MQTT's pub/sub model fits async agent communication |
 | Data | JSON | MessagePack, CBOR | JSON is human-readable and widely supported |
 
@@ -1151,5 +1167,5 @@ health_check:
 ### 15.4 References
 
 - MQTT Specification: https://mqtt.org/mqtt-specification/
-- mDNS Specification: https://tools.ietf.org/html/rfc6762
+- Beacon Registry API: qwen-backend `/api/beacon/*`
 - BLE Beacon Format: https://specifications.bluetooth.com/thesis-packages/

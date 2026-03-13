@@ -1,5 +1,31 @@
 # Central Agent (中央 Agent) 技术规格
 
+## OpenSpec 规范化描述
+
+### Requirement: Global State Management
+The Central Agent SHALL maintain global home-level state and allow other agents to subscribe to it.
+
+#### Scenario: Global state update
+- **GIVEN** a change in home occupancy
+- **WHEN** the Central Agent updates global state
+- **THEN** subscribed agents receive the update
+
+### Requirement: Policy Arbitration
+The Central Agent SHALL arbitrate conflicts that violate global policy or involve multiple users.
+
+#### Scenario: Multi-user conflict
+- **GIVEN** two conflicting user intents
+- **WHEN** the Central Agent evaluates policy and priorities
+- **THEN** it returns an accept/reject/partial decision with reasons
+
+### Requirement: No Direct Device Control
+The Central Agent SHALL NOT issue direct device control commands.
+
+#### Scenario: Policy enforcement
+- **GIVEN** a global policy requires reduced volume
+- **WHEN** a conflicting intent is detected
+- **THEN** the Central Agent returns a modified intent rather than controlling the device directly
+
 ## 1. 角色定位
 
 Central Agent 是智能家居 Agent 系统中的 **全局协调智能体**，负责：
