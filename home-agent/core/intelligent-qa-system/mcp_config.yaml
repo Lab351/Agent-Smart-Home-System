@@ -1,0 +1,48 @@
+# RAG MCP Server 配置示例
+# 
+# 将此配置添加到 MCP client 的配置文件中
+# 例如 room-agent 的 MCP 配置
+
+servers:
+  rag-server:
+    # MCP Server 命令
+    command: python
+    args:
+      - core/intelligent-qa-system/mcp_server.py
+    
+    # 工作目录（可选，默认为当前目录）
+    # cwd: /path/to/home-agent
+    
+    # 环境变量
+    env:
+      RAG_HOST: "127.0.0.1"
+      RAG_PORT: "9000"
+    
+    # 启动配置
+    startup:
+      timeout: 10  # 启动超时（秒）
+      retries: 3   # 重试次数
+    
+    # 工具配置
+    tools:
+      - name: search_knowledge_base
+        description: "在内部知识库中搜索相关文档"
+        timeout: 30  # 调用超时（秒）
+        retry_on_failure: true
+
+# 使用说明：
+# 
+# 1. 确保 RAG HTTP API 正在运行：
+#    cd home-agent/core/intelligent-qa-system
+#    python run_api.py
+#
+# 2. 在 room-agent 的 MCP Manager 中添加此 server 配置
+#
+# 3. 启动 room-agent，它会自动连接到 RAG MCP Server
+#
+# 4. 通过 MCP 调用 RAG 工具：
+#    await mcp_manager.call_tool(
+#        server_id="rag-server",
+#        tool_name="search_knowledge_base",
+#        arguments={"query": "测试查询"}
+#    )

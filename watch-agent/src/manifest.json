@@ -1,0 +1,99 @@
+{
+  "package": "com.watch.agent",
+  "name": "watch-agent",
+  "versionName": "1.0.0",
+  "versionCode": 3,
+  "minPlatformVersion": 1070,
+  "icon": "/assets/images/logo.png",
+  "features": [
+    {
+      "name": "system.prompt"
+    },
+    {
+      "name": "system.router"
+    },
+    {
+      "name": "system.shortcut"
+    },
+    {
+      "name": "system.fetch"
+    },
+    {
+      "name": "system.record"
+    },
+    {
+      "name": "system.bluetooth"
+    },
+    {
+      "name": "system.network"
+    },
+    {
+      "name": "system.websocketfactory"
+    },
+    {
+      "name": "system.storage"
+    },
+    {
+      "name": "system.file"
+    },
+    {
+      "name": "service.texttoaudio"
+    }
+  ],
+  "permissions": [
+    {
+      "origin": "*"
+    }
+  ],
+  "config": {
+    "logLevel": "debug"
+  },
+  "router": {
+    "entry": "pages/Index",
+    "pages": {
+      "pages/Index": {
+        "component": "index"
+      },
+      "pages/VoiceControl": {
+        "component": "index"
+      },
+      "pages/RoomBinding": {
+        "component": "index"
+      },
+      "pages/MqttTest": {
+        "component": "index"
+      },
+      "pages/BleTest": {
+        "component": "index"
+      },
+      "pages/Preferences": {
+        "component": "index"
+      }
+    }
+  },
+  "display": {
+    "titleBar": false,
+    "titleBarBackgroundColor": "#1a1a1a",
+    "titleBarTextColor": "#ffffff",
+    "pages": {
+      "pages/Index": {
+        "titleBarText": "Personal Agent"
+      },
+      "pages/VoiceControl": {
+        "titleBarText": "语音控制"
+      },
+      "pages/RoomBinding": {
+        "titleBarText": "房间绑定"
+      },
+      "pages/MqttTest": {
+        "titleBarText": "MQTT 测试"
+      },
+      "pages/BleTest": {
+        "titleBarText": "BLE 测试"
+      },
+      "pages/Preferences": {
+        "titleBarText": "偏好设置"
+      }
+    }
+  }
+}

@@ -1,0 +1,723 @@
+<!-- BLE 蓝牙测试页面 -->
+
+<template>
+  <div class="ble-page">
+    <!-- 顶部标题 -->
+    <div class="header">
+      <text class="title">BLE 测试</text>
+    </div>
+
+    <!-- 蓝牙状态 -->
+    <div class="section">
+      <text class="section-title">蓝牙状态</text>
+
+      <div class="status-row">
+        <text class="label">适配器:</text>
+        <text class="status-ok" show="{{ adapterAvailable }}">✓ 已启用</text>
+        <text class="status-error" show="{{ !adapterAvailable }}">✗ 未启用</text>
+      </div>
+
+      <div class="status-row">
+        <text class="label">连接:</text>
+        <text class="status-ok" show="{{ connected }}">✓ 已连接</text>
+        <text class="status-error" show="{{ !connected }}">✗ 未连接</text>
+      </div>
+
+      <div class="button-row">
+        <input
+          class="test-btn"
+          type="button"
+          value="初始化"
+          onclick="initBle"
+          disabled="{{ adapterInitialized }}"
+        />
+        <input
+          class="test-btn"
+          type="button"
+          value="扫描"
+          onclick="startScan"
+          disabled="{{ !adapterInitialized || isScanning }}"
+        />
+      </div>
+
+      <div class="button-row" show="{{ isScanning }}">
+        <input
+          class="test-btn stop-btn"
+          type="button"
+          value="停止扫描"
+          onclick="stopScan"
+        />
+      </div>
+    </div>
+
+    <!-- 扫描结果 -->
+    <div class="section" show="{{ devices.length > 0 }}">
+      <text class="section-title">发现设备 ({{ devices.length }})</text>
+
+      <div class="device-list">
+        <div class="device-item" for="{{devices}}" tid="{{$item}}" onclick="selectDevice($item)">
+          <div class="device-info">
+            <text class="device-name">{{$item.name || 'Unknown'}}</text>
+            <text class="device-rssi">RSSI: {{$item.rssi}} dBm</text>
+          </div>
+          <text class="device-id">{{$item.deviceId.slice(0, 12)}}...</text>
+        </div>
+      </div>
+    </div>
+
+    <!-- 连接控制 -->
+    <div class="section" show="{{ selectedDevice }}">
+      <text class="section-title">选中设备</text>
+
+      <div class="status-row">
+        <text class="label">名称:</text>
+        <text class="value">{{ selectedDevice.name || 'Unknown' }}</text>
+      </div>
+
+      <div class="button-row">
+        <input
+          class="test-btn connect-btn"
+          type="button"
+          value="连接"
+          onclick="createConnection"
+          disabled="{{ connected }}"
+        />
+        <input
+          class="test-btn disconnect-btn"
+          type="button"
+          value="断开"
+          onclick="closeConnection"
+          disabled="{{ !connected }}"
+        />
+      </div>
+    </div>
+
+    <!-- 服务和特征 -->
+    <div class="section" show="{{ services.length > 0 }}">
+      <text class="section-title">服务 ({{ services.length }})</text>
+
+      <div class="service-list">
+        <div class="service-item" for="{{services}}" tid="{{$item}}">
+          <text class="service-uuid">{{$item.uuid}}</text>
+          <text class="service-primary" show="{{$item.isPrimary}}">主服务</text>
+        </div>
+      </div>
+    </div>
+
+    <!-- 消息记录 -->
+    <div class="section" show="{{ messages.length > 0 }}">
+      <text class="section-title">消息记录 ({{ messages.length }})</text>
+
+      <div class="message-list">
+        <div class="message-item" for="{{messages}}" tid="{{$item}}">
+          <text class="msg-time">{{$item.timestamp}}</text>
+          <text class="msg-type">{{$item.type}}</text>
+          <text class="msg-text">{{$item.text}}</text>
+        </div>
+      </div>
+
+      <input
+        class="test-btn clear-btn"
+        type="button"
+        value="清空记录"
+        onclick="clearMessages"
+      />
+    </div>
+
+    <!-- 返回按钮 -->
+    <div class="back-btn-container">
+      <input
+        class="back-btn"
+        type="button"
+        value="← 返回"
+        onclick="goBack"
+      />
+    </div>
+  </div>
+</template>
+
+<script>
+import bluetooth from '@system.bluetooth'
+
+export default {
+  private: {
+    // 蓝牙状态
+    adapterAvailable: false,
+    adapterInitialized: false,
+    isScanning: false,
+    connected: false,
+
+    // 设备相关
+    devices: [],
+    selectedDevice: null,
+
+    // 服务和特征
+    services: [],
+    characteristics: [],
+
+    // 消息记录
+    messages: []
+  },
+
+  onInit() {
+    console.log('[BleTest] Page initialized')
+    this.setupEventHandlers()
+    this.initBle()
+  },
+
+  onDestroy() {
+    console.log('[BleTest] Destroying page')
+    // 停止扫描
+    if (this.isScanning) {
+      this.stopScan()
+    }
+    // 断开连接
+    if (this.connected) {
+      this.closeConnection()
+    }
+    // 关闭适配器
+    this.closeAdapter()
+  },
+
+  /**
+   * 设置事件监听
+   */
+  setupEventHandlers() {
+    const _this = this
+
+    // 适配器状态变化监听
+    bluetooth.onadapterstatechange = function (data) {
+      console.log('[BleTest] Adapter state changed:', data.available)
+      _this.adapterAvailable = data.available
+      _this.addMessage('INFO', '适配器状态: ' + (data.available ? '已启用' : '未启用'))
+    }
+
+    // 设备连接状态变化监听
+    bluetooth.onbleconnectionstatechange = function (data) {
+      console.log('[BleTest] Connection state changed:', data.deviceId, data.connected)
+      _this.connected = data.connected
+      _this.addMessage('INFO', '连接状态: ' + (data.connected ? '已连接' : '已断开'))
+
+      if (data.connected) {
+        // 连接成功后获取服务
+        _this.getServices()
+      }
+    }
+
+    // 特征值变化监听
+    bluetooth.onblecharacteristicvaluechange = function (data) {
+      console.log('[BleTest] Characteristic value changed:', data)
+      _this.addMessage('DATA', '特征值: ' + _this.ab2hex(data.value))
+    }
+
+    // 设备发现监听
+    bluetooth.ondevicefound = function (data) {
+      console.log('[BleTest] Device found:', data.devices)
+      if (data && data.devices) {
+        data.devices.forEach(device => {
+          // 检查是否已存在
+          const exists = _this.devices.some(d => d.deviceId === device.deviceId)
+          if (!exists) {
+            _this.devices.push({
+              deviceId: device.deviceId,
+              name: device.name || device.localName || 'Unknown',
+              rssi: device.rssi || 0,
+              advertisData: device.advertisData
+            })
+            _this.addMessage('INFO', '发现设备: ' + (device.name || device.localName || 'Unknown'))
+          }
+        })
+      }
+    }
+  },
+
+  /**
+   * ArrayBuffer 转 Hex 字符串
+   */
+  ab2hex(buffer) {
+    const hexArr = Array.prototype.map.call(
+      new Uint8Array(buffer),
+      function (bit) {
+        return ('00' + bit.toString(16)).slice(-2)
+      }
+    )
+    return hexArr.join('')
+  },
+
+  /**
+   * 初始化蓝牙
+   */
+  initBle() {
+    console.log('[BleTest] Initializing BLE...')
+    this.addMessage('INFO', '初始化蓝牙适配器')
+
+    const _this = this
+    bluetooth.openAdapter({
+      operateAdapter: true,
+      success: function () {
+        console.log('[BleTest] Adapter opened')
+        _this.adapterAvailable = true
+        _this.adapterInitialized = true
+        _this.addMessage('SUCCESS', '蓝牙初始化成功')
+      },
+      fail: function (data, code) {
+        console.error('[BleTest] Failed to open adapter:', code)
+        _this.addMessage('ERROR', '初始化失败: ' + code)
+        if (code === 10001) {
+          _this.addMessage('ERROR', '请先打开手机蓝牙')
+        }
+      },
+      complete: function () {
+        console.log('[BleTest] Open adapter complete')
+      }
+    })
+  },
+
+  /**
+   * 关闭适配器
+   */
+  closeAdapter() {
+    console.log('[BleTest] Closing adapter...')
+
+    // 取消监听
+    bluetooth.onadapterstatechange = null
+    bluetooth.onbleconnectionstatechange = null
+    bluetooth.onblecharacteristicvaluechange = null
+    bluetooth.ondevicefound = null
+
+    bluetooth.closeAdapter({
+      operateAdapter: false,
+      success: function () {
+        console.log('[BleTest] Adapter closed')
+      },
+      fail: function (data, code) {
+        console.error('[BleTest] Failed to close adapter:', code)
+      }
+    })
+  },
+
+  /**
+   * 开始扫描
+   */
+  startScan() {
+    console.log('[BleTest] Starting scan...')
+    this.devices = []
+    this.isScanning = true
+    this.addMessage('INFO', '开始扫描')
+
+    const _this = this
+    bluetooth.startDevicesDiscovery({
+      // 可以指定服务 UUID 来过滤设备
+      // services: ["1105"],
+      allowDuplicatesKey: false,
+      success: function () {
+        console.log('[BleTest] Scan started')
+        _this.addMessage('SUCCESS', '开始扫描')
+      },
+      fail: function (data, code) {
+        console.error('[BleTest] Failed to start scan:', code)
+        _this.isScanning = false
+        _this.addMessage('ERROR', '启动扫描失败: ' + code)
+      }
+    })
+
+    // 10秒后自动停止
+    setTimeout(() => {
+      if (_this.isScanning) {
+        _this.stopScan()
+      }
+    }, 10000)
+  },
+
+  /**
+   * 停止扫描
+   */
+  stopScan() {
+    console.log('[BleTest] Stopping scan...')
+    this.isScanning = false
+    this.addMessage('INFO', '停止扫描')
+
+    bluetooth.stopDevicesDiscovery({
+      success: function () {
+        console.log('[BleTest] Scan stopped')
+      },
+      fail: function (data, code) {
+        console.error('[BleTest] Failed to stop scan:', code)
+      }
+    })
+  },
+
+  /**
+   * 选择设备
+   */
+  selectDevice(device) {
+    console.log('[BleTest] Selected device:', device.deviceId)
+    this.selectedDevice = device
+    this.addMessage('INFO', '选中设备: ' + device.name)
+  },
+
+  /**
+   * 连接设备
+   */
+  createConnection() {
+    if (!this.selectedDevice) {
+      this.addMessage('ERROR', '请先选择设备')
+      return
+    }
+
+    console.log('[BleTest] Connecting to:', this.selectedDevice.deviceId)
+    this.addMessage('INFO', '正在连接...')
+
+    const _this = this
+    bluetooth.createBLEConnection({
+      deviceId: this.selectedDevice.deviceId,
+      success: function () {
+        console.log('[BleTest] Connection initiated')
+        _this.addMessage('SUCCESS', '连接请求已发送')
+      },
+      fail: function (data, code) {
+        console.error('[BleTest] Failed to connect:', code)
+        _this.addMessage('ERROR', '连接失败: ' + code)
+      },
+      complete: function () {
+        console.log('[BleTest] Connection complete')
+      }
+    })
+
+    // 停止扫描
+    if (this.isScanning) {
+      this.stopScan()
+    }
+  },
+
+  /**
+   * 断开连接
+   */
+  closeConnection() {
+    if (!this.selectedDevice) {
+      return
+    }
+
+    console.log('[BleTest] Disconnecting...')
+    this.addMessage('INFO', '正在断开...')
+
+    const _this = this
+    bluetooth.closeBLEConnection({
+      deviceId: this.selectedDevice.deviceId,
+      success: function () {
+        console.log('[BleTest] Disconnected')
+        _this.connected = false
+        _this.services = []
+        _this.addMessage('SUCCESS', '已断开连接')
+      },
+      fail: function (data, code) {
+        console.error('[BleTest] Failed to disconnect:', code)
+        _this.addMessage('ERROR', '断开失败: ' + code)
+      }
+    })
+  },
+
+  /**
+   * 获取服务列表
+   */
+  getServices() {
+    if (!this.selectedDevice) {
+      return
+    }
+
+    console.log('[BleTest] Getting services...')
+    this.addMessage('INFO', '获取服务列表')
+
+    const _this = this
+    bluetooth.getBLEDeviceServices({
+      deviceId: this.selectedDevice.deviceId,
+      success: function (data) {
+        console.log('[BleTest] Services:', data.services)
+        _this.services = data.services || []
+        _this.addMessage('SUCCESS', '找到 ' + _this.services.length + ' 个服务')
+
+        // 获取主服务的特征
+        const primaryService = data.services.find(s => s.isPrimary)
+        if (primaryService) {
+          _this.getCharacteristics(primaryService.uuid)
+        }
+      },
+      fail: function (data, code) {
+        console.error('[BleTest] Failed to get services:', code)
+        _this.addMessage('ERROR', '获取服务失败: ' + code)
+      }
+    })
+  },
+
+  /**
+   * 获取特征列表
+   */
+  getCharacteristics(serviceId) {
+    console.log('[BleTest] Getting characteristics for service:', serviceId)
+    this.addMessage('INFO', '获取特征列表')
+
+    const _this = this
+    bluetooth.getBLEDeviceCharacteristics({
+      deviceId: this.selectedDevice.deviceId,
+      serviceId: serviceId,
+      success: function (data) {
+        console.log('[BleTest] Characteristics:', data.characteristics)
+        _this.characteristics = data.characteristics || []
+        _this.addMessage('SUCCESS', '找到 ' + _this.characteristics.length + ' 个特征')
+
+        // 打印特征信息
+        data.characteristics.forEach(char => {
+          console.log('[BleTest] Characteristic:', char.uuid, char.properties)
+        })
+      },
+      fail: function (data, code) {
+        console.error('[BleTest] Failed to get characteristics:', code)
+        _this.addMessage('ERROR', '获取特征失败: ' + code)
+      }
+    })
+  },
+
+  /**
+   * 添加消息记录
+   */
+  addMessage(type, text) {
+    this.messages.unshift({
+      type,
+      text,
+      timestamp: new Date().toLocaleTimeString()
+    })
+
+    // 限制消息数量
+    if (this.messages.length > 50) {
+      this.messages = this.messages.slice(0, 50)
+    }
+  },
+
+  /**
+   * 清空消息记录
+   */
+  clearMessages() {
+    this.messages = []
+    console.log('[BleTest] Messages cleared')
+  },
+
+  /**
+   * 返回首页
+   */
+  goBack() {
+    const router = require('@system.router')
+    router.push({
+      uri: 'pages/Index'
+    })
+  }
+}
+</script>
+
+<style lang="less">
+.ble-page {
+  width: 100%;
+  height: 100%;
+  background-color: #1a1a1a;
+  padding: 12px 15px;
+  flex-direction: column;
+}
+
+.header {
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.title {
+  font-size: 28px;
+  color: #ffffff;
+  font-weight: bold;
+}
+
+.section {
+  background-color: #2a2a2a;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.section-title {
+  font-size: 20px;
+  color: #4CAF50;
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+
+.status-row {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.label {
+  font-size: 16px;
+  color: #888888;
+  width: 80px;
+}
+
+.value {
+  font-size: 16px;
+  color: #ffffff;
+  flex: 1;
+  text-align: right;
+}
+
+.status-ok {
+  font-size: 16px;
+  color: #4CAF50;
+  font-weight: bold;
+}
+
+.status-error {
+  font-size: 16px;
+  color: #ff4444;
+  font-weight: bold;
+}
+
+.device-list {
+  max-height: 200px;
+  flex-direction: column;
+}
+
+.device-item {
+  background-color: #333;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 8px;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.device-info {
+  flex: 1;
+  flex-direction: column;
+}
+
+.device-name {
+  font-size: 16px;
+  color: #ffffff;
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.device-rssi {
+  font-size: 14px;
+  color: #888888;
+}
+
+.device-id {
+  font-size: 12px;
+  color: #2196F3;
+}
+
+.service-list {
+  max-height: 150px;
+  flex-direction: column;
+}
+
+.service-item {
+  background-color: #333;
+  border-radius: 6px;
+  padding: 8px;
+  margin-bottom: 6px;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.service-uuid {
+  font-size: 14px;
+  color: #ffffff;
+  flex: 1;
+}
+
+.service-primary {
+  font-size: 12px;
+  color: #4CAF50;
+}
+
+.button-row {
+  flex-direction: row;
+  justify-content: space-around;
+  margin-top: 10px;
+}
+
+.test-btn {
+  width: 45%;
+  height: 40px;
+  font-size: 16px;
+  border-radius: 8px;
+  color: #ffffff;
+  background-color: #2196F3;
+}
+
+.stop-btn {
+  background-color: #ff4444;
+}
+
+.connect-btn {
+  background-color: #4CAF50;
+}
+
+.disconnect-btn {
+  background-color: #ff4444;
+}
+
+.clear-btn {
+  width: 100%;
+  background-color: #607D8B;
+  margin-top: 10px;
+}
+
+.message-list {
+  max-height: 200px;
+  flex-direction: column;
+}
+
+.message-item {
+  background-color: #333;
+  border-radius: 6px;
+  padding: 8px;
+  margin-bottom: 8px;
+  flex-direction: column;
+}
+
+.msg-time {
+  font-size: 12px;
+  color: #888888;
+  margin-bottom: 4px;
+}
+
+.msg-type {
+  font-size: 14px;
+  color: #2196F3;
+  margin-bottom: 4px;
+}
+
+.msg-text {
+  font-size: 14px;
+  color: #ffffff;
+  font-family: monospace;
+}
+
+.back-btn-container {
+  width: 100%;
+  align-items: center;
+  padding-top: 10px;
+}
+
+.back-btn {
+  width: 100px;
+  height: 45px;
+  font-size: 20px;
+  border-radius: 8px;
+  background-color: #607D8B;
+  color: #ffffff;
+}
+</style>

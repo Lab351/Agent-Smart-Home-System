@@ -1,0 +1,120 @@
+# Mosquitto MQTT Broker Docker Compose配置
+# 用于在服务器上部署MQTT Broker，支持Room Agent通信
+#
+# 部署命令：
+#   docker-compose -f docker/mosquitto-docker-compose.yml up -d
+#
+# 或使用podman（推荐）：
+#   podman-compose -f docker/mosquitto-docker-compose.yml up -d
+#
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ⚠️ 生产环境部署前安全检查清单
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# [ ] 1. 在 mosquitto/config/mosquitto.conf 中启用身份认证
+#     - 配置 listener 1883
+#     - 设置 allow_anonymous false
+#     - 配置 password_file /mosquitto/config/passwd
+#     - 使用 mosquitto_passwd 生成密码文件
+#
+# [ ] 2. 限制端口暴露范围
+#     - 使用防火墙规则限制访问 IP
+#     - 或仅监听 127.0.0.1，通过 Nginx 反向代理暴露
+#
+# [ ] 3. 启用 TLS/SSL 加密（生产环境必须）
+#     - 在 mosquitto.conf 中配置 certfile 和 keyfile
+#     - 监听 8883 端口（MQTTS）而非 1883
+#
+# [ ] 4. 配置访问控制（ACL）
+#     - 配置 acl_file 限制客户端可访问的主题
+#
+# [ ] 5. 资源限制
+#     - 考虑添加 deploy.resources.limit 防止资源耗尽
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+version: '3.8'
+
+services:
+  # Mosquitto MQTT Broker
+  mosquitto:
+    image: eclipse-mosquitto:2.0.18
+    container_name: mosquitto-broker
+    restart: unless-stopped
+
+    # 端口映射（安全警告：端口直接暴露在公网）
+    ports:
+      # MQTT协议端口（1884）
+      # ⚠️ 生产环境建议：启用认证或使用防火墙限制访问
+      - "1884:1884"
+      # MQTT over WebSocket端口（9002）
+      # ⚠️ 生产环境建议：仅在需要时暴露，或通过反向代理（Nginx）提供
+      - "9002:9002"
+
+    # 数据卷（持久化和配置）
+    volumes:
+      # 数据持久化（消息、订阅等）
+      - mosquitto-data:/mosquitto/data
+      # 日志
+      - mosquitto-logs:/mosquitto/logs
+      # 自定义配置（重要：挂载配置文件以应用实际设置）
+      - ./mosquitto/config:/mosquitto/config
+
+    # 注意：eclipse-mosquitto 镜像不通过环境变量配置
+    # 实际配置需要在 ./mosquitto/config/mosquitto.conf 中设置
+
+    # 健康检查（检查 broker 系统主题）
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -h localhost -t '$$SYS/broker/uptime' -C 1 -W 3 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  # 配置管理器（可选，用于Web界面配置）
+  # mosquitto-config:
+  #   image: cveoll/broker-stats-ui:latest
+  #   container_name: mosquitto-config-ui
+  #   restart: unless-stopped
+  #   ports:
+  #     - "9000:9000"  # Web配置界面
+  #   volumes:
+  #     - mosquitto-config-data:/data
+  #   environment:
+  #     - BROKER_URL=mosquitto:1883
+  #   depends_on:
+  #     - mosquitto
+
+  # MQTT Explorer（可选，用于调试）
+  # mqtt-explorer:
+  #   image: hivemq/mqtt-explorer:latest
+  #   container_name: mqtt-explorer
+  #   restart: unless-stopped
+  #   ports:
+  #     - "4000:4000"  # Web界面
+  #   environment:
+  #     - MQTT_BROKER_URL=mqtt://mosquitto:1883
+  #     - MQTT_WS_PORT=9001
+  #     - USERNAME=
+  #     - PASSWORD=
+  #   depends_on:
+  #     - mosquitto
+
+volumes:
+  # 数据持久化（使用标准命名卷）
+  mosquitto-data:
+    driver: local
+
+  mosquitto-logs:
+    driver: local
+
+  # mosquitto-config:
+  #   driver: local
+
+# 网络配置（自动分配子网，避免冲突）
+networks:
+  default:
+    driver: bridge
+    driver_opts:
+      # 启用容器间DNS
+      com.docker.network.bridge.enable_icc: "true"
+      # 启用NAT（否则容器无法访问外网）
+      com.docker.network.bridge.enable_ip_masquerade: "true"

@@ -1,0 +1,549 @@
+<!-- MQTT 连接测试页面 -->
+
+<template>
+  <div class="debug-page">
+    <!-- 顶部标题 -->
+    <div class="header">
+      <text class="title">MQTT 测试</text>
+    </div>
+
+    <!-- 连接状态 -->
+    <div class="section">
+      <text class="section-title">连接状态</text>
+
+      <div class="status-row">
+        <text class="label">状态:</text>
+        <text class="status-ok" show="{{ mqttStatus === 'connected' }}">已连接</text>
+        <text class="status-error" show="{{ mqttStatus === 'disconnected' }}">未连接</text>
+        <text class="status-pending" show="{{ mqttStatus === 'connecting' }}">连接中...</text>
+      </div>
+
+      <div class="status-row">
+        <text class="label">Broker:</text>
+        <text class="value-small">{{ brokerUrl }}</text>
+      </div>
+
+      <div class="status-row">
+        <text class="label">Client ID:</text>
+        <text class="value-small">{{ clientId }}</text>
+      </div>
+
+      <div class="button-row">
+        <input
+          class="test-btn connect-btn"
+          type="button"
+          value="连接"
+          onclick="connectMqtt"
+          disabled="{{ mqttStatus === 'connecting' || mqttStatus === 'connected' }}"
+        />
+        <input
+          class="test-btn disconnect-btn"
+          type="button"
+          value="断开"
+          onclick="disconnectMqtt"
+          disabled="{{ mqttStatus === 'disconnected' || mqttStatus === 'connecting' }}"
+        />
+      </div>
+    </div>
+
+    <!-- 消息收发 -->
+    <div class="section">
+      <text class="section-title">消息测试</text>
+
+      <div class="input-row">
+        <text class="label">主题:</text>
+        <input class="text-input" id="topicInput" value="{{ publishTopic }}" placeholder="输入主题" />
+      </div>
+
+      <div class="input-row">
+        <text class="label">内容:</text>
+        <input class="text-input" id="messageInput" value="{{ publishMessage }}" placeholder="输入消息" />
+      </div>
+
+      <div class="button-row">
+        <input
+          class="test-btn send-btn"
+          type="button"
+          value="发送"
+          onclick="sendMessage"
+          disabled="{{ mqttStatus !== 'connected' }}"
+        />
+      </div>
+    </div>
+
+    <!-- 订阅管理 -->
+    <div class="section">
+      <text class="section-title">订阅主题</text>
+
+      <div class="input-row">
+        <text class="label">主题:</text>
+        <input class="text-input" id="subTopicInput" value="{{ subscribeTopic }}" placeholder="输入订阅主题" />
+      </div>
+
+      <div class="button-row">
+        <input
+          class="test-btn subscribe-btn"
+          type="button"
+          value="订阅"
+          onclick="subscribeTopic"
+          disabled="{{ mqttStatus !== 'connected' }}"
+        />
+      </div>
+
+      <div class="subscriptions" show="{{ subscriptions.length > 0 }}">
+        <text class="sub-title">已订阅 ({{ subscriptions.length }}):</text>
+        <div class="sub-list">
+          <div class="sub-item" for="{{subscriptions}}" tid="{{$item}}">
+            <text class="sub-text">{{$item.topic}}</text>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 消息记录 -->
+    <div class="section" show="{{ messages.length > 0 }}">
+      <text class="section-title">消息记录 ({{ messages.length }})</text>
+
+      <div class="message-list">
+        <div class="message-item" for="{{messages}}" tid="{{$item}}">
+          <text class="msg-time">{{$item.timestamp}}</text>
+          <text class="msg-topic">[{{$item.direction}}] {{$item.topic}}</text>
+          <text class="msg-payload">{{$item.payload}}</text>
+        </div>
+      </div>
+
+      <input
+        class="test-btn clear-btn"
+        type="button"
+        value="清空记录"
+        onclick="clearMessages"
+      />
+    </div>
+
+    <!-- 返回按钮 -->
+    <div class="back-btn-container">
+      <input
+        class="back-btn"
+        type="button"
+        value="← 返回"
+        onclick="goBack"
+      />
+    </div>
+  </div>
+</template>
+
+<script>
+import MqttService from '../../services/mqtt-service'
+import config from '../../config/agent.config'
+
+export default {
+  private: {
+    // MQTT 服务实例
+    mqttService: null,
+
+    // 连接状态
+    mqttStatus: 'disconnected', // disconnected, connecting, connected
+
+    // 连接信息
+    brokerUrl: '',
+    clientId: '',
+
+    // 发布配置
+    publishTopic: 'personal/watch-test/status',
+    publishMessage: '{"test": "hello from watch"}',
+
+    // 订阅配置
+    subscribeTopic: 'personal/watch-test/#',
+
+    // 订阅列表
+    subscriptions: [],
+
+    // 消息记录
+    messages: []
+  },
+
+  onInit() {
+    console.log('[MqttTest] Page initialized')
+    this.mqttService = new MqttService()
+    this.setupConnectionInfo()
+  },
+
+  onDestroy() {
+    // 断开 MQTT 连接
+    this.disconnectMqtt()
+  },
+
+  /**
+   * 设置连接信息
+   */
+  setupConnectionInfo() {
+    this.clientId = `watch-${config.agent.userId}-${Date.now()}`
+    this.brokerUrl = `${config.mqtt.host}:${config.mqtt.wsPort}`
+    this.subscribeTopic = `personal/${config.agent.userId}/watch/#`
+    this.publishTopic = `personal/${config.agent.userId}/watch/status`
+    console.log('[MqttTest] Broker URL:', this.brokerUrl)
+    console.log('[MqttTest] Client ID:', this.clientId)
+  },
+
+  /**
+   * 连接 MQTT Broker
+   */
+  async connectMqtt() {
+    console.log('[MqttTest] Connecting to MQTT broker...')
+
+    this.mqttStatus = 'connecting'
+
+    const options = {
+      host: config.mqtt.host,
+      port: config.mqtt.wsPort,
+      clientId: this.clientId
+    }
+
+    console.log('[MqttTest] Options:', JSON.stringify(options))
+
+    try {
+      const success = await this.mqttService.connect(options)
+      if (success) {
+        console.log('[MqttTest] MQTT connected successfully')
+        this.mqttStatus = 'connected'
+        this.addMessage('SYSTEM', 'connect', '已连接到 Broker')
+
+        // 自动订阅默认主题
+        this.subscribeTo(this.subscribeTopic)
+      } else {
+        console.error('[MqttTest] MQTT connection failed')
+        this.mqttStatus = 'disconnected'
+        this.addMessage('ERROR', 'connect', '连接失败')
+      }
+    } catch (err) {
+      console.error('[MqttTest] Connection error:', err)
+      this.mqttStatus = 'disconnected'
+      this.addMessage('ERROR', 'connect', err.message || '连接错误')
+    }
+  },
+
+  /**
+   * 断开 MQTT 连接
+   */
+  disconnectMqtt() {
+    console.log('[MqttTest] Disconnecting...')
+
+    if (this.mqttService) {
+      this.mqttService.disconnect()
+    }
+
+    this.mqttStatus = 'disconnected'
+    this.subscriptions = []
+    this.addMessage('SYSTEM', 'disconnect', '已断开连接')
+  },
+
+  /**
+   * 发送消息
+   */
+  async sendMessage() {
+    if (!this.mqttService || !this.mqttService.isConnected()) {
+      console.error('[MqttTest] Not connected')
+      this.addMessage('ERROR', 'publish', '未连接')
+      return
+    }
+
+    const topic = this.publishTopic
+    const message = this.publishMessage
+
+    console.log('[MqttTest] Publishing to:', topic)
+    console.log('[MqttTest] Message:', message)
+
+    try {
+      const success = await this.mqttService.publish(topic, message)
+      if (success) {
+        console.log('[MqttTest] Message published successfully')
+        this.addMessage('SEND', topic, message)
+      } else {
+        console.error('[MqttTest] Publish failed')
+        this.addMessage('ERROR', topic, '发送失败')
+      }
+    } catch (err) {
+      console.error('[MqttTest] Publish error:', err)
+      this.addMessage('ERROR', topic, err.message || '发送异常')
+    }
+  },
+
+  /**
+   * 订阅主题
+   */
+  async subscribeTopic() {
+    if (!this.mqttService || !this.mqttService.isConnected()) {
+      console.error('[MqttTest] Not connected')
+      this.addMessage('ERROR', 'subscribe', '未连接')
+      return
+    }
+
+    await this.subscribeTo(this.subscribeTopic)
+  },
+
+  /**
+   * 执行订阅
+   */
+  async subscribeTo(topic) {
+    console.log('[MqttTest] Subscribing to:', topic)
+
+    try {
+      const success = await this.mqttService.subscribe(topic, (payload) => {
+        console.log('[MqttTest] Received message:', topic, payload)
+        this.addMessage('RECV', topic, payload)
+      })
+
+      if (success) {
+        console.log('[MqttTest] Subscribed successfully')
+        // 检查是否已经订阅过
+        const exists = this.subscriptions.some(sub => sub.topic === topic)
+        if (!exists) {
+          this.subscriptions.push({ topic })
+        }
+        this.addMessage('SYSTEM', 'subscribe', `已订阅: ${topic}`)
+      } else {
+        console.error('[MqttTest] Subscribe failed')
+        this.addMessage('ERROR', 'subscribe', '订阅失败')
+      }
+    } catch (err) {
+      console.error('[MqttTest] Subscribe error:', err)
+      this.addMessage('ERROR', 'subscribe', err.message || '订阅异常')
+    }
+  },
+
+  /**
+   * 添加消息记录
+   */
+  addMessage(direction, topic, payload) {
+    this.messages.unshift({
+      direction,
+      topic,
+      payload,
+      timestamp: new Date().toLocaleTimeString()
+    })
+
+    // 限制消息数量
+    if (this.messages.length > 50) {
+      this.messages = this.messages.slice(0, 50)
+    }
+  },
+
+  /**
+   * 清空消息记录
+   */
+  clearMessages() {
+    this.messages = []
+    console.log('[MqttTest] Messages cleared')
+  },
+
+  /**
+   * 返回首页
+   */
+  goBack() {
+    const router = require('@system.router')
+    router.push({
+      uri: 'pages/Index'
+    })
+  }
+}
+</script>
+
+<style lang="less">
+.debug-page {
+  width: 100%;
+  height: 100%;
+  background-color: #1a1a1a;
+  padding: 12px 15px;
+  flex-direction: column;
+}
+
+.header {
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.title {
+  font-size: 28px;
+  color: #ffffff;
+  font-weight: bold;
+}
+
+.section {
+  background-color: #2a2a2a;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.section-title {
+  font-size: 20px;
+  color: #4CAF50;
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+
+.status-row {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.label {
+  font-size: 16px;
+  color: #888888;
+  width: 80px;
+}
+
+.value-small {
+  font-size: 14px;
+  color: #ffffff;
+  flex: 1;
+  text-align: right;
+}
+
+.status-ok {
+  font-size: 16px;
+  color: #4CAF50;
+  font-weight: bold;
+}
+
+.status-error {
+  font-size: 16px;
+  color: #ff4444;
+  font-weight: bold;
+}
+
+.status-pending {
+  font-size: 16px;
+  color: #FFA726;
+  font-weight: bold;
+}
+
+.input-row {
+  flex-direction: row;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.text-input {
+  flex: 1;
+  height: 36px;
+  background-color: #1a1a1a;
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 14px;
+  color: #ffffff;
+}
+
+.button-row {
+  flex-direction: row;
+  justify-content: space-around;
+  margin-top: 10px;
+}
+
+.test-btn {
+  width: 45%;
+  height: 40px;
+  font-size: 16px;
+  border-radius: 8px;
+  color: #ffffff;
+}
+
+.connect-btn {
+  background-color: #4CAF50;
+}
+
+.disconnect-btn {
+  background-color: #ff4444;
+}
+
+.send-btn {
+  background-color: #2196F3;
+}
+
+.subscribe-btn {
+  background-color: #9C27B0;
+}
+
+.clear-btn {
+  width: 100%;
+  background-color: #607D8B;
+  margin-top: 10px;
+}
+
+.subscriptions {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top-color: #444;
+  border-top-width: 1px;
+}
+
+.sub-title {
+  font-size: 14px;
+  color: #888888;
+  margin-bottom: 8px;
+}
+
+.sub-list {
+  flex-direction: column;
+}
+
+.sub-item {
+  background-color: #333;
+  border-radius: 6px;
+  padding: 8px;
+  margin-bottom: 6px;
+}
+
+.sub-text {
+  font-size: 14px;
+  color: #4CAF50;
+}
+
+.message-list {
+  max-height: 200px;
+  flex-direction: column;
+}
+
+.message-item {
+  background-color: #333;
+  border-radius: 6px;
+  padding: 8px;
+  margin-bottom: 8px;
+  flex-direction: column;
+}
+
+.msg-time {
+  font-size: 12px;
+  color: #888888;
+  margin-bottom: 4px;
+}
+
+.msg-topic {
+  font-size: 14px;
+  color: #2196F3;
+  margin-bottom: 4px;
+}
+
+.msg-payload {
+  font-size: 14px;
+  color: #ffffff;
+  font-family: monospace;
+}
+
+.back-btn-container {
+  width: 100%;
+  align-items: center;
+  padding-top: 10px;
+}
+
+.back-btn {
+  width: 100px;
+  height: 45px;
+  font-size: 20px;
+  border-radius: 8px;
+  background-color: #607D8B;
+  color: #ffffff;
+}
+</style>

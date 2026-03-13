@@ -1,0 +1,1037 @@
+<!-- Personal Agent 语音控制页面 -->
+
+<template>
+  <div class="voice-control-page">
+    <!-- 顶部状态栏 - 紧凑版 -->
+    <div class="status-bar">
+      <text class="room-label">{{ currentRoomName || '未绑定' }}</text>
+      <text class="connection-dot-connected" show="{{ isConnected }}">●</text>
+      <text class="connection-dot-disconnected" show="{{ !isConnected }}"
+        >●</text
+      >
+    </div>
+
+    <!-- 主控制区 - 垂直居中布局 -->
+    <div class="main-control">
+      <!-- 状态文本 -->
+      <text class="status-text">{{ statusText }}</text>
+
+<!-- 结果显示区 -->
+      <div class="results-section">
+        <div class="message-flow">
+          <div class="message-item" for="{{ message in messageList }}">
+            <div class="message-header">
+              <text class="message-icon">{{ message.icon }}</text>
+              <text class="message-time">{{ message.time }}</text>
+            </div>
+            <text class="message-content message-{{ message.type }}-text">{{ message.content }}</text>
+          </div>
+        </div>
+      </div>
+
+      <!-- 麦克风按钮 - 居中 -->
+      <div class="mic-button-container">
+        <input
+          class="mic-button"
+          type="button"
+          value="🎤"
+          show="{{ !isRecording }}"
+          onclick="toggleRecording"
+        />
+        <input
+          class="mic-button-recording"
+          type="button"
+          value="⏹"
+          show="{{ isRecording }}"
+          onclick="toggleRecording"
+        />
+      </div>
+    </div>
+
+    <!-- 返回按钮 - 底部居中 -->
+    <div class="back-btn-container">
+      <input class="back-btn" type="button" value="← 返回" onclick="goBack" />
+    </div>
+  </div>
+</template>
+
+<script>
+import ControlService from '../../services/ControlService'
+import QwenService from '../../services/QwenService'
+import AsrService from '../../services/AsrService'
+import BeaconService from '../../services/BeaconService'
+import DiscoveryService from '../../services/DiscoveryService'
+import IntentService from '../../services/IntentService'
+import RouterService from '../../services/RouterService'
+import HomeAgentService from '../../services/HomeAgentService'
+import config from '../../config/agent.config'
+
+export default {
+  private: {
+    statusText: '点击麦克风开始录音',
+
+    messageList: [],
+    isRecording: false,
+    isRecognizing: false,
+
+    aiStatus: '',
+    conversationHistory: [],
+
+    errorType: null,
+
+    currentRoomId: null,
+    currentRoomName: null,
+    currentBeaconId: null,
+    isConnected: false,
+    isConnecting: false,
+    availableDevices: [],
+
+    tempFilePath: null,
+
+    controlService: null,
+    record: null,
+    audio: null,
+    textToAudio: null,
+    qwenService: null,
+    asrService: null,
+    beaconService: null,
+    discoveryService: null,
+    intentService: null,
+    routerService: null,
+    homeAgentService: null,
+
+    ttsText: '你好，这是语音合成测试',
+    isSpeaking: false,
+  },
+
+onInit() {
+    console.log('[VoiceControl] Page initialized')
+
+    this.controlService = new ControlService()
+    this.beaconService = new BeaconService()
+    this.discoveryService = new DiscoveryService(this.controlService.getMqttService())
+    this.intentService = new IntentService()
+    this.homeAgentService = new HomeAgentService(this.controlService.getMqttService())
+    this.routerService = new RouterService(
+      this.controlService,
+      this.discoveryService,
+      this.homeAgentService
+    )
+
+    this.loadSavedRoom()
+    this.initRecorder()
+    this.initTextToAudio()
+    this.initQwenService()
+    this.initAsrService()
+  },
+
+onReady() {
+    console.log('[VoiceControl] Page ready')
+    
+    this.startBeaconScanning()
+  },
+
+onDestroy() {
+    console.log('[VoiceControl] Page destroying')
+
+    if (this.isRecording && this.record) {
+      this.record.stop()
+    }
+
+    if (this.isSpeaking && this.textToAudio) {
+      this.textToAudio.stop()
+    }
+
+    if (this.qwenService) {
+      this.qwenService = null
+    }
+
+    if (this.beaconService) {
+      this.beaconService.destroy()
+      this.beaconService = null
+    }
+
+if (this.discoveryService) {
+      this.discoveryService.destroy()
+      this.discoveryService = null
+    }
+
+    if (this.routerService) {
+      this.routerService = null
+    }
+
+    if (this.homeAgentService) {
+      this.homeAgentService.destroy()
+      this.homeAgentService = null
+    }
+
+    if (this.controlService) {
+      this.controlService.destroy()
+    }
+  },
+
+  /**
+   * 加载已保存的房间绑定
+   */
+  loadSavedRoom() {
+    try {
+      const storage = require('@system.storage')
+      storage.get({
+        key: 'bound_room',
+        success: (data) => {
+          if (data) {
+            this.currentRoomId = data
+            this.currentRoomName = this.getRoomDisplayName(data)
+            console.log('[VoiceControl] Loaded saved room:', data)
+          }
+        },
+        fail: () => {
+          console.log('[VoiceControl] No saved room found')
+        }
+      })
+    } catch (err) {
+      console.error('[VoiceControl] Failed to load saved room:', err)
+    }
+  },
+
+  /**
+   * 获取房间显示名称
+   */
+  getRoomDisplayName(roomId) {
+    const roomNames = {
+      'livingroom': '客厅',
+      'bedroom': '卧室',
+      'study': '书房',
+      'kitchen': '厨房'
+    }
+    return roomNames[roomId] || roomId
+  },
+
+  /**
+   * 初始化录音模块
+   */
+  initRecorder() {
+    try {
+      this.record = require('@system.record')
+      this.audio = require('@system.audio')
+      console.log('[VoiceControl] Recorder and audio initialized')
+    } catch (err) {
+      console.error('[VoiceControl] Failed to init recorder:', err)
+      this.statusText = '录音器初始化失败'
+    }
+  },
+
+  /**
+   * 切换录音状态
+   */
+  toggleRecording() {
+    if (this.isRecording) {
+      // 停止录音
+      this.record.stop()
+    } else {
+      // 开始录音
+      try {
+        // 清除旧结果
+        this.clearResults()
+
+        this.tempFilePath = null
+        this.isRecording = true
+        this.statusText = '正在录音...'
+
+        this.record.start({
+          duration: 10000,
+          sampleRate: 16000,
+          numberOfChannels: 1,
+          encodeBitRate: 16000,
+          format: 'aac',
+          success: (data) => {
+            console.log('[VoiceControl] Recording success:', data.uri)
+            this.tempFilePath = data.uri
+            this.isRecording = false
+            this.statusText = '录音已完成'
+
+            // 自动开始语音识别
+            this.startAsrRecognition(data.uri)
+          },
+          fail: (data, code) => {
+            console.error(`[VoiceControl] Recording fail, code = ${code}, errorMsg=${data}`)
+            this.isRecording = false
+            this.showError('recording', `录音失败 (错误代码: ${code})`)
+          }
+        })
+
+      } catch (err) {
+        console.error('[VoiceControl] Failed to start recording', err)
+        this.isRecording = false
+        this.showError('recording', '启动录音失败: ' + err.message)
+      }
+    }
+  },
+
+  /**
+   * 初始化语音合成模块
+   */
+initTextToAudio() {
+    try {
+      this.textToAudio = require('@service.texttoaudio')
+      console.log('[VoiceControl] TextToAudio initialized')
+    } catch (err) {
+      console.error('[VoiceControl] Failed to init TextToAudio:', err)
+      this.addMessageToList('system', '语音合成模块初始化失败', 'error')
+    }
+  },
+
+  /**
+   * 播放语音合成
+   * @param {string} text - 要播放的文本
+   */
+  speakText(text) {
+    if (!this.textToAudio) {
+      console.log('[VoiceControl] TextToAudio not initialized')
+      return
+    }
+
+    if (!text) {
+      console.log('[VoiceControl] No text to speak')
+      return
+    }
+
+    try {
+      console.log('[VoiceControl] Speaking text:', text)
+      this.isSpeaking = true
+
+      this.textToAudio.speak({
+        lang: 'zh_CN',
+        content: text,
+        success: () => {
+          console.log('[VoiceControl] Speak success')
+          this.isSpeaking = false
+        },
+        fail: (data, code) => {
+          console.error(`[VoiceControl] Speak fail, code = ${code}, errorMsg=${data}`)
+          this.isSpeaking = false
+        },
+        cancel: () => {
+          console.log('[VoiceControl] Speak cancelled')
+          this.isSpeaking = false
+        }
+      })
+    } catch (err) {
+      console.error('[VoiceControl] Failed to speak:', err)
+      this.isSpeaking = false
+    }
+  },
+
+  /**
+   * 停止语音合成
+   */
+stopSpeaking() {
+    if (!this.textToAudio) {
+      return
+    }
+
+    try {
+      this.textToAudio.stop()
+      console.log('[VoiceControl] Stopped speaking')
+      this.isSpeaking = false
+    } catch (err) {
+      console.error('[VoiceControl] Failed to stop speaking:', err)
+    }
+  },
+
+  /**
+   * 初始化 Qwen 服务
+   */
+initQwenService() {
+    try {
+      this.qwenService = new QwenService()
+      console.log('[VoiceControl] QwenService initialized')
+    } catch (err) {
+      console.error('[VoiceControl] Failed to init QwenService:', err)
+      this.addMessageToList('system', 'AI服务初始化失败', 'error')
+    }
+  },
+
+  /**
+   * 发送文本到AI并显示回复
+   * @param {string} text - 要发送的文本
+   */
+  async sendToAI(text) {
+    if (!this.qwenService) {
+      console.error('[VoiceControl] QwenService not initialized')
+      this.showError('ai', 'AI服务未初始化')
+      return
+    }
+
+    try {
+      this.statusText = '正在思考...'
+      this.aiStatus = 'thinking'
+      console.log('[VoiceControl] Sending to AI:', text)
+
+      // 调用后端 API
+      const response = await this.qwenService.chat(
+        text,
+        this.conversationHistory,
+        'You are a helpful assistant.'
+      )
+
+      console.log('[VoiceControl] AI response:', response)
+
+      // 保存到对话历史
+      this.conversationHistory.push(
+        { role: 'user', content: text },
+        { role: 'assistant', content: response }
+      )
+
+      // 限制历史记录数量（保留最近 6 条，即 3 轮对话）
+      if (this.conversationHistory.length > 6) {
+        this.conversationHistory = this.conversationHistory.slice(-6)
+      }
+
+      // 显示AI回复
+      this.showAIResponse(response)
+
+      // 自动播放 AI 回复
+      setTimeout(() => {
+        this.speakText(response)
+      }, 500)
+
+    } catch (err) {
+      console.error('[VoiceControl] AI chat failed:', err)
+      this.showError('ai', 'AI对话失败: ' + err.message)
+    }
+},
+
+  /**
+   * 启动 Beacon 扫描
+   */
+  async startBeaconScanning() {
+    if (!this.beaconService) {
+      console.error('[VoiceControl] BeaconService not initialized')
+      return
+    }
+
+    console.log('[VoiceControl] Starting beacon scanning...')
+
+    const success = await this.beaconService.initAdapter()
+    if (!success) {
+      console.error('[VoiceControl] Failed to init beacon adapter')
+      this.statusText = '蓝牙初始化失败'
+      return
+    }
+
+this.beaconService.onRoomChanged = async (data) => {
+      console.log('[VoiceControl] Room changed:', data)
+      
+      if (data.roomId) {
+        try {
+          const agentInfo = await this.discoveryService.getRoomAgentByRoomId(data.roomId)
+          
+          if (agentInfo) {
+            this.currentRoomId = agentInfo.room_id
+            this.currentRoomName = agentInfo.room_name || data.roomName
+            this.currentBeaconId = data.beacon ? data.beacon.major.toString() : null
+            
+            await this.connectToRoomAgent(agentInfo)
+          } else {
+            this.currentRoomId = data.roomId
+            this.currentRoomName = data.roomName
+            this.currentBeaconId = data.beacon ? data.beacon.major.toString() : null
+            this.isConnected = false
+          }
+        } catch (err) {
+          console.error('[VoiceControl] Failed to get room info:', err)
+          this.currentRoomId = data.roomId
+          this.currentRoomName = data.roomName
+          this.currentBeaconId = data.beacon ? data.beacon.major.toString() : null
+          this.isConnected = false
+        }
+      } else {
+        this.currentRoomId = null
+        this.currentRoomName = null
+        this.currentBeaconId = null
+        this.isConnected = false
+      }
+    }
+
+    this.beaconService.onError = (error) => {
+      console.error('[VoiceControl] Beacon error:', error)
+      this.addMessageToList('system', `Beacon错误: ${error.message}`, 'warning')
+    }
+
+    await this.beaconService.startScanning()
+  },
+
+  /**
+   * 连接到 Room Agent
+   */
+  async connectToRoomAgent(agentInfo) {
+    if (this.isConnecting) {
+      return
+    }
+
+    this.isConnecting = true
+    this.statusText = '正在连接...'
+
+    try {
+      const mqtt = this.controlService.getMqttService()
+      
+      const success = await mqtt.connect({
+        host: agentInfo.mqtt_broker || config.mqtt.host,
+        port: agentInfo.mqtt_ws_port || config.mqtt.wsPort,
+        clientId: `watch-${config.agent.userId}-${Date.now()}`
+      })
+
+      this.isConnected = success
+      this.isConnecting = false
+
+if (success) {
+        console.log('[VoiceControl] Connected to room agent:', agentInfo.agent_id)
+        this.statusText = '点击麦克风开始录音'
+        
+        this.controlService.setRoomAgent(agentInfo.room_id, agentInfo.agent_id)
+        this.routerService.setCurrentRoom(agentInfo.room_id, this.currentBeaconId)
+        
+        await this.controlService.subscribeToState(agentInfo.room_id, (state) => {
+          console.log('[VoiceControl] State update received:', state)
+          if (state && state.devices) {
+            this.addMessageToList('system', '设备状态已更新', 'success')
+          }
+        })
+        
+        await mqtt.subscribe(`room/${agentInfo.room_id}/agent/${agentInfo.agent_id}/state`)
+        await mqtt.subscribe(`room/${agentInfo.room_id}/agent/${agentInfo.agent_id}/description`)
+        
+        this.addMessageToList('system', `已连接到${this.currentRoomName}`, 'success')
+      } else {
+        console.error('[VoiceControl] Failed to connect to room agent')
+        this.statusText = '连接失败'
+        this.addMessageToList('system', '连接失败', 'error')
+      }
+    } catch (err) {
+      console.error('[VoiceControl] Connection error:', err)
+      this.isConnected = false
+      this.isConnecting = false
+      this.statusText = '连接失败'
+      this.addMessageToList('system', `连接错误: ${err.message}`, 'error')
+    }
+  },
+
+  /**
+   * 连接到 MQTT broker
+   */
+  async connectToBroker() {
+    if (this.isConnecting || this.controlService.isConnected()) {
+      return
+    }
+
+    this.isConnecting = true
+    this.statusText = '正在连接...'
+
+    try {
+      const mqtt = this.controlService.getMqttService()
+      const success = await mqtt.connect({
+        host: config.mqtt.host,
+        port: config.mqtt.wsPort,
+        clientId: `watch-${config.agent.userId}-${Date.now()}`
+      })
+
+      this.isConnected = success
+      this.isConnecting = false
+
+      if (success) {
+        console.log('[VoiceControl] Connected to MQTT broker')
+        this.statusText = '点击麦克风开始录音'
+      } else {
+        console.error('[VoiceControl] Failed to connect')
+        this.statusText = '连接失败'
+      }
+    } catch (err) {
+      console.error('[VoiceControl] Connection error:', err)
+      this.isConnected = false
+      this.isConnecting = false
+      this.statusText = '连接失败'
+    }
+  },
+
+  /**
+   * 返回首页
+   */
+  goBack() {
+    const router = require('@system.router')
+    router.push({
+      uri: 'pages/Index'
+    })
+  },
+
+  /**
+   * 初始化 ASR 服务
+   */
+  initAsrService() {
+    try {
+      this.asrService = new AsrService()
+      console.log('[VoiceControl] AsrService initialized')
+    } catch (err) {
+      console.error('[VoiceControl] Failed to init AsrService:', err)
+    }
+  },
+
+/**
+   * 开始语音识别
+   */
+  async startAsrRecognition(audioUri) {
+    if (!this.asrService) {
+      console.error('[VoiceControl] AsrService not initialized')
+      this.showError('asr', '语音识别服务未初始化')
+      return
+    }
+
+    this.isRecognizing = true
+    this.statusText = '正在识别...'
+
+    try {
+      console.log('[VoiceControl] Starting ASR for:', audioUri)
+
+      const text = await this.asrService.recognize(audioUri, 'aac', 16000)
+
+      console.log('[VoiceControl] ASR result:', text)
+
+      if (text && text.trim()) {
+        this.addMessageToList('user', text)
+        this.statusText = '识别完成'
+
+        this.extractHabitFromText(text)
+
+        const context = {
+          current_room: this.currentRoomId,
+          current_beacon_id: this.currentBeaconId,
+          available_devices: this.availableDevices,
+          conversation_history: this.conversationHistory
+        }
+        const intent = await this.intentService.parse(text, context)
+        console.log('[VoiceControl] Parsed intent:', intent)
+
+        if (this.intentService.isControlIntent(intent)) {
+          await this.handleControlIntent(intent)
+        } else {
+          await this.sendToAI(text)
+        }
+      } else {
+        this.showError('asr', '未识别到语音，请重试')
+      }
+
+    } catch (err) {
+      console.error('[VoiceControl] ASR failed:', err)
+      this.showError('asr', '识别失败: ' + err.message)
+    } finally {
+      this.isRecognizing = false
+    }
+  },
+
+  /**
+   * 处理设备控制意图
+   */
+  async handleControlIntent(intent) {
+    try {
+      console.log('[VoiceControl] Handling control intent:', intent)
+
+      const route = await this.routerService.route(intent)
+      console.log('[VoiceControl] Route decision:', route)
+
+      if (route.target === 'room-agent') {
+        this.addMessageToList('system', `正在控制${this.getDeviceDisplayName(intent.device)}...`, 'info')
+
+        const success = await this.controlService.sendControl(
+          route.roomId,
+          route.device,
+          route.action,
+          route.parameters
+        )
+
+        if (success) {
+          this.addMessageToList('system', '命令已发送', 'success')
+          this.statusText = '控制完成'
+        } else {
+          this.addMessageToList('system', '发送失败，请重试', 'error')
+        }
+      } else if (route.target === 'home-agent') {
+        this.addMessageToList('system', '正在处理跨房间控制...', 'info')
+
+        const success = await this.homeAgentService.sendTask(intent)
+
+        if (success) {
+          this.addMessageToList('system', '任务已提交', 'success')
+        } else {
+          this.addMessageToList('system', '提交失败，请重试', 'error')
+        }
+      } else {
+        this.addMessageToList('system', '无法处理该指令', 'warning')
+        await this.sendToAI(intent.text)
+      }
+
+    } catch (err) {
+      console.error('[VoiceControl] Handle control intent failed:', err)
+      this.addMessageToList('system', '控制失败: ' + err.message, 'error')
+    }
+  },
+
+  /**
+   * 获取设备显示名称
+   */
+  getDeviceDisplayName(deviceId) {
+    const deviceNames = {
+      'light': '灯',
+      'ceiling_light': '吊灯',
+      'main_light': '主灯',
+      'desk_light': '台灯',
+      'bedside_light': '床头灯',
+      'speaker': '音响',
+      'ac': '空调',
+      'fan': '风扇',
+      'curtain': '窗帘',
+      'tv': '电视'
+    }
+    return deviceNames[deviceId] || deviceId
+  },
+
+  /**
+   * 从识别的文本中提取习惯
+   */
+  async extractHabitFromText(text) {
+    try {
+      const UserPreferenceService = require('../../services/UserPreferenceService').default
+      const preferenceService = new UserPreferenceService()
+
+      // 简单的关键词匹配
+      const keywords = ['喜欢', '习惯', '每天', '经常', '总是', '一般']
+      const hasKeyword = keywords.some(kw => text.includes(kw))
+
+      if (hasKeyword) {
+        console.log('[VoiceControl] Extracting habit from:', text)
+
+        // 自动分类
+        let category = 'general'
+        if (text.includes('灯') || text.includes('亮度') || text.includes('开灯') || text.includes('关灯')) {
+          category = 'lighting'
+        } else if (text.includes('空调') || text.includes('温度') || text.includes('制热') || text.includes('制冷')) {
+          category = 'climate'
+        } else if (text.includes('音乐') || text.includes('播放')) {
+          category = 'entertainment'
+        }
+
+        await preferenceService.addHabit(text, category)
+        console.log('[VoiceControl] Habit saved:', category)
+      }
+    } catch (err) {
+      console.error('[VoiceControl] Failed to extract habit:', err)
+    }
+  },
+
+/**
+   * 清除错误信息
+   */
+  clearError() {
+    this.errorType = null
+  },
+
+  /**
+   * 显示错误信息
+   * @param {string} type - 错误类型
+   * @param {string} message - 错误信息
+   */
+  showError(type, message) {
+    this.errorType = type
+    this.addMessageToList('system', message, 'error')
+
+    const statusMap = {
+      'recording': '录音失败',
+      'asr': '识别失败',
+      'ai': 'AI服务不可用',
+      'connection': '连接失败'
+    }
+    this.statusText = statusMap[type] || '发生错误'
+  },
+
+  /**
+   * 清除结果显示
+   */
+  clearResults() {
+    this.messageList = []
+    this.errorType = null
+  },
+
+  /**
+   * 显示AI回复
+   * @param {string} response - AI回复内容
+   */
+showAIResponse(response) {
+    this.aiStatus = 'success'
+    this.statusText = 'AI回复完成'
+    this.addMessageToList('assistant', response)
+  },
+
+  /**
+   * 添加消息到消息流
+   * @param {string} type - 消息类型: 'user' | 'assistant' | 'system'
+   * @param {string} content - 消息内容
+   * @param {string} level - 系统消息级别: 'info' | 'success' | 'warning' | 'error'
+   */
+  addMessageToList(type, content, level = 'info') {
+    const iconMap = {
+      'user': '👤',
+      'assistant': '🦊',
+      'system': {
+        'info': 'ℹ️',
+        'success': '✅',
+        'warning': '⚠️',
+        'error': '❌'
+      }
+    }
+    
+    const now = new Date()
+    const hours = now.getHours().toString().padStart(2, '0')
+    const minutes = now.getMinutes().toString().padStart(2, '0')
+    const seconds = now.getSeconds().toString().padStart(2, '0')
+    const time = `${hours}:${minutes}:${seconds}`
+    
+    this.messageList.push({
+      type,
+      icon: type === 'system' ? iconMap.system[level] : iconMap[type],
+      content,
+      time,
+      level
+    })
+    
+    if (this.messageList.length > 20) {
+      this.messageList.shift()
+    }
+  }
+}
+</script>
+
+<style lang="less">
+.voice-control-page {
+  width: 100%;
+  height: 100%;
+  background-color: #1a1a1a;
+  padding: 10px 15px;
+  flex-direction: column;
+}
+
+.status-bar {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background-color: #2a2a2a;
+  border-radius: 8px;
+}
+
+.room-label {
+  font-size: 18px;
+  color: #ffffff;
+  font-weight: bold;
+}
+
+.connection-dot-connected {
+  font-size: 18px;
+  color: #4caf50;
+}
+
+.connection-dot-disconnected {
+  font-size: 18px;
+  color: #ff4444;
+}
+
+.main-control {
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+}
+
+.status-text {
+  font-size: 20px;
+  color: #ffffff;
+  text-align: center;
+  margin-bottom: 12px;
+  min-height: 25px;
+}
+
+.mic-button-container {
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  margin: 16px;
+}
+
+.mic-button {
+  width: 95px;
+  height: 95px;
+  font-size: 48px;
+  border-radius: 47.5px;
+  background-color: #4caf50;
+  color: #ffffff;
+}
+
+.mic-button-recording {
+  width: 95px;
+  height: 95px;
+  font-size: 48px;
+  border-radius: 47.5px;
+  background-color: #ff4444;
+  color: #ffffff;
+}
+
+.result-container,
+.intent-container,
+.execution-container {
+  width: 100%;
+  background-color: #2a2a2a;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.result-text {
+  font-size: 20px;
+  color: #ffffff;
+  text-align: center;
+}
+
+/* 结果显示区 */
+.results-section {
+  width: 100%;
+  margin-top: 20px;
+  flex-direction: column;
+  flex: 1;
+}
+
+.message-flow {
+  width: 100%;
+  flex-direction: column;
+}
+
+.message-item {
+  width: 100%;
+  background-color: #2a2a2a;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 10px;
+  border-left: 3px solid #4a4a4a;
+  flex-direction: column;
+}
+
+.message-header {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.message-icon {
+  font-size: 18px;
+  margin-right: 6px;
+}
+
+.message-time {
+  font-size: 14px;
+  color: #888888;
+}
+
+.message-content {
+  font-size: 16px;
+  color: #e0e0e0;
+  line-height: 24px;
+  padding: 4px 0;
+}
+
+.message-user-text {
+  color: #90ee90;
+}
+
+.message-assistant-text {
+  color: #87ceeb;
+}
+
+.message-system-text {
+  color: #ffffff;
+}
+
+.result-icon {
+  font-size: 20px;
+  margin-right: 8px;
+  line-height: 32px;
+}
+
+.ai-icon {
+  color: #87ceeb;
+}
+
+.error-icon {
+  color: #ffb6c1;
+}
+
+.voice-text {
+  flex: 1;
+  font-size: 18px;
+  color: #90ee90;
+  text-align: left;
+  line-height: 32px;
+}
+
+.ai-text {
+  flex: 1;
+  font-size: 18px;
+  color: #87ceeb;
+  text-align: left;
+  line-height: 32px;
+}
+
+.error-message {
+  flex: 1;
+  font-size: 16px;
+  color: #ffb6c1;
+  text-align: left;
+  line-height: 32px;
+}
+
+/* AI 对话区域 */
+.ai-chat-section {
+  width: 100%;
+  padding: 10px 0;
+}
+
+.ai-chat-btn {
+  width: 100%;
+  height: 45px;
+  font-size: 18px;
+  border-radius: 8px;
+  background-color: #9c27b0;
+  color: #ffffff;
+}
+
+.back-btn-container {
+  width: 100%;
+  align-items: center;
+  padding-top: 5px;
+}
+
+.back-btn {
+  width: 100px;
+  height: 45px;
+  font-size: 20px;
+  border-radius: 8px;
+  background-color: #607d8b;
+  color: #ffffff;
+}
+
+.preferences-btn {
+  width: 100%;
+  height: 45px;
+  font-size: 18px;
+  border-radius: 8px;
+  background-color: #ff9800;
+  color: #ffffff;
+}
+</style>

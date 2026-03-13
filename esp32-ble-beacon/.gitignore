@@ -1,0 +1,53 @@
+# ESP-IDF 构建输出
+build/
+dist/
+
+# ESP-IDF 依赖管理
+managed_components/
+dependencies.lock
+
+# SDK 配置文件（构建时生成）
+sdkconfig
+sdkconfig.old
+
+# Python 相关
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# 编译产物
+*.o
+*.a
+*.elf
+*.bin
+*.map
+*.d
+
+# IDE 和编辑器
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# 日志文件
+*.log
+
+# 调试文件
+*.dSYM/
+
+# 测试覆盖率
+.coverage
+htmlcov/
+
+# 临时文件
+*.tmp
+*.bak
+*.cache

@@ -1,0 +1,599 @@
+<!-- 用户偏好设置页面 -->
+
+<template>
+  <div class="preferences-page">
+    <!-- 顶部状态栏 -->
+    <div class="status-bar">
+      <text class="page-title">⚙️ 偏好设置</text>
+    </div>
+
+    <!-- 内容区 -->
+    <div class="content">
+      <!-- 基础设置 -->
+      <div class="section">
+        <text class="section-title">基础设置</text>
+
+        <div class="setting-item">
+          <text class="setting-label">默认房间</text>
+          <input
+            class="setting-select"
+            type="button"
+            value="{{ defaultRoomDisplayName }}"
+            onclick="showRoomPicker"
+          />
+        </div>
+
+        <div class="setting-item">
+          <text class="setting-label">睡眠时间</text>
+          <input
+            class="setting-input"
+            type="text"
+            value="{{ preferences.lighting.bedtime }}"
+            oninput="updateBedtime"
+            placeholder="22:00"
+          />
+        </div>
+      </div>
+
+      <!-- 灯光偏好 -->
+      <div class="section">
+        <text class="section-title">灯光偏好</text>
+
+        <div class="setting-item">
+          <text class="setting-label">默认亮度</text>
+          <div class="slider-container">
+            <input
+              class="setting-slider"
+              type="range"
+              value="{{ preferences.lighting.preferredBrightness }}"
+              min="0"
+              max="100"
+              onchange="updateBrightness"
+            />
+            <text class="slider-value">{{ preferences.lighting.preferredBrightness }}%</text>
+          </div>
+        </div>
+      </div>
+
+      <!-- 空调偏好 -->
+      <div class="section">
+        <text class="section-title">空调偏好</text>
+
+        <div class="setting-item">
+          <text class="setting-label">默认温度</text>
+          <input
+            class="setting-input"
+            type="text"
+            value="{{ preferences.climate.preferredTemp }}"
+            oninput="updateTemp"
+            placeholder="26"
+          />
+        </div>
+
+        <div class="setting-item">
+          <text class="setting-label">默认模式</text>
+          <input
+            class="setting-select"
+            type="button"
+            value="{{ climateModeDisplayName }}"
+            onclick="showClimateModePicker"
+          />
+        </div>
+      </div>
+
+      <!-- 习惯管理 -->
+      <div class="section">
+        <text class="section-title">我的习惯</text>
+
+        <div class="habits-header">
+          <text class="habits-count">共 {{ habits.length }} 条习惯</text>
+          <input
+            class="add-habit-btn"
+            type="button"
+            value="+ 添加习惯"
+            onclick="showAddHabitDialog"
+          />
+        </div>
+
+        <!-- 习惯列表 -->
+        <div class="habits-list">
+          <div class="habit-item" for="{{ habit in habits }}">
+            <div class="habit-content">
+              <text class="habit-text">{{ habit.content }}</text>
+              <text class="habit-category">{{ getCategoryName(habit.category) }}</text>
+            </div>
+            <input
+              class="habit-delete-btn"
+              type="button"
+              value="删除"
+              onclick="deleteHabit(habit.id)"
+            />
+          </div>
+        </div>
+
+        <div class="empty-state" show="{{ habits.length === 0 }}">
+          <text class="empty-text">还没有添加习惯</text>
+        </div>
+      </div>
+
+      <!-- 数据管理 -->
+      <div class="section">
+        <text class="section-title">数据管理</text>
+
+        <div class="data-buttons">
+          <input
+            class="data-btn"
+            type="button"
+            value="导出数据"
+            onclick="exportData"
+          />
+          <input
+            class="data-btn danger"
+            type="button"
+            value="清空数据"
+            onclick="confirmClearData"
+          />
+        </div>
+      </div>
+    </div>
+
+    <!-- 返回按钮 -->
+    <div class="back-btn-container">
+      <input
+        class="back-btn"
+        type="button"
+        value="← 返回"
+        onclick="goBack"
+      />
+    </div>
+  </div>
+</template>
+
+<script>
+import UserPreferenceService from '../../services/UserPreferenceService'
+
+export default {
+  private: {
+    // 服务
+    preferenceService: null,
+
+    // 数据
+    preferences: {},
+    habits: [],
+
+    // UI 状态
+    defaultRoomDisplayName: '客厅',
+    climateModeDisplayName: '制冷',
+
+    // 房间映射
+    roomNames: {
+      'livingroom': '客厅',
+      'bedroom': '卧室',
+      'study': '书房',
+      'kitchen': '厨房'
+    },
+
+    // 空调模式映射
+    climateModeNames: {
+      'cool': '制冷',
+      'heat': '制热',
+      'dry': '除湿',
+      'auto': '自动'
+    },
+
+    // 习惯分类映射
+    categoryNames: {
+      'lighting': '灯光',
+      'climate': '空调',
+      'entertainment': '娱乐',
+      'general': '其他'
+    }
+  },
+
+  onInit() {
+    console.log('[Preferences] Page initialized')
+
+    // 初始化服务
+    this.preferenceService = new UserPreferenceService()
+  },
+
+  onReady() {
+    console.log('[Preferences] Page ready')
+    // 加载数据
+    this.loadData()
+  },
+
+  /**
+   * 加载数据
+   */
+  async loadData() {
+    try {
+      const data = await this.preferenceService.loadPreferences()
+
+      this.preferences = data.preferences || {}
+
+      // 加载习惯列表
+      this.habits = await this.preferenceService.getAllHabits()
+
+      // 更新显示
+      this.updateDisplay()
+
+      console.log('[Preferences] Data loaded:', { preferences: this.preferences, habits: this.habits })
+    } catch (err) {
+      console.error('[Preferences] Failed to load data:', err)
+    }
+  },
+
+  /**
+   * 更新显示
+   */
+  updateDisplay() {
+    // 默认房间
+    const defaultRoom = this.preferences.defaultRoom || 'livingroom'
+    this.defaultRoomDisplayName = this.roomNames[defaultRoom] || defaultRoom
+
+    // 空调模式
+    const climateMode = this.preferences.climate?.mode || 'cool'
+    this.climateModeDisplayName = this.climateModeNames[climateMode] || climateMode
+  },
+
+  /**
+   * 显示房间选择器
+   */
+  showRoomPicker() {
+    // 快应用选择器实现
+    // 这里简化为轮询选择，实际可以使用 picker 组件
+    const rooms = ['livingroom', 'bedroom', 'study', 'kitchen']
+    const currentRoom = this.preferences.defaultRoom || 'livingroom'
+    const currentIndex = rooms.indexOf(currentRoom)
+    const nextIndex = (currentIndex + 1) % rooms.length
+    const nextRoom = rooms[nextIndex]
+
+    this.preferences.defaultRoom = nextRoom
+    this.updateDisplay()
+    this.savePreference('defaultRoom', nextRoom)
+  },
+
+  /**
+   * 更新睡眠时间
+   */
+  updateBedtime(e) {
+    const value = e.value
+    this.preferences.lighting.bedtime = value
+    this.savePreference('lighting.bedtime', value)
+  },
+
+  /**
+   * 更新亮度
+   */
+  updateBrightness(e) {
+    const value = parseInt(e.value)
+    this.preferences.lighting.preferredBrightness = value
+    this.savePreference('lighting.preferredBrightness', value)
+  },
+
+  /**
+   * 更新温度
+   */
+  updateTemp(e) {
+    const value = parseInt(e.value)
+    this.preferences.climate.preferredTemp = value
+    this.savePreference('climate.preferredTemp', value)
+  },
+
+  /**
+   * 显示空调模式选择器
+   */
+  showClimateModePicker() {
+    const modes = ['cool', 'heat', 'dry', 'auto']
+    const currentMode = this.preferences.climate?.mode || 'cool'
+    const currentIndex = modes.indexOf(currentMode)
+    const nextIndex = (currentIndex + 1) % modes.length
+    const nextMode = modes[nextIndex]
+
+    if (!this.preferences.climate) {
+      this.preferences.climate = {}
+    }
+    this.preferences.climate.mode = nextMode
+    this.updateDisplay()
+    this.savePreference('climate.mode', nextMode)
+  },
+
+  /**
+   * 保存偏好
+   */
+  async savePreference(path, value) {
+    try {
+      await this.preferenceService.setPreference(path, value)
+      console.log('[Preferences] Preference saved:', path, value)
+    } catch (err) {
+      console.error('[Preferences] Failed to save preference:', err)
+    }
+  },
+
+  /**
+   * 显示添加习惯对话框
+   */
+  showAddHabitDialog() {
+    // 简化实现：使用 prompt（如果支持）或直接添加示例
+    const habitContent = '我喜欢晚上10点关灯'
+    const category = 'lighting'
+
+    this.preferenceService.addHabit(habitContent, category)
+      .then(habit => {
+        console.log('[Preferences] Habit added:', habit)
+        this.loadData() // 重新加载列表
+      })
+      .catch(err => {
+        console.error('[Preferences] Failed to add habit:', err)
+      })
+  },
+
+  /**
+   * 删除习惯
+   */
+  async deleteHabit(habitId) {
+    try {
+      await this.preferenceService.deleteHabit(habitId)
+      console.log('[Preferences] Habit deleted:', habitId)
+      this.loadData() // 重新加载列表
+    } catch (err) {
+      console.error('[Preferences] Failed to delete habit:', err)
+    }
+  },
+
+  /**
+   * 获取分类名称
+   */
+  getCategoryName(category) {
+    return this.categoryNames[category] || category
+  },
+
+  /**
+   * 导出数据
+   */
+  async exportData() {
+    try {
+      const data = await this.preferenceService.exportData()
+      console.log('[Preferences] Exported data:', data)
+      // 这里可以复制到剪贴板或分享
+    } catch (err) {
+      console.error('[Preferences] Failed to export data:', err)
+    }
+  },
+
+  /**
+   * 确认清空数据
+   */
+  confirmClearData() {
+    // 简化实现，直接清空
+    this.preferenceService.clearAll()
+      .then(() => {
+        console.log('[Preferences] Data cleared')
+        this.loadData() // 重新加载
+      })
+      .catch(err => {
+        console.error('[Preferences] Failed to clear data:', err)
+      })
+  },
+
+  /**
+   * 返回首页
+   */
+  goBack() {
+    const router = require('@system.router')
+    router.push({
+      uri: 'pages/Index'
+    })
+  }
+}
+</script>
+
+<style lang="less">
+.preferences-page {
+  width: 100%;
+  height: 100%;
+  background-color: #1a1a1a;
+  padding: 10px 15px;
+  flex-direction: column;
+}
+
+.status-bar {
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 15px;
+  padding: 10px;
+  background-color: #2a2a2a;
+  border-radius: 8px;
+}
+
+.page-title {
+  font-size: 22px;
+  color: #ffffff;
+  font-weight: bold;
+}
+
+.content {
+  flex: 1;
+  overflow-y: scroll;
+}
+
+.section {
+  background-color: #2a2a2a;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.section-title {
+  font-size: 18px;
+  color: #4CAF50;
+  font-weight: bold;
+  margin-bottom: 12px;
+}
+
+.setting-item {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.setting-item:last-child {
+  margin-bottom: 0;
+}
+
+.setting-label {
+  font-size: 16px;
+  color: #ffffff;
+  flex: 1;
+}
+
+.setting-input {
+  width: 120px;
+  height: 36px;
+  background-color: #3a3a3a;
+  border-radius: 6px;
+  padding: 0 10px;
+  font-size: 16px;
+  color: #ffffff;
+  text-align: center;
+}
+
+.setting-select {
+  min-width: 100px;
+  height: 36px;
+  padding: 0 12px;
+  background-color: #4CAF50;
+  color: #ffffff;
+  border-radius: 6px;
+  font-size: 16px;
+}
+
+.slider-container {
+  flex-direction: row;
+  align-items: center;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.setting-slider {
+  width: 150px;
+  margin-right: 8px;
+}
+
+.slider-value {
+  font-size: 16px;
+  color: #ffffff;
+  min-width: 45px;
+  text-align: right;
+}
+
+.habits-header {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.habits-count {
+  font-size: 14px;
+  color: #aaaaaa;
+}
+
+.add-habit-btn {
+  height: 32px;
+  padding: 0 12px;
+  background-color: #4CAF50;
+  color: #ffffff;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.habits-list {
+  max-height: 300px;
+  overflow-y: scroll;
+}
+
+.habit-item {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #3a3a3a;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 8px;
+}
+
+.habit-content {
+  flex: 1;
+  margin-right: 10px;
+}
+
+.habit-text {
+  font-size: 15px;
+  color: #ffffff;
+  margin-bottom: 4px;
+}
+
+.habit-category {
+  font-size: 12px;
+  color: #4CAF50;
+}
+
+.habit-delete-btn {
+  height: 32px;
+  padding: 0 10px;
+  background-color: #f44336;
+  color: #ffffff;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.empty-state {
+  align-items: center;
+  padding: 30px;
+}
+
+.empty-text {
+  font-size: 16px;
+  color: #aaaaaa;
+}
+
+.data-buttons {
+  flex-direction: row;
+  justify-content: space-between;
+}
+
+.data-btn {
+  flex: 1;
+  height: 40px;
+  margin-right: 10px;
+  background-color: #2196F3;
+  color: #ffffff;
+  border-radius: 8px;
+  font-size: 16px;
+}
+
+.data-btn.danger {
+  background-color: #f44336;
+  margin-right: 0;
+  margin-left: 10px;
+}
+
+.back-btn-container {
+  width: 100%;
+  align-items: center;
+  padding-top: 10px;
+}
+
+.back-btn {
+  width: 100px;
+  height: 45px;
+  font-size: 20px;
+  border-radius: 8px;
+  background-color: #607D8B;
+  color: #ffffff;
+}
+</style>

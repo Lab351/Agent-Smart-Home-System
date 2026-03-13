@@ -1,0 +1,55 @@
+# Central Agent 策略配置文件
+# 定义各种模式下的策略规则
+
+policies:
+  # 睡眠模式策略
+  sleep_mode:
+    priority: 80
+    description: "Sleep mode - low light, minimum noise"
+    conditions:
+      home_mode: "sleep"
+    constraints:
+      light_max: "low"
+      noise_max: "minimum"
+      interruptible: false
+
+  # 离家模式策略
+  away_mode:
+    priority: 90
+    description: "Away mode - all devices off, security armed"
+    conditions:
+      home_mode: "away"
+    constraints:
+      all_devices: "off"
+      security: "armed"
+
+  # 儿童保护策略
+  child_protection:
+    priority: 70
+    description: "Child protection - volume limit, content filter"
+    conditions:
+      user_role: "child"
+    constraints:
+      volume_max: 50
+      content_filter: "enabled"
+
+  # 节能模式策略
+  energy_saving:
+    priority: 60
+    description: "Energy saving mode"
+    conditions:
+      home_mode: "away"
+    constraints:
+      climate: "eco"
+      lights: "auto_off"
+
+  # 工作模式策略
+  work_mode:
+    priority: 50
+    description: "Work mode - focus environment"
+    conditions:
+      home_mode: "home"
+      time_period: "work_hours"
+    constraints:
+      noise_max: "low"
+      interruptible: false

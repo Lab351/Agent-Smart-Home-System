@@ -1,0 +1,132 @@
+/**
+ * 语音录制组件
+ *
+ * 负责处理语音录制和音频数据处理
+ */
+
+export default {
+  props: {
+    // 录音时长（毫秒）
+    duration: {
+      type: Number,
+      default: 5000
+    },
+    // 采样率
+    sampleRate: {
+      type: Number,
+      default: 16000
+    }
+  },
+
+  data: {
+    isRecording: false,
+    recorderManager: null,
+    audioData: null
+  },
+
+  onInit() {
+    console.log('[VoiceRecorder] Component initialized')
+    this.initRecorder()
+  },
+
+  initRecorder() {
+    try {
+      // 获取录音管理器
+      const recorder = require('@system.recorder')
+      this.recorderManager = recorder.getRecorderManager()
+
+      // 监听录音事件
+      this.recorderManager.on('start', () => {
+        console.log('[VoiceRecorder] Recording started')
+        this.isRecording = true
+        this.$emit('recording-start')
+      })
+
+      this.recorderManager.on('stop', (res) => {
+        console.log('[VoiceRecorder] Recording stopped', res)
+        this.isRecording = false
+        this.audioData = res
+        this.$emit('recording-complete', res)
+      })
+
+      this.recorderManager.on('error', (err) => {
+        console.error('[VoiceRecorder] Recording error', err)
+        this.isRecording = false
+        this.$emit('recording-error', err)
+      })
+
+    } catch (err) {
+      console.error('[VoiceRecorder] Failed to init recorder:', err)
+    }
+  },
+
+  /**
+   * 开始录音
+   */
+  startRecording() {
+    if (this.isRecording) {
+      console.log('[VoiceRecorder] Already recording')
+      return
+    }
+
+    try {
+      const options = {
+        duration: this.duration,
+        sampleRate: this.sampleRate,
+        numberOfChannels: 1,
+        encodeBitRate: 48000,
+        format: 'mp3'
+      }
+
+      console.log('[VoiceRecorder] Starting recording with options:', options)
+      this.recorderManager.start(options)
+
+    } catch (err) {
+      console.error('[VoiceRecorder] Failed to start recording:', err)
+      this.$emit('recording-error', err)
+    }
+  },
+
+  /**
+   * 停止录音
+   */
+  stopRecording() {
+    if (!this.isRecording) {
+      console.log('[VoiceRecorder] Not recording')
+      return
+    }
+
+    try {
+      console.log('[VoiceRecorder] Stopping recording')
+      this.recorderManager.stop()
+
+    } catch (err) {
+      console.error('[VoiceRecorder] Failed to stop recording:', err)
+    }
+  },
+
+  /**
+   * 切换录音状态
+   */
+  toggleRecording() {
+    if (this.isRecording) {
+      this.stopRecording()
+    } else {
+      this.startRecording()
+    }
+  },
+
+  /**
+   * 获取音频数据
+   */
+  getAudioData() {
+    return this.audioData
+  },
+
+  /**
+   * 检查是否正在录音
+   */
+  isRecordingNow() {
+    return this.isRecording
+  }
+}

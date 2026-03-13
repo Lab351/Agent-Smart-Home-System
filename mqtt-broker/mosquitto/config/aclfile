@@ -1,0 +1,106 @@
+# Mosquitto ACL（访问控制列表）- mosquitto 2.x兼容
+# 定义主题访问权限
+#
+# 语法：pattern [read|write|readwrite|deny] <topic>
+#   pattern: 必须包含 %c (client id) 或 %u (username) 替换标记
+#   权限：read（订阅/读）, write（发布/写）, readwrite（读写）, deny（拒绝）
+#   topic: 主题模式，支持 + 和 # 通配符
+#
+# 更多信息：https://mosquitto.org/man/mosquitto-conf-5.html
+
+# =================================================
+# 全局允许访问（开发环境）
+# =================================================
+
+# 允许所有客户端读写所有主题
+# 注意：mosquitto 2.x要求pattern必须包含%u或%c
+# 如果不需要限制访问，建议在mosquitto.conf中设置 allow_anonymous true
+# 并注释掉acl_file配置
+
+# pattern readwrite #  # 此行已注释，不符合mosquitto 2.x语法
+
+# =================================================
+# Room Agent主题权限（使用client id替換）
+# =================================================
+
+# 房间列表（根据实际部署）
+# livingroom bedroom kitchen bathroom study balcony
+
+# 允许Room Agent发布其房间状态
+# %c 会被替换为客户端ID
+pattern write room/livingroom/agent/%c/state
+pattern write room/bedroom/agent/%c/state
+pattern write room/kitchen/agent/%c/state
+pattern write room/bathroom/agent/%c/state
+pattern write room/study/agent/%c/state
+pattern write room/balcony/agent/%c/state
+
+# 允许Room Agent发布心跳
+pattern write room/livingroom/agent/%c/heartbeat
+pattern write room/bedroom/agent/%c/heartbeat
+pattern write room/kitchen/agent/%c/heartbeat
+pattern write room/bathroom/agent/%c/heartbeat
+pattern write room/study/agent/%c/heartbeat
+pattern write room/balcony/agent/%c/heartbeat
+
+# 允许Room Agent发布遥测数据
+pattern write room/livingroom/agent/%c/telemetry
+pattern write room/bedroom/agent/%c/telemetry
+pattern write room/kitchen/agent/%c/telemetry
+pattern write room/bathroom/agent/%c/telemetry
+pattern write room/study/agent/%c/telemetry
+pattern write room/balcony/agent/%c/telemetry
+
+# 允许Room Agent订阅其房间主题
+pattern read room/livingroom/agent/%c/#
+pattern read room/bedroom/agent/%c/#
+pattern read room/kitchen/agent/%c/#
+pattern read room/bathroom/agent/%c/#
+pattern read room/study/agent/%c/#
+pattern read room/balcony/agent/%c/#
+
+# =================================================
+# Robot Agent主题权限
+# =================================================
+
+pattern write robot/%c/state
+pattern write robot/%c/telemetry
+pattern write robot/%c/heartbeat
+pattern read robot/%c/#
+
+# =================================================
+# Personal Agent主题权限
+# =================================================
+
+pattern write personal/%c/state
+pattern write personal/%c/telemetry
+pattern write personal/%c/heartbeat
+pattern read personal/%c/#
+
+# =================================================
+# 系统主题访问
+# =================================================
+
+# 允许所有Agent订阅系统消息
+pattern read room/%c/system/#
+pattern read robot/%c/system/#
+pattern read personal/%c/system/#
+
+# =================================================
+# 桥接连接状态访问（允許$SYS特定主题）
+# =================================================
+
+# 允许桥接连接写入状态
+pattern write $SYS/broker/connection/%c/state
+
+# =================================================
+# 生产环境建议
+# =================================================
+#
+# 1. 使用username替換（%u）而非client id（%c）进行更精细的控制
+# 2. 为不同类型的Agent创建不同的用户（room-agent, robot-agent等）
+# 3. 限制特定设备的访问，例如：
+#    pattern write room/livingroom/devices/light_1/control
+# 4. 禁止访问敏感配置主题：
+#    pattern deny config/%c/#
+#

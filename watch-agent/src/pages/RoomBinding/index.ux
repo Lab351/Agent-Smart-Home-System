@@ -1,0 +1,681 @@
+<!-- 房间绑定页面 - BLE Beacon 扫描和房间绑定 -->
+
+<template>
+  <div class="binding-page">
+    <!-- 顶部标题 -->
+    <div class="header">
+      <text class="title">房间绑定</text>
+    </div>
+
+    <!-- 当前绑定状态 -->
+    <div class="section">
+      <text class="section-title">当前状态</text>
+
+      <div class="status-row">
+        <text class="label">当前房间:</text>
+        <text class="value-ok" show="{{ currentRoomName }}">{{ currentRoomName }}</text>
+        <text class="value-pending" show="{{ !currentRoomName && scanning }}">扫描中...</text>
+        <text class="value-error" show="{{ !currentRoomName && !scanning }}">未绑定</text>
+      </div>
+
+      <div class="status-row" show="{{ currentBeacon }}">
+        <text class="label">信号强度:</text>
+        <text class="value">{{ currentBeacon.rssi }} dBm</text>
+      </div>
+
+      <div class="status-row" show="{{ currentBeacon && currentBeacon.distance }}">
+        <text class="label">距离:</text>
+        <text class="value">{{ currentBeacon.distance.toFixed(1) }} m</text>
+      </div>
+    </div>
+
+    <!-- 扫描控制 -->
+    <div class="section">
+      <text class="section-title">Beacon 扫描</text>
+
+      <div class="button-row">
+        <input
+          class="btn scan-btn"
+          type="button"
+          value="{{ scanning ? '停止扫描' : '开始扫描' }}"
+          onclick="toggleScan"
+        />
+        <input
+          class="btn unbind-btn"
+          type="button"
+          value="解绑房间"
+          onclick="unbindRoom"
+          disabled="{{ !currentRoomId }}"
+        />
+      </div>
+    </div>
+
+    <!-- 发现的 Beacon -->
+    <div class="section" show="{{ discoveredBeacons.length > 0 }}">
+      <text class="section-title">发现的 Beacon ({{ discoveredBeacons.length }})</text>
+
+      <div class="beacon-list">
+        <div class="beacon-item" for="{{discoveredBeacons}}" tid="{{$item}}" onclick="selectBeacon($item)">
+          <div class="beacon-info">
+            <text class="beacon-room">{{$item.roomName}}</text>
+            <text class="beacon-signal">RSSI: {{$item.rssi}} dBm</text>
+            <text class="beacon-distance" show="{{$item.distance}}">距离: {{$item.distance.toFixed(1)}} m</text>
+          </div>
+          <div class="beacon-status">
+            <text class="status-dot" show="{{ currentRoomId === $item.roomId }}">●</text>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 绑定历史 -->
+    <div class="section">
+      <text class="section-title">绑定历史</text>
+
+      <div class="history-list" show="{{ bindingHistory.length > 0 }}">
+        <div class="history-item" for="{{bindingHistory}}" tid="{{$item}}">
+          <text class="history-time">{{$item.timestamp}}</text>
+          <text class="history-action">{{$item.action}}</text>
+          <text class="history-room">{{$item.roomName}}</text>
+        </div>
+      </div>
+
+      <text class="empty-text" show="{{ bindingHistory.length === 0 }}">暂无绑定记录</text>
+
+      <input
+        class="btn clear-btn"
+        type="button"
+        value="清空历史"
+        onclick="clearHistory"
+        show="{{ bindingHistory.length > 0 }}"
+      />
+    </div>
+
+    <!-- 返回按钮 -->
+    <div class="back-btn-container">
+      <input
+        class="back-btn"
+        type="button"
+        value="← 返回"
+        onclick="goBack"
+      />
+    </div>
+  </div>
+</template>
+
+<script>
+import BeaconService from '../../services/BeaconService'
+import MqttService from '../../services/mqtt-service'
+import config from '../../config/agent.config'
+
+const beaconService = new BeaconService()
+const mqttService = new MqttService()
+
+export default {
+  private: {
+    // 状态
+    scanning: false,
+    currentRoomId: null,
+    currentRoomName: null,
+    currentBeacon: null,
+
+    // 发现的 Beacon
+    discoveredBeacons: [],
+
+    // 绑定历史
+    bindingHistory: [],
+
+    // MQTT 已连接
+    mqttConnected: false
+  },
+
+  onInit() {
+    console.log('[RoomBinding] Page initialized')
+    this.loadBindingHistory()
+    this.setupBeaconService()
+  },
+
+  onDestroy() {
+    console.log('[RoomBinding] Page destroying')
+
+    // 停止扫描
+    if (this.scanning) {
+      beaconService.stopScanning()
+    }
+
+    // 断开 MQTT
+    if (mqttService.isConnected()) {
+      mqttService.disconnect()
+    }
+
+    // 清理服务
+    beaconService.destroy()
+  },
+
+  /**
+   * 设置 Beacon 服务
+   */
+  setupBeaconService() {
+    const _this = this
+
+    // 监听 Beacon 发现
+    beaconService.onBeaconDiscovered = (info) => {
+      console.log('[RoomBinding] Beacon discovered:', info)
+      _this.addBeaconToList(info)
+    }
+
+    // 监听房间变化
+    beaconService.onRoomChanged = (info) => {
+      console.log('[RoomBinding] Room changed:', info)
+
+      if (info.roomId) {
+        _this.currentRoomId = info.roomId
+        _this.currentRoomName = info.roomName
+        _this.currentBeacon = info.beacon
+
+        // 保存绑定关系到本地
+        _this.saveRoomBinding(info.roomId)
+
+        // 连接到 Room Agent
+        _this.connectToRoomAgent(info.roomId)
+
+        _this.addHistory('绑定到', info.roomName)
+      } else {
+        // 解除绑定
+        _this.currentRoomId = null
+        _this.currentRoomName = null
+        _this.currentBeacon = null
+
+        _this.addHistory('离开房间', _this.getCurrentRoomNameFromHistory())
+      }
+    }
+
+    // 监听错误
+    beaconService.onError = (error) => {
+      console.error('[RoomBinding] Beacon error:', error)
+      _this.addMessage('ERROR', error.message)
+    }
+  },
+
+  /**
+   * 切换扫描状态
+   */
+  async toggleScan() {
+    if (this.scanning) {
+      // 停止扫描
+      beaconService.stopScanning()
+      this.scanning = false
+    } else {
+      // 开始扫描
+      const success = await beaconService.startScanning()
+      this.scanning = success
+
+      if (!success) {
+        this.addMessage('ERROR', '启动扫描失败，请检查蓝牙')
+      } else {
+        this.addMessage('INFO', '开始扫描 Beacon...')
+      }
+    }
+  },
+
+  /**
+   * 添加 Beacon 到列表
+   */
+  addBeaconToList(info) {
+    // 检查是否已存在
+    const exists = this.discoveredBeacons.some(b => b.deviceId === info.deviceId)
+
+    if (!exists) {
+      this.discoveredBeacons.push(info)
+    } else {
+      // 更新现有 Beacon 的信息
+      const index = this.discoveredBeacons.findIndex(b => b.deviceId === info.deviceId)
+      if (index !== -1) {
+        this.discoveredBeacons[index] = {
+          ...this.discoveredBeacons[index],
+          rssi: info.rssi,
+          distance: info.distance
+        }
+      }
+    }
+
+    // 限制列表大小
+    if (this.discoveredBeacons.length > 10) {
+      this.discoveredBeacons = this.discoveredBeacons.slice(0, 10)
+    }
+  },
+
+  /**
+   * 选择 Beacon (手动绑定)
+   */
+  selectBeacon(beacon) {
+    console.log('[RoomBinding] Selected beacon:', beacon)
+
+    this.currentRoomId = beacon.roomId
+    this.currentRoomName = beacon.roomName
+    this.currentBeacon = beacon
+
+    // 保存绑定
+    this.saveRoomBinding(beacon.roomId)
+
+    // 连接到 Room Agent
+    this.connectToRoomAgent(beacon.roomId)
+
+    this.addHistory('手动绑定到', beacon.roomName)
+  },
+
+  /**
+   * 解绑房间
+   */
+  unbindRoom() {
+    console.log('[RoomBinding] Unbinding room...')
+
+    this.currentRoomId = null
+    this.currentRoomName = null
+    this.currentBeacon = null
+
+    // 清除本地存储
+    this.clearRoomBinding()
+
+    // 断开 MQTT
+    if (mqttService.isConnected()) {
+      mqttService.disconnect()
+      this.mqttConnected = false
+    }
+
+    this.addHistory('解绑房间', this.getCurrentRoomNameFromHistory())
+  },
+
+  /**
+   * 连接到 Room Agent
+   */
+  async connectToRoomAgent(roomId) {
+    console.log('[RoomBinding] Connecting to Room Agent:', roomId)
+
+    if (!mqttService.isConnected()) {
+      const success = await mqttService.connect({
+        host: config.mqtt.host,
+        port: config.mqtt.wsPort,
+        clientId: `watch-${config.agent.userId}-${Date.now()}`
+      })
+
+      if (success) {
+        this.mqttConnected = true
+        this.addMessage('SUCCESS', '已连接到 MQTT Broker')
+      } else {
+        this.addMessage('ERROR', 'MQTT 连接失败')
+        return
+      }
+    }
+
+    // 订阅房间状态
+    const stateTopic = `room/${roomId}/agent/+/state`
+    mqttService.subscribe(stateTopic, (payload) => {
+      console.log('[RoomBinding] State update:', payload)
+      try {
+        const state = JSON.parse(payload)
+        console.log('[RoomBinding] Room state:', state)
+      } catch (err) {
+        console.error('[RoomBinding] Failed to parse state:', err)
+      }
+    })
+
+    this.addMessage('INFO', `已订阅 ${roomId} 状态更新`)
+  },
+
+  /**
+   * 保存房间绑定到本地存储
+   */
+  saveRoomBinding(roomId) {
+    try {
+      const storage = require('@system.storage')
+      storage.set({
+        key: 'bound_room',
+        value: roomId,
+        success: () => {
+          console.log('[RoomBinding] Room binding saved:', roomId)
+        },
+        fail: (err, code) => {
+          console.error('[RoomBinding] Failed to save binding:', code)
+        }
+      })
+    } catch (err) {
+      console.error('[RoomBinding] Storage error:', err)
+    }
+  },
+
+  /**
+   * 加载保存的房间绑定
+   */
+  loadBindingHistory() {
+    try {
+      const storage = require('@system.storage')
+      storage.get({
+        key: 'bound_room',
+        success: (data) => {
+          if (data) {
+            console.log('[RoomBinding] Loaded saved room:', data)
+            this.currentRoomId = data
+            // 需要从 roomMapping 获取房间名称
+            // 这里暂时使用 roomId，实际应该映射为显示名称
+          }
+        },
+        fail: () => {
+          console.log('[RoomBinding] No saved room found')
+        }
+      })
+
+      storage.get({
+        key: 'binding_history',
+        success: (data) => {
+          if (data && Array.isArray(data)) {
+            this.bindingHistory = data
+          }
+        }
+      })
+    } catch (err) {
+      console.error('[RoomBinding] Failed to load history:', err)
+    }
+  },
+
+  /**
+   * 清除房间绑定
+   */
+  clearRoomBinding() {
+    try {
+      const storage = require('@system.storage')
+      storage.delete({
+        key: 'bound_room',
+        success: () => {
+          console.log('[RoomBinding] Room binding cleared')
+        }
+      })
+    } catch (err) {
+      console.error('[RoomBinding] Failed to clear binding:', err)
+    }
+  },
+
+  /**
+   * 添加绑定历史
+   */
+  addHistory(action, roomName) {
+    this.bindingHistory.unshift({
+      timestamp: new Date().toLocaleTimeString(),
+      action,
+      roomName
+    })
+
+    // 限制历史记录数量
+    if (this.bindingHistory.length > 20) {
+      this.bindingHistory = this.bindingHistory.slice(0, 20)
+    }
+
+    // 保存到本地存储
+    this.saveBindingHistory()
+  },
+
+  /**
+   * 保存绑定历史
+   */
+  saveBindingHistory() {
+    try {
+      const storage = require('@system.storage')
+      storage.set({
+        key: 'binding_history',
+        value: this.bindingHistory
+      })
+    } catch (err) {
+      console.error('[RoomBinding] Failed to save history:', err)
+    }
+  },
+
+  /**
+   * 清空历史
+   */
+  clearHistory() {
+    this.bindingHistory = []
+
+    try {
+      const storage = require('@system.storage')
+      storage.delete({
+        key: 'binding_history'
+      })
+    } catch (err) {
+      console.error('[RoomBinding] Failed to clear history:', err)
+    }
+  },
+
+  /**
+   * 获取当前房间名称（从历史记录）
+   */
+  getCurrentRoomNameFromHistory() {
+    if (this.bindingHistory.length > 0) {
+      const lastBind = this.bindingHistory.find(h => h.action.includes('绑定'))
+      return lastBind ? lastBind.roomName : null
+    }
+    return null
+  },
+
+  /**
+   * 添加消息（用于调试）
+   */
+  addMessage(type, text) {
+    console.log(`[RoomBinding] [${type}] ${text}`)
+  },
+
+  /**
+   * 返回首页
+   */
+  goBack() {
+    const router = require('@system.router')
+    router.push({
+      uri: 'pages/Index'
+    })
+  }
+}
+</script>
+
+<style lang="less">
+.binding-page {
+  width: 100%;
+  height: 100%;
+  background-color: #1a1a1a;
+  padding: 12px 15px;
+  flex-direction: column;
+}
+
+.header {
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.title {
+  font-size: 28px;
+  color: #ffffff;
+  font-weight: bold;
+}
+
+.section {
+  background-color: #2a2a2a;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.section-title {
+  font-size: 20px;
+  color: #4CAF50;
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+
+.status-row {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.label {
+  font-size: 16px;
+  color: #888888;
+  width: 100px;
+}
+
+.value {
+  font-size: 16px;
+  color: #ffffff;
+  flex: 1;
+  text-align: right;
+}
+
+.value-ok {
+  font-size: 16px;
+  color: #4CAF50;
+  font-weight: bold;
+}
+
+.value-pending {
+  font-size: 16px;
+  color: #FFA726;
+  font-weight: bold;
+}
+
+.value-error {
+  font-size: 16px;
+  color: #ff4444;
+  font-weight: bold;
+}
+
+.button-row {
+  flex-direction: row;
+  justify-content: space-around;
+  margin-top: 10px;
+}
+
+.btn {
+  width: 45%;
+  height: 40px;
+  font-size: 16px;
+  border-radius: 8px;
+  color: #ffffff;
+  background-color: #2196F3;
+}
+
+.scan-btn {
+  background-color: #4CAF50;
+}
+
+.unbind-btn {
+  background-color: #ff4444;
+}
+
+.clear-btn {
+  width: 100%;
+  background-color: #607D8B;
+  margin-top: 10px;
+}
+
+.beacon-list {
+  max-height: 200px;
+  flex-direction: column;
+}
+
+.beacon-item {
+  background-color: #333;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.beacon-info {
+  flex: 1;
+  flex-direction: column;
+}
+
+.beacon-room {
+  font-size: 18px;
+  color: #ffffff;
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.beacon-signal {
+  font-size: 14px;
+  color: #888888;
+  margin-bottom: 2px;
+}
+
+.beacon-distance {
+  font-size: 14px;
+  color: #2196F3;
+}
+
+.beacon-status {
+  width: 20px;
+  align-items: center;
+}
+
+.status-dot {
+  font-size: 24px;
+  color: #4CAF50;
+}
+
+.history-list {
+  max-height: 150px;
+  flex-direction: column;
+}
+
+.history-item {
+  background-color: #333;
+  border-radius: 6px;
+  padding: 8px;
+  margin-bottom: 6px;
+  flex-direction: row;
+  align-items: center;
+}
+
+.history-time {
+  font-size: 12px;
+  color: #888888;
+  width: 80px;
+}
+
+.history-action {
+  font-size: 14px;
+  color: #2196F3;
+  width: 80px;
+}
+
+.history-room {
+  flex: 1;
+  font-size: 14px;
+  color: #ffffff;
+  text-align: right;
+}
+
+.empty-text {
+  font-size: 14px;
+  color: #888888;
+  text-align: center;
+  padding: 20px;
+}
+
+.back-btn-container {
+  width: 100%;
+  align-items: center;
+  padding-top: 10px;
+}
+
+.back-btn {
+  width: 100px;
+  height: 45px;
+  font-size: 20px;
+  border-radius: 8px;
+  background-color: #607D8B;
+  color: #ffffff;
+}
+</style>
