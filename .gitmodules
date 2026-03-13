@@ -1,19 +1,19 @@
 [submodule "esp32-ble-beacon"]
 	path = esp32-ble-beacon
-	url = https://gitproxy.mcurobot.com/kungraduate/esp32-ble-beacon.git
+	url = https://git.scut.mcurobot.com/kungraduate/esp32-ble-beacon.git
 [submodule "room-agent"]
 	path = room-agent
-	url = https://gitproxy.mcurobot.com/kungraduate/room-agent.git
+	url = https://git.scut.mcurobot.com/kungraduate/room-agent.git
 [submodule "home-agent"]
 	path = home-agent
-	url = https://gitproxy.mcurobot.com/kungraduate/home-agent.git
+	url = https://git.scut.mcurobot.com/kungraduate/home-agent.git
 	branch = master
 [submodule "watch-agent"]
 	path = watch-agent
-	url = https://gitproxy.mcurobot.com/kungraduate/watch-agent.git
+	url = https://git.scut.mcurobot.com/kungraduate/watch-agent.git
 [submodule "mqtt-broker"]
 	path = mqtt-broker
-	url = https://gitproxy.mcurobot.com/kungraduate/home-system-mqtt-broker.git
+	url = https://git.scut.mcurobot.com/kungraduate/home-system-mqtt-broker.git
 [submodule "qwen-backend"]
 	path = qwen-backend
-	url = https://gitproxy.mcurobot.com/kungraduate/qwen-backend.git
+	url = https://git.scut.mcurobot.com/kungraduate/qwen-backend.git
