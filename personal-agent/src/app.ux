@@ -1,0 +1,29 @@
+<script>
+/**
+ * 应用级别的配置，供所有页面公用
+ */
+
+const $utils = require('./helper/utils').default
+const $apis = require('./helper/apis').default
+
+/* @desc: 注入方法至全局 global,以便页面调用 */
+const hook2global = global.__proto__ || global
+hook2global.$utils = $utils
+hook2global.$apis = $apis
+
+export default {
+  onCreate() {
+    console.log('[App] Personal Agent created')
+
+    // 应用启动时的初始化
+    this.initServices()
+  },
+
+  initServices() {
+    // 初始化全局服务
+    console.log('[App] Initializing services...')
+
+    // 可以在这里初始化 MQTT 客户端、Beacon 扫描器等
+  }
+}
+</script>

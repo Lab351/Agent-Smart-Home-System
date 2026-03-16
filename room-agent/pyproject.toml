@@ -1,0 +1,97 @@
+[project]
+name = "srp-backend"
+version = "0.1.0"
+description = "智能机器人代理系统 - 集成语音交互、MCP 工具和 RAG 问答"
+readme = "README.md"
+requires-python = ">=3.12"
+
+dependencies = [
+    # ==================== 基础 ====================
+    "python-dotenv>=1.0.0",
+    # ==================== 数据处理 ====================
+    "numpy>=2.3.5",
+    # ==================== Web / API ====================
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.5.0",
+    "python-multipart>=0.0.6",
+    "httpx>=0.25.0",
+    "websockets>=15.0.1",
+    # ==================== LLM ====================
+    "openai>=1.0.0",
+    "dashscope>=1.25.5",
+    # ==================== MCP ====================
+    "mcp>=1.1.2",
+    "fastmcp>=0.2.0",
+    # ==================== 音频 ====================
+    "webrtcvad>=2.0.10",
+    # ==================== 工具 ====================
+    "tqdm>=4.66.0",
+    "colorama>=0.4.6",
+    "pyyaml>=6.0.0",
+    "paho-mqtt>=2.1.0",
+    "psutil>=6.0.0",
+]
+
+[project.optional-dependencies]
+# Windows 音频支持（需要 portaudio 库）
+audio = [
+    "pyaudio>=0.2.14",
+]
+# BLE Beacon 支持（用于在 Python 端实现 BLE 广播，实际使用 ESP32 硬件）
+ble = [
+    "bluepy>=0.2.0",
+]
+# 机器学习 / RAG 功能（智能问答系统使用）
+ml = [
+    "pandas>=2.0.0",
+    "scipy>=1.0.0",
+    "scikit-learn>=1.0.0",
+    "torch>=2.0.0",
+    "transformers>=2.2.0",
+    "sentence-transformers>=2.2.0",
+    "langchain>=0.1.0",
+    "langchain-community>=0.0.10",
+    "faiss-cpu>=1.7.4",
+]
+# 计算机视觉功能
+vision = [
+    "opencv-python>=4.11.0.86",
+]
+# 文档处理功能
+documents = [
+    "pypdf2>=3.0.0",
+    "pdfplumber>=0.10.0",
+    "python-docx>=1.1.0",
+    "markdown>=3.5.0",
+]
+# GPU 加速
+gpu = [
+    "faiss-gpu==1.7.2; sys_platform != 'darwin' and python_version < '3.11'",
+]
+
+# ==================== 告诉 setuptools：这是脚本工程，不是包 ====================
+[tool.setuptools]
+py-modules = []
+
+[tool.setuptools.packages.find]
+include = []
+
+# ==================== 构建系统 ====================
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+# ==================== 测试 ====================
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+# ==================== 代码格式化 ====================
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

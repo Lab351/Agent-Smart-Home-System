@@ -1,0 +1,106 @@
+# Home Assistant MCP 配置示例
+
+mcp:
+  # MCP Server URL
+  server_url: "ws://localhost:3000/sse"
+
+  # Home Assistant API Key（在 Profile > Long-Lived Access Tokens 生成）
+  api_key: "YOUR_HA_API_KEY_HERE"
+
+  # 监听的实体列表
+  entities:
+    # 传感器
+    - sensor.temperature_livingroom
+    - sensor.temperature_bedroom
+    - sensor.humidity_livingroom
+    - sensor.humidity_bedroom
+
+    # 灯光
+    - light.livingroom_ceiling
+    - light.livingroom_lamp
+    - light.bedroom_ceiling
+    - light.bedroom_bedside
+
+    # 开关
+    - switch.livingroom_fan
+    - switch.bedroom_fan
+
+    # 窗帘
+    - cover.livingroom_curtain
+    - cover.bedroom_curtain
+
+  # 可调用的服务
+  services:
+    - light.turn_on
+    - light.turn_off
+    - light.toggle
+    - switch.turn_on
+    - switch.turn_off
+    - cover.open
+    - cover.close
+    - cover.toggle
+
+# Central Agent 配置
+agent:
+  agent_id: "central-agent-1"
+  home_id: "home-001"
+  version: "1.0.0"
+
+# MQTT Broker 配置（连接到 Room Agents）
+mqtt:
+  brokers:
+    - room_id: "livingroom"
+      host: "192.168.1.100"
+      port: 1883
+    - room_id: "bedroom"
+      host: "192.168.1.101"
+      port: 1883
+    - room_id: "study"
+      host: "192.168.1.102"
+      port: 1883
+  qos_default: 1
+
+# 策略配置
+policies:
+  sleep_mode:
+    light_max: "low"
+    noise_max: "minimum"
+    interruptible: false
+    priority: 80
+
+  away_mode:
+    all_devices: "off"
+    security: "armed"
+    priority: 90
+
+  child_protection:
+    content_filter: "enabled"
+    volume_max: 50
+    priority: 70
+
+# 用户配置
+users:
+  - user_id: "user1"
+    role: "admin"
+    priority: 100
+  - user_id: "user2"
+    role: "adult"
+    priority: 80
+  - user_id: "child1"
+    role: "child"
+    priority: 50
+
+# 全局模式
+home_modes:
+  - name: "home"
+    default: true
+
+  - name: "away"
+    auto_trigger: true
+    trigger_condition: "no_users_home_for_10min"
+
+  - name: "sleep"
+    schedule: "22:00-07:00"
+
+  - name: "vacation"
+    manual_only: true
