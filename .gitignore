@@ -1,4 +1,6 @@
 *.log
+.claude/
+.vscode/
 
 # Python
 __pycache__/

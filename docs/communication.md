@@ -1,5 +1,39 @@
 # 通信协议规范
 
+## OpenSpec 规范化描述
+
+### Requirement: Beacon Identification
+The system SHALL encode room identity using iBeacon UUID/Major/Minor fields.
+
+#### Scenario: Beacon room mapping
+- **GIVEN** a beacon broadcast with UUID/Major/Minor
+- **WHEN** a Personal Agent scans the beacon
+- **THEN** the room identity is resolved from the Major/Minor mapping
+
+### Requirement: Discovery via Beacon Registry
+The system SHALL allow a Personal Agent to resolve a beacon ID to a Room Agent MQTT broker endpoint.
+
+#### Scenario: Room broker discovery
+- **GIVEN** a beacon ID is detected
+- **WHEN** the Personal Agent queries the discovery service
+- **THEN** the response includes the MQTT broker host and ports
+
+### Requirement: MQTT Topic Namespace
+The system SHALL use the `room/{room_id}/agent/{agent_id}` namespace for room-scoped control and state topics.
+
+#### Scenario: Control publish
+- **GIVEN** a Personal Agent wants to control a device in a room
+- **WHEN** it publishes to `room/{room_id}/agent/{agent_id}/control`
+- **THEN** the Room Agent receives and processes the control message
+
+### Requirement: Message Validation
+The system SHALL validate MQTT payloads against the message schemas defined in this document.
+
+#### Scenario: Invalid message rejected
+- **GIVEN** a message missing required fields
+- **WHEN** the message is received by an agent
+- **THEN** the agent rejects or logs the invalid payload
+
 ## 1. 协议栈概览
 
 ```
@@ -80,17 +114,19 @@ def determine_current_space(beacons, current_space):
 
 | 端点 | 方法 | 描述 |
 |------|------|------|
-| `/api/beacon` | POST | 注册/更新 Beacon 信息（Room Agent 调用） |
+| `/api/beacon/register` | POST | 注册/更新 Beacon 信息（Room Agent 调用） |
 | `/api/beacon/{beacon_id}` | GET | 查询 Beacon 信息（Personal Agent 调用） |
+| `/api/beacon/room/{room_id}` | GET | 按房间查询 Beacon 信息 |
 | `/api/beacon/{beacon_id}/heartbeat` | POST | 更新心跳 |
-| `/api/beacon` | GET | 获取所有 Beacon 列表 |
+| `/api/beacon/list` | GET | 获取所有 Beacon 列表 |
 | `/api/beacon/{beacon_id}` | DELETE | 删除 Beacon |
+| `/api/beacon/stats` | GET | 获取 Beacon 统计信息 |
 
 ### 3.2 Beacon 注册（Room Agent 启动时）
 
 **请求**:
 ```http
-POST /api/beacon
+POST /api/beacon/register
 Content-Type: application/json
 
 {

@@ -53,6 +53,7 @@ class DescribeMessage(BaseModel):
     timestamp: str = Field(..., description="ISO 8601格式时间戳")
     source_agent: str = Field(..., description="查询方Agent ID")
     query_type: str = Field(default="capabilities", description="查询类型")
+    correlation_id: Optional[str] = Field(None, description="关联ID（用于请求追踪）")
 
 
 class DeviceCapability(BaseModel):
@@ -77,6 +78,7 @@ class DescriptionMessage(BaseModel):
     version: str = Field(..., description="Agent版本")
     devices: List[DeviceCapability] = Field(default_factory=list, description="设备能力列表")
     capabilities: List[str] = Field(default_factory=list, description="Agent能力列表")
+    correlation_id: Optional[str] = Field(None, description="关联ID（用于请求追踪）")
 
 
 class SystemMetrics(BaseModel):
@@ -143,6 +145,7 @@ class ArbitrationRequestMessage(BaseModel):
     conflict_type: str = Field(..., description="冲突类型: multi_user_intent/policy_violation/resource_competition")
     intent: Dict[str, Any] = Field(..., description="用户意图")
     context: Dict[str, Any] = Field(default_factory=dict, description="上下文信息")
+    correlation_id: Optional[str] = Field(None, description="关联ID（用于请求追踪）")
 
 
 class ArbitrationResponseMessage(BaseModel):

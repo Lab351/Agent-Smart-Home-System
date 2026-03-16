@@ -1,5 +1,25 @@
 # 智能家居 Agent 系统 - 文档中心
 
+## OpenSpec 规范说明
+
+本文档集遵循 OpenSpec 的规范化格式：
+
+- 使用 `SHALL` / `MUST` 表达规范性需求。
+- 每个 Requirement 必须配套 `#### Scenario` 场景，采用 `GIVEN / WHEN / THEN` 结构。
+- 场景必须使用 `####` 级标题，不使用 `###` 或普通段落。
+
+示例：
+
+```markdown
+### Requirement: Example Requirement
+The system SHALL do something.
+
+#### Scenario: Example scenario
+- **GIVEN** some precondition
+- **WHEN** an action occurs
+- **THEN** an expected outcome happens
+```
+
 ## 文档结构
 
 ```
@@ -68,7 +88,7 @@ docs/
 - **特点**: 低功耗、无需配对、基于 RSSI 的距离判断
 
 ### 2. 房间管理层 (Room Management)
-- **技术**: mDNS + MQTT
+- **技术**: Beacon Registry API + MQTT
 - **职责**: Room Agent 管理房间状态、设备控制、局部决策
 - **特点**: 房间自治、状态优先、最小接口
 
@@ -104,7 +124,7 @@ docs/
                           ▲
 ┌─────────────────────────────────────────────────────────┐
 │                    服务发现层                            │
-│           mDNS (Room Agent 广播)                        │
+│     Beacon Registry API (qwen-backend)                 │
 └─────────────────────────────────────────────────────────┘
                           ▲
 ┌─────────────────────────────────────────────────────────┐
@@ -118,7 +138,7 @@ docs/
 ### 场景 1: 用户控制灯光
 ```
 1. Personal Agent 扫描 Beacon → 确定在"客厅"
-2. Personal Agent 通过 mDNS 发现 Room Agent
+2. Personal Agent 通过 Beacon Registry API 查询 Room Agent
 3. Personal Agent 连接到 Room Agent 的 MQTT Broker
 4. 用户说"打开灯"
 5. Personal Agent 发布意图到 Room Agent

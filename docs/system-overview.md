@@ -1,5 +1,47 @@
 # 系统总览
 
+## OpenSpec 规范化描述
+
+### Requirement: Spatial Binding
+The system SHALL determine the user's current room using BLE beacon scanning with an RSSI threshold and hysteresis.
+
+#### Scenario: Stable room binding
+- **GIVEN** multiple beacons are detected with RSSI values
+- **WHEN** the strongest beacon exceeds the threshold and hysteresis rules
+- **THEN** the current room is updated to the beacon's room
+
+### Requirement: Decentralized Room Control
+The system SHALL delegate room-level state and device control to the Room Agent, and the Central Agent SHALL NOT directly control devices.
+
+#### Scenario: Room autonomy
+- **GIVEN** a Room Agent manages devices in a room
+- **WHEN** a Personal Agent issues a device intent
+- **THEN** the Room Agent executes the control and updates room state
+
+### Requirement: Conflict Arbitration
+The system SHALL route cross-user or policy-violating intents to the Central Agent for arbitration.
+
+#### Scenario: Policy conflict
+- **GIVEN** a global sleep mode policy is active
+- **WHEN** a Room Agent receives an intent that violates the policy
+- **THEN** the Room Agent requests arbitration from the Central Agent
+
+### Requirement: End-to-End Latency
+The system SHALL complete intent-to-state updates within 500ms under normal conditions.
+
+#### Scenario: Normal control latency
+- **GIVEN** the network and room broker are healthy
+- **WHEN** a Personal Agent sends a control intent
+- **THEN** the state update is observed within 500ms
+
+### Requirement: Offline Room Operation
+The system SHALL allow Room Agents to execute local control when the internet is unavailable.
+
+#### Scenario: WAN outage
+- **GIVEN** the WAN link is down
+- **WHEN** a Personal Agent connects to a local Room Agent broker
+- **THEN** device control continues to operate locally
+
 ## 1. 愿景与目标
 
 ### 1.1 核心愿景
@@ -35,12 +77,12 @@
 │  │  (手机/手表)│  MQTT   │  (边缘设备)  │  MQTT   │  (NAS/云端) │       │
 │  └──────┬──────┘         └──────┬──────┘         └──────┬──────┘       │
 │         │                       │                       │               │
-│         │ BLE Beacon            │ mDNS                 │               │
+│         │ BLE Beacon            │ Beacon Registry API  │               │
 │         │                       │ Broker               │               │
 │         ▼                       ▼                       ▼               │
 │  ┌─────────────────────────────────────────────────────────────────┐   │
 │  │                     三层协议栈                                   │   │
-│  │  BLE Beacon ──► mDNS Discovery ──► MQTT Communication           │   │
+│  │  BLE Beacon ──► Beacon Registry API ──► MQTT Communication     │   │
 │  └─────────────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -58,7 +100,7 @@
 │                    通信层 (Communication Layer)                │
 │  ┌───────────────────────────────────────────────────────┐   │
 │  │  MQTT Topics: room/{room_id}/*, home/*                │   │
-│  │  mDNS Service: _room-agent._tcp.local                 │   │
+│  │  Discovery API: /api/beacon/{beacon_id}               │   │
 │  └───────────────────────────────────────────────────────┘   │
 ├───────────────────────────────────────────────────────────────┤
 │                    感知层 (Perception Layer)                   │
@@ -104,7 +146,7 @@ Time    Personal Agent                  Room Agent                  Device
 T0      扫描 Beacon (RSSI=-55)
         → current_room = "livingroom"
 
-T1      mDNS 查询: _room-agent._tcp
+T1      Beacon Registry 查询: /api/beacon/{beacon_id}
         ← 192.168.1.100:1883
 
 T2      MQTT CONNECT

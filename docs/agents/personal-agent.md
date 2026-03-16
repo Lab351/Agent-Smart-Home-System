@@ -1,5 +1,31 @@
 # Personal Agent (随身 Agent) 技术规格
 
+## OpenSpec 规范化描述
+
+### Requirement: Intent Authority
+The Personal Agent SHALL be the single source of truth for user intent.
+
+#### Scenario: User intent capture
+- **GIVEN** a user issues a voice command
+- **WHEN** the Personal Agent parses the command
+- **THEN** the structured intent is produced and treated as authoritative
+
+### Requirement: Dynamic Room Binding
+The Personal Agent SHALL bind to the current room's Room Agent based on spatial scanning.
+
+#### Scenario: Entering a room
+- **GIVEN** the user enters a new room with a stronger beacon signal
+- **WHEN** the Personal Agent detects the new room
+- **THEN** it switches binding to the new room's Room Agent
+
+### Requirement: No Direct Device Control
+The Personal Agent SHALL NOT directly control devices and SHALL only send intents to Room or Central Agents.
+
+#### Scenario: Device control request
+- **GIVEN** the user requests "turn on the light"
+- **WHEN** the Personal Agent processes the request
+- **THEN** it sends a control intent to the Room Agent rather than controlling the device directly
+
 ## 1. 角色定义
 
 Personal Agent（PA）是代表用户个体的智能体，负责：
@@ -130,7 +156,7 @@ def calculate_proximity_score(beacons):
 1. 扫描所有可见 Beacon
 2. 计算空间亲和度
 3. 选择最高分房间作为主空间
-4. 通过 mDNS 发现该房间的 Room Agent
+4. 通过 Beacon Registry API 查询该房间的 Room Agent
 5. 建立 MQTT 连接
 6. 订阅状态主题
 
@@ -214,7 +240,7 @@ def calculate_proximity_score(beacons):
 |------|------|
 | 用户意图理解 | 解析语音/文本/手势输入 |
 | 个人上下文维护 | 用户状态、偏好、历史 |
-| 空间发现与绑定 | Beacon 扫描、mDNS 发现、MQTT 连接 |
+| 空间发现与绑定 | Beacon 扫描、Beacon Registry API 查询、MQTT 连接 |
 | 决策发起 | 向 Room/Central Agent 发送意图 |
 
 ### 4.2 绝不做
