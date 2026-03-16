@@ -1,0 +1,42 @@
+# Central Agent配置文件
+# 符合Central Agent技术规格
+
+agent:
+  id: "central-agent-1"
+  home_id: "home-001"
+  version: "1.0.0"
+
+# MQTT Broker配置
+mqtt:
+  brokers:
+    - room_id: "livingroom"
+      host: "120.78.228.69"
+      port: 1884
+    # - room_id: "bedroom"
+    #   host: "192.168.1.101"
+    #   port: 1883
+
+# 全局状态持久化（可选）
+state_persistence: "/var/lib/central-agent/state.json"
+
+# 策略配置文件（可选）
+policy_file: "config/policies.yaml"
+
+# 心跳配置
+heartbeat:
+  interval: 30  # seconds
+
+# 用户配置（可选）
+users:
+  - user_id: "admin"
+    role: "admin"
+    priority: 100
+  - user_id: "user1"
+    role: "adult"
+    priority: 80
+  - user_id: "user2"
+    role: "adult"
+    priority: 80
+  - user_id: "child1"
+    role: "child"
+    priority: 50

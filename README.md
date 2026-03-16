@@ -43,7 +43,7 @@
   - 个人上下文维护
   - 近场空间发现（BLE Beacon 扫描）
   - 动态绑定 Room Agent
-- **仓库**: [home-agent/](home-agent/) (复用中央 Agent 仓库)
+- **代码**: [watch-agent/](watch-agent/)
 - **规格**: [docs/agents/personal-agent.md](docs/agents/personal-agent.md)
 
 ### Room Agent (房间 Agent)
@@ -54,7 +54,7 @@
   - MQTT Broker 管理（房间级）
   - Beacon Registry 注册/心跳维护
   - 局部决策执行
-- **仓库**: [room-agent/](room-agent/)
+- **代码**: [room-agent/](room-agent/)
 - **规格**: [docs/agents/room-agent.md](docs/agents/room-agent.md)
 
 ### Central Agent (中央 Agent)
@@ -64,7 +64,7 @@
   - 策略与规则管理（睡眠模式、离家模式等）
   - 冲突仲裁（多用户冲突、策略违规）
   - 系统事件广播
-- **仓库**: [home-agent/](home-agent/)
+- **代码**: [home-agent/](home-agent/)
 - **规格**: [docs/agents/central-agent.md](docs/agents/central-agent.md)
 
 ## 快速开始
@@ -72,22 +72,15 @@
 ### 环境要求
 
 - Python 3.12+
+- Node.js 18+ (用于 qwen-backend 和 watch-agent)
 - MQTT Broker (如 Mosquitto)
 - 局域网环境
 
 ### 克隆仓库
 
 ```bash
-git clone --recursive https://gitproxy.mcurobot.com/kungraduate/agent-home-system.git
+git clone https://git.scut.mcurobot.com/kungraduate/agent-home-system.git
 cd agent-home-system
-```
-
-### 初始化 Submodules
-
-如果克隆时忘记使用 `--recursive`：
-
-```bash
-git submodule update --init --recursive
 ```
 
 ### 安装依赖
@@ -104,10 +97,22 @@ cd home-agent
 uv sync
 ```
 
+#### Qwen Backend
+```bash
+cd qwen-backend
+npm install
+```
+
+#### Watch Agent
+```bash
+cd watch-agent
+npm install
+```
+
 ### 配置
 
 #### Room Agent
-编辑 `room-agent/config/config.yaml`：
+编辑 `room-agent/config/room_agent.yaml`：
 ```yaml
 agent:
   room_id: "livingroom"
@@ -137,6 +142,12 @@ mqtt:
 
 ### 运行
 
+#### 启动 MQTT Broker
+```bash
+cd mqtt-broker/mosquitto
+./start.sh
+```
+
 #### 启动 Room Agent
 ```bash
 cd room-agent
@@ -149,6 +160,12 @@ cd home-agent
 uv run python main.py
 ```
 
+#### 启动 Qwen Backend
+```bash
+cd qwen-backend
+npm run start
+```
+
 ## 项目结构
 
 ```
@@ -156,7 +173,7 @@ agent-home-system/
 ├── shared/                    # 共享库
 │   ├── models/               # MQTT 消息模型
 │   └── mqtt/                 # MQTT 客户端管理器
-├── home-agent/               # Central Agent (submodule)
+├── home-agent/               # Central Agent
 │   ├── core/central_agent/
 │   │   ├── state_manager.py
 │   │   ├── policy_engine.py
@@ -164,11 +181,23 @@ agent-home-system/
 │   │   └── central_agent.py
 │   ├── config/
 │   └── main.py
-├── room-agent/               # Room Agent (submodule)
+├── room-agent/               # Room Agent
 │   ├── core/room_agent/
+│   ├── core/mcp_control/
 │   ├── config/
 │   └── main.py
-├── esp32-ble-beacon/         # BLE Beacon 固件 (submodule)
+├── watch-agent/              # Personal Agent (手表端)
+│   ├── src/
+│   ├── docs/
+│   └── package.json
+├── qwen-backend/             # Qwen AI 后端服务
+│   ├── src/
+│   └── package.json
+├── mqtt-broker/              # MQTT Broker 配置
+│   └── mosquitto/
+├── esp32-ble-beacon/         # BLE Beacon 固件
+│   ├── main/
+│   └── CMakeLists.txt
 ├── docs/                     # 文档中心
 │   ├── README.md             # 文档导航
 │   ├── system-overview.md    # 系统总览
@@ -224,6 +253,10 @@ home/
 cd room-agent
 uv run pytest
 
+# Home Agent 测试
+cd home-agent
+uv run pytest
+
 # 查看测试用例
 cat docs/TEST_CASES.md
 ```
@@ -262,12 +295,12 @@ uv run ruff check .
 
 ## 技术栈
 
-- **语言**: Python 3.12
-- **通信**: MQTT (paho-mqtt), Beacon Registry API (qwen-backend)
+- **语言**: Python 3.12, TypeScript, C
+- **通信**: MQTT (paho-mqtt), mDNS (zeroconf)
 - **空间感知**: BLE Beacon (bluepy)
 - **数据验证**: Pydantic
 - **异步**: asyncio
-- **包管理**: uv
+- **包管理**: uv (Python), npm (Node.js)
 
 ## 与传统智能家居对比
 
@@ -325,11 +358,4 @@ uv run ruff check .
 
 ## 联系方式
 
-- 项目仓库: https://gitproxy.mcurobot.com/kungraduate/agent-home-system
-
----
-
-**相关链接**:
-- [Room Agent 仓库](https://gitproxy.mcurobot.com/kungraduate/room-agent.git)
-- [Home Agent 仓库](https://gitproxy.mcurobot.com/kungraduate/home-agent.git)
-- [ESP32 Beacon 仓库](https://gitproxy.mcurobot.com/kungraduate/esp32-ble-beacon.git)
+- 项目仓库: https://git.scut.mcurobot.com/kungraduate/agent-home-system

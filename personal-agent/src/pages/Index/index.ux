@@ -1,0 +1,546 @@
+<!-- Personal Agent 首页 -->
+
+<template>
+  <div class="index-page">
+    <!-- 顶部标题栏 -->
+    <div class="header">
+      <text class="title">Kun</text>
+      <text class="subtitle">随身助手</text>
+    </div>
+
+    <!-- 状态卡片 - 紧凑版 -->
+    <div class="status-card">
+      <div class="status-row">
+        <text class="label">房间:</text>
+        <text class="value-ok" show="{{ currentRoomName }}">{{ currentRoomName }}</text>
+        <text class="value-pending" show="{{ !currentRoomName && isScanningBeacon }}">扫描中...</text>
+        <text class="value-error" show="{{ !currentRoomName && !isScanningBeacon }}">未绑定</text>
+      </div>
+      <div class="status-row">
+        <text class="label">MQTT:</text>
+        <text class="value-connected" show="{{ isConnected }}">✓ 已连接</text>
+        <text class="value-disconnected" show="{{ !isConnected && !isConnecting }}">✗ 未连接</text>
+        <text class="value-pending" show="{{ isConnecting }}">连接中...</text>
+      </div>
+      <div class="status-row" show="{{ currentRoomName && isConnected }}">
+        <text class="label">状态:</text>
+        <text class="value">就绪</text>
+      </div>
+    </div>
+
+    <!-- 主要功能入口 - 2×2 田字格布局 -->
+    <div class="features-container">
+      <div class="feature-row">
+        <div class="feature-icon-btn" onclick="navigateToVoiceControl">
+          <text class="icon-text">🎤</text>
+          <text class="icon-label">语音</text>
+        </div>
+        <div class="feature-icon-btn" onclick="navigateToRoomBinding">
+          <text class="icon-text">📍</text>
+          <text class="icon-label">房间</text>
+        </div>
+      </div>
+      <div class="feature-row">
+        <div class="feature-icon-btn" onclick="navigateToMqttTest">
+          <text class="icon-text">📡</text>
+          <text class="icon-label">MQTT</text>
+        </div>
+        <div class="feature-icon-btn" onclick="navigateToBleTest">
+          <text class="icon-text">🔷</text>
+          <text class="icon-label">BLE</text>
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部提示 -->
+    <div class="footer-hint" show="{{ !currentRoomName }}">
+      <text class="hint-text">点击 "房间" 绑定房间</text>
+    </div>
+  </div>
+</template>
+
+<script>
+import MqttService from '../../services/mqtt-service'
+import BeaconService from '../../services/BeaconService'
+import ControlService from '../../services/ControlService'
+import DiscoveryService from '../../services/DiscoveryService'
+import config from '../../config/agent.config'
+
+const mqttService = new MqttService()
+const beaconService = new BeaconService()
+const controlService = new ControlService(mqttService)
+const discoveryService = new DiscoveryService(mqttService)
+
+export default {
+  private: {
+    // 状态
+    currentRoomId: null,
+    currentRoomName: null,
+    isConnected: false,
+    isConnecting: false,
+    isScanningBeacon: false,
+    userId: 'user1'
+  },
+
+  onInit() {
+    console.log('[Index] Page initialized')
+    this.loadSavedRoom()
+    this.setupBeaconService()
+  },
+
+  onReady() {
+    console.log('[Index] Page ready')
+    this.initMqttConnection()
+  },
+
+  onDestroy() {
+    console.log('[Index] Page destroying')
+
+    // 停止 Beacon 扫描
+    if (this.isScanningBeacon) {
+      beaconService.stopScanning()
+    }
+
+    // 断开 MQTT 连接
+    if (mqttService.isConnected()) {
+      mqttService.disconnect()
+    }
+
+    // 清理服务
+    controlService.destroy()
+    beaconService.destroy()
+    discoveryService.destroy()
+  },
+
+  /**
+   * 加载已保存的房间绑定
+   */
+  loadSavedRoom() {
+    try {
+      const storage = require('@system.storage')
+      storage.get({
+        key: 'bound_room',
+        success: (data) => {
+          if (data) {
+            this.currentRoomId = data
+            this.currentRoomName = this.getRoomDisplayName(data)
+            console.log('[Index] Loaded saved room:', this.currentRoomId)
+
+            // 设置房间 Agent 映射
+            controlService.setRoomAgent(data, data)
+
+            // 启动自动 Beacon 扫描
+            this.startBeaconScanning()
+          }
+        },
+        fail: (err, code) => {
+          console.log('[Index] No saved room found:', code)
+        }
+      })
+    } catch (err) {
+      console.error('[Index] Failed to load saved room:', err)
+    }
+  },
+
+  /**
+   * 获取房间显示名称
+   */
+  getRoomDisplayName(roomId) {
+    const roomNames = {
+      'livingroom': '客厅',
+      'bedroom': '卧室',
+      'study': '书房',
+      'kitchen': '厨房'
+    }
+    return roomNames[roomId] || roomId
+  },
+
+  /**
+   * 设置 Beacon 服务
+   */
+  setupBeaconService() {
+    const _this = this
+
+    // 监听房间变化
+    beaconService.onRoomChanged = async (info) => {
+      console.log('[Index] Room changed:', info)
+
+      if (info.roomId && info.beacon) {
+        const beaconId = info.beacon.major.toString()
+
+        // 查询后端获取 Room-Agent 信息
+        console.log('[Index] Querying backend for beacon:', beaconId)
+        const agentInfo = await discoveryService.getRoomAgentByBeacon(beaconId)
+
+        if (agentInfo) {
+          _this.currentRoomId = agentInfo.room_id
+          _this.currentRoomName = info.roomName
+
+          // 更新 ControlService 的映射
+          controlService.setRoomAgent(agentInfo.room_id, agentInfo.agent_id)
+
+          // 保存绑定关系
+          _this.saveRoom(agentInfo.room_id)
+
+          // 订阅房间状态和能力
+          _this.subscribeToRoomState(agentInfo.room_id)
+          _this.queryRoomCapabilities(agentInfo.room_id)
+
+          console.log('[Index] Room agent loaded:', agentInfo)
+        } else {
+          console.warn('[Index] No agent found for beacon:', beaconId, ', using fallback')
+          // 回退到使用房间 ID 作为 Agent ID
+          _this.currentRoomId = info.roomId
+          _this.currentRoomName = info.roomName
+          controlService.setRoomAgent(info.roomId, info.roomId)
+          _this.saveRoom(info.roomId)
+          _this.subscribeToRoomState(info.roomId)
+        }
+      } else {
+        // 离开房间
+        _this.currentRoomId = null
+        _this.currentRoomName = null
+      }
+    }
+
+    // 监听错误
+    beaconService.onError = (error) => {
+      console.error('[Index] Beacon error:', error)
+    }
+  },
+
+  /**
+   * 启动 Beacon 扫描
+   */
+  async startBeaconScanning() {
+    if (this.isScanningBeacon) {
+      return
+    }
+
+    console.log('[Index] Starting beacon scanning...')
+    const success = await beaconService.startScanning()
+
+    this.isScanningBeacon = success
+
+    if (success) {
+      console.log('[Index] Beacon scanning started')
+    } else {
+      console.error('[Index] Failed to start beacon scanning')
+    }
+  },
+
+  /**
+   * 初始化 MQTT 连接
+   */
+  async initMqttConnection() {
+    if (this.isConnecting || mqttService.isConnected()) {
+      return
+    }
+
+    this.isConnecting = true
+    console.log('[Index] Connecting to MQTT broker...')
+
+    const success = await mqttService.connect({
+      host: config.mqtt.host,
+      port: config.mqtt.wsPort,
+      clientId: `watch-${config.agent.userId}-${Date.now()}`
+    })
+
+    this.isConnected = success
+    this.isConnecting = false
+
+    if (success) {
+      console.log('[Index] MQTT connected successfully')
+      // 订阅相关主题
+      this.subscribeToTopics()
+
+      // 如果已绑定房间，订阅房间状态并查询能力
+      if (this.currentRoomId) {
+        this.subscribeToRoomState(this.currentRoomId)
+        this.queryRoomCapabilities(this.currentRoomId)
+      }
+    } else {
+      console.error('[Index] MQTT connection failed')
+    }
+  },
+
+  /**
+   * 订阅 MQTT 主题
+   */
+  subscribeToTopics() {
+    const userId = config.agent.userId
+
+    // 订阅房间绑定更新
+    mqttService.subscribe(`personal/${userId}/watch/room/bind`, (payload) => {
+      console.log('[Index] Room bind update:', payload)
+      try {
+        const data = JSON.parse(payload)
+        if (data.room) {
+          this.currentRoomId = data.room
+          this.currentRoomName = this.getRoomDisplayName(data.room)
+          // 保存到本地存储
+          this.saveRoom(data.room)
+        }
+      } catch (err) {
+        console.error('[Index] Failed to parse room bind message:', err)
+      }
+    })
+
+    // 订阅系统状态
+    mqttService.subscribe(`personal/${userId}/watch/status`, (payload) => {
+      console.log('[Index] System status update:', payload)
+    })
+  },
+
+  /**
+   * 订阅房间状态
+   */
+  async subscribeToRoomState(roomId) {
+    if (!mqttService.isConnected()) {
+      return
+    }
+
+    try {
+      await controlService.subscribeToState(roomId, (state) => {
+        console.log('[Index] Room state update:', state)
+      })
+      console.log('[Index] Subscribed to room state:', roomId)
+    } catch (err) {
+      console.error('[Index] Failed to subscribe to room state:', err)
+    }
+  },
+
+  /**
+   * 保存房间绑定
+   */
+  saveRoom(room) {
+    try {
+      const storage = require('@system.storage')
+      storage.set({
+        key: 'bound_room',
+        value: room,
+        success: () => {
+          console.log('[Index] Room saved:', room)
+        },
+        fail: (err, code) => {
+          console.error('[Index] Failed to save room:', code)
+        }
+      })
+    } catch (err) {
+      console.error('[Index] Failed to save room:', err)
+    }
+  },
+
+  /**
+   * 查询房间能力
+   */
+  async queryRoomCapabilities(roomId) {
+    if (!mqttService.isConnected()) {
+      console.log('[Index] MQTT not connected, skipping capability query')
+      return
+    }
+
+    try {
+      console.log('[Index] Querying room capabilities for:', roomId)
+      await controlService.queryCapabilities(roomId)
+      await controlService.subscribeToDescription(roomId, (description) => {
+        console.log('[Index] Room capabilities received:', description)
+        this.saveRoomCapabilities(description)
+      })
+    } catch (err) {
+      console.error('[Index] Failed to query capabilities:', err)
+    }
+  },
+
+  /**
+   * 保存房间能力到本地存储
+   */
+  saveRoomCapabilities(description) {
+    try {
+      const storage = require('@system.storage')
+      const key = `room_capabilities_${this.currentRoomId}`
+      storage.set({
+        key: key,
+        value: description,
+        success: () => {
+          console.log('[Index] Capabilities saved for', this.currentRoomId, ':', description)
+        },
+        fail: (err, code) => {
+          console.error('[Index] Failed to save capabilities:', code)
+        }
+      })
+    } catch (err) {
+      console.error('[Index] Failed to save capabilities:', err)
+    }
+  },
+
+  navigateToVoiceControl() {
+    console.log('[Index] Navigating to VoiceControl')
+    const router = require('@system.router')
+    router.push({
+      uri: 'pages/VoiceControl'
+    })
+  },
+
+  navigateToRoomBinding() {
+    console.log('[Index] Navigating to RoomBinding')
+    const router = require('@system.router')
+    router.push({
+      uri: 'pages/RoomBinding'
+    })
+  },
+
+  navigateToMqttTest() {
+    console.log('[Index] Navigating to MqttTest')
+    const router = require('@system.router')
+    router.push({
+      uri: 'pages/MqttTest'
+    })
+  },
+
+  navigateToBleTest() {
+    console.log('[Index] Navigating to BleTest')
+    const router = require('@system.router')
+    router.push({
+      uri: 'pages/BleTest'
+    })
+  }
+}
+</script>
+
+<style lang="less">
+.index-page {
+  width: 100%;
+  height: 100%;
+  background-color: #1a1a1a;
+  padding: 15px;
+  padding-top: 25px;
+  flex-direction: column;
+}
+
+.header {
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 15px;
+}
+
+.title {
+  font-size: 32px;
+  color: #ffffff;
+  font-weight: bold;
+  margin-bottom: 5px;
+}
+
+.subtitle {
+  font-size: 24px;
+  color: #888888;
+}
+
+.status-card {
+  background-color: #2a2a2a;
+  border-radius: 12px;
+  margin: 0 180px;
+  padding: 12px;
+  margin-bottom: 52px;
+  flex-direction: column;
+}
+
+.status-row {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.status-row-status-row-last {
+  margin-bottom: 0;
+}
+
+.label {
+  font-size: 32px;
+  color: #888888;
+}
+
+.value {
+  font-size: 32px;
+  color: #ffffff;
+  font-weight: bold;
+}
+
+.value-ok {
+  font-size: 32px;
+  color: #4CAF50;
+  font-weight: bold;
+}
+
+.value-pending {
+  font-size: 32px;
+  color: #FFA726;
+  font-weight: bold;
+}
+
+.value-error {
+  font-size: 32px;
+  color: #ff4444;
+  font-weight: bold;
+}
+
+.value-connected {
+  font-size: 22px;
+  color: #4CAF50;
+  font-weight: bold;
+}
+
+.value-disconnected {
+  font-size: 22px;
+  color: #ff4444;
+  font-weight: bold;
+}
+
+.features-container {
+  width: 100%;
+  height: 270px;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 20px 30px;
+}
+
+.feature-row {
+  width: 100%;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+}
+
+.feature-icon-btn {
+  width: 100px;
+  height: 100px;
+  background-color: #2a2a2a;
+  border-radius: 50px;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  margin-left: 15px;
+  margin-right: 15px;
+}
+
+.icon-text {
+  font-size: 32px;
+}
+
+.icon-label {
+  font-size: 14px;
+  color: #888888;
+  margin-top: 5px;
+}
+
+.footer-hint {
+  align-items: center;
+  padding-top: 20px;
+}
+
+.hint-text {
+  font-size: 14px;
+  color: #888888;
+}
+</style>
