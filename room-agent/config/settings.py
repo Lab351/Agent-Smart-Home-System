@@ -139,7 +139,10 @@ def _select_fallback_role(roles: dict[str, LLMRoleConfig]) -> LLMRoleConfig:
     raise ValueError("LLM config must define at least one role mapping.")
 
 
-def load_settings(config_path: str | None = None) -> Settings:
+def load_settings(
+    config_path: str | None = None,
+    llm_config_path: str | None = None,
+) -> Settings:
     resolved_config_path = config_path or os.getenv(
         "ROOM_AGENT_CONFIG_PATH",
         DEFAULT_ROOM_AGENT_CONFIG_PATH,
@@ -156,7 +159,7 @@ def load_settings(config_path: str | None = None) -> Settings:
             ),
             version=agent_data.get("version", AgentSettings.model_fields["version"].default),
         ),
-        llm=_load_llm_settings(),
+        llm=_load_llm_settings(Path(llm_config_path) if llm_config_path else DEFAULT_LLM_CONFIG_PATH),
         runtime=RuntimeSettings(
             room_agent_config_path=resolved_config_path,
             mcp_config_path=os.getenv("MCP_CONFIG_PATH"),

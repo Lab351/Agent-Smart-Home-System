@@ -20,8 +20,9 @@ async def run_once(
     session_id: str | None = None,
     request_id: str | None = None,
     config_path: str | None = None,
+    llm_config_path: str | None = None,
 ) -> dict[str, Any]:
-    settings = load_settings(config_path)
+    settings = load_settings(config_path, llm_config_path)
     llm_registry = create_llm_provider_registry(settings.llm)
     llm_provider = llm_registry.get("low_cost")
     mcp_client = build_mcp_client(settings.runtime.mcp_config_path)
@@ -43,6 +44,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--session-id", dest="session_id", help="Optional session id.")
     parser.add_argument("--request-id", dest="request_id", help="Optional request id.")
     parser.add_argument("--config", dest="config_path", help="Optional YAML config path.")
+    parser.add_argument("--llm-config", dest="llm_config_path", help="Optional LLM config path.")
     return parser
 
 
@@ -54,6 +56,7 @@ def main() -> None:
             session_id=args.session_id,
             request_id=args.request_id,
             config_path=args.config_path,
+            llm_config_path=args.llm_config_path,
         )
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
