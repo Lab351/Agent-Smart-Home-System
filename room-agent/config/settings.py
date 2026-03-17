@@ -7,13 +7,12 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
 
 DEFAULT_ROOM_AGENT_CONFIG_PATH = "config/room_agent.yaml"
-DEFAULT_OPENAI_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-DEFAULT_LLM_PROVIDER = "openai_compatible"
+DEFAULT_LLM_CONFIG_PATH = Path(__file__).with_name("llm.example.yaml")
+LLMRole = Literal["powerful", "low_cost"]
 
 
 class AgentSettings(BaseModel):
@@ -22,22 +21,51 @@ class AgentSettings(BaseModel):
     version: str = "0.1.0"
 
 
-class LLMSettings(BaseModel):
-    provider: Literal["openai_compatible"] = DEFAULT_LLM_PROVIDER
-    model: str = "qwen-plus"
+class LLMSamplingConfig(BaseModel):
     temperature: float = 0.2
-    dashscope_api_key: str | None = None
-    dashscope_intl_api_key: str | None = None
-    openai_api_key: str | None = None
-    openai_base_url: str = DEFAULT_OPENAI_BASE_URL
+
+
+class LLMModelConfig(BaseModel):
+    model_id: str
+    sampling: LLMSamplingConfig = Field(default_factory=LLMSamplingConfig)
+
+
+class LLMProviderConfig(BaseModel):
+    provider_type: Literal["openai_compatible"] = "openai_compatible"
+    base_url: str
+    api_key: str = ""
+    models: dict[str, LLMModelConfig] = Field(default_factory=dict)
+
+
+class LLMRoleConfig(BaseModel):
+    provider: str
+    model_key: str
+
+
+class LLMModelSettings(BaseModel):
+    role: LLMRole
+    provider_name: str
+    provider_type: Literal["openai_compatible"] = "openai_compatible"
+    model: str
+    api_key: str = ""
+    base_url: str
+    temperature: float = 0.2
 
     @property
     def has_credentials(self) -> bool:
-        return bool(self.compatible_api_key)
+        return bool(self.api_key)
+
+
+class LLMSettings(BaseModel):
+    powerful: LLMModelSettings
+    low_cost: LLMModelSettings
 
     @property
-    def compatible_api_key(self) -> str | None:
-        return self.openai_api_key or self.dashscope_api_key or self.dashscope_intl_api_key
+    def has_credentials(self) -> bool:
+        return self.powerful.has_credentials or self.low_cost.has_credentials
+
+    def for_role(self, role: LLMRole) -> LLMModelSettings:
+        return self.powerful if role == "powerful" else self.low_cost
 
 
 class RuntimeSettings(BaseModel):
@@ -64,9 +92,54 @@ def _load_yaml_config(config_path: str) -> dict:
         return data
 
 
-def load_settings(config_path: str | None = None) -> Settings:
-    load_dotenv(override=False)
+def _load_llm_settings(config_path: Path = DEFAULT_LLM_CONFIG_PATH) -> LLMSettings:
+    raw = _load_yaml_config(str(config_path))
+    providers = {
+        name: LLMProviderConfig.model_validate(item)
+        for name, item in (raw.get("providers") or {}).items()
+    }
+    roles = {
+        name: LLMRoleConfig.model_validate(item)
+        for name, item in (raw.get("roles") or {}).items()
+    }
 
+    return LLMSettings(
+        powerful=_resolve_llm_role("powerful", providers, roles),
+        low_cost=_resolve_llm_role("low_cost", providers, roles),
+    )
+
+
+def _resolve_llm_role(
+    role: LLMRole,
+    providers: dict[str, LLMProviderConfig],
+    roles: dict[str, LLMRoleConfig],
+) -> LLMModelSettings:
+    role_config = roles.get(role) or _select_fallback_role(roles)
+    provider_config = providers[role_config.provider]
+    model_config = provider_config.models[role_config.model_key]
+
+    return LLMModelSettings(
+        role=role,
+        provider_name=role_config.provider,
+        provider_type=provider_config.provider_type,
+        model=model_config.model_id,
+        api_key=provider_config.api_key,
+        base_url=provider_config.base_url,
+        temperature=model_config.sampling.temperature,
+    )
+
+
+def _select_fallback_role(roles: dict[str, LLMRoleConfig]) -> LLMRoleConfig:
+    if "low_cost" in roles:
+        return roles["low_cost"]
+    if "powerful" in roles:
+        return roles["powerful"]
+    if roles:
+        return next(iter(roles.values()))
+    raise ValueError("LLM config must define at least one role mapping.")
+
+
+def load_settings(config_path: str | None = None) -> Settings:
     resolved_config_path = config_path or os.getenv(
         "ROOM_AGENT_CONFIG_PATH",
         DEFAULT_ROOM_AGENT_CONFIG_PATH,
@@ -83,23 +156,7 @@ def load_settings(config_path: str | None = None) -> Settings:
             ),
             version=agent_data.get("version", AgentSettings.model_fields["version"].default),
         ),
-        llm=LLMSettings(
-            provider=_normalize_provider(os.getenv("LLM_PROVIDER")),
-            model=os.getenv("LLM_MODEL", LLMSettings.model_fields["model"].default),
-            temperature=float(
-                os.getenv(
-                    "LLM_TEMPERATURE",
-                    str(LLMSettings.model_fields["temperature"].default),
-                )
-            ),
-            dashscope_api_key=os.getenv("DASHSCOPE_API_KEY"),
-            dashscope_intl_api_key=os.getenv("DASHSCOPE_INTL_API_KEY"),
-            openai_api_key=os.getenv("OPENAI_API_KEY") or os.getenv("DASHSCOPE_API_KEY") or os.getenv("DASHSCOPE_INTL_API_KEY"),
-            openai_base_url=os.getenv(
-                "OPENAI_BASE_URL",
-                DEFAULT_OPENAI_BASE_URL,
-            ),
-        ),
+        llm=_load_llm_settings(),
         runtime=RuntimeSettings(
             room_agent_config_path=resolved_config_path,
             mcp_config_path=os.getenv("MCP_CONFIG_PATH"),
@@ -107,9 +164,3 @@ def load_settings(config_path: str | None = None) -> Settings:
         ),
     )
     return settings
-
-
-def _normalize_provider(raw_provider: str | None) -> str:
-    if raw_provider == DEFAULT_LLM_PROVIDER:
-        return raw_provider
-    return DEFAULT_LLM_PROVIDER

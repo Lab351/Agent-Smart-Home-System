@@ -7,7 +7,7 @@ from typing import Protocol
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
-from config.settings import LLMSettings
+from config.settings import LLMModelSettings, LLMSettings
 
 
 class ChatProvider(Protocol):
@@ -25,12 +25,12 @@ class ProviderError(RuntimeError):
 
 
 class OpenAICompatibleProvider:
-    def __init__(self, settings: LLMSettings) -> None:
+    def __init__(self, settings: LLMModelSettings) -> None:
         self.settings = settings
         self.model = ChatOpenAI(
             model=settings.model,
-            api_key=settings.compatible_api_key,
-            base_url=settings.openai_base_url,
+            api_key=settings.api_key,
+            base_url=settings.base_url,
             temperature=settings.temperature,
         )
 
@@ -52,11 +52,34 @@ class OpenAICompatibleProvider:
         return content
 
 
-def create_llm_provider(settings: LLMSettings) -> ChatProvider | None:
+class LLMProviderRegistry:
+    def __init__(
+        self,
+        *,
+        powerful: ChatProvider | None,
+        low_cost: ChatProvider | None,
+    ) -> None:
+        fallback = low_cost or powerful
+        self._providers = {
+            "powerful": powerful or fallback,
+            "low_cost": low_cost or fallback,
+        }
+
+    def get(self, role: str) -> ChatProvider | None:
+        return self._providers.get(role)
+
+
+def create_llm_provider(settings: LLMModelSettings) -> ChatProvider | None:
     if not settings.has_credentials:
         return None
 
     return OpenAICompatibleProvider(settings)
+
+def create_llm_provider_registry(settings: LLMSettings) -> LLMProviderRegistry:
+    return LLMProviderRegistry(
+        powerful=create_llm_provider(settings.for_role("powerful")),
+        low_cost=create_llm_provider(settings.for_role("low_cost")),
+    )
 
 
 def _to_langchain_messages(messages: list[dict[str, str]]) -> list[BaseMessage]:

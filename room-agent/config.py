@@ -1,31 +1,7 @@
 # 硬件配置
 VIDEO_DEV="/dev/video0"
 
-# OpenAI API 配置
 import os
-from dotenv import load_dotenv
-
-# 加载项目根目录的 .env
-load_dotenv(override=True)
-
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_BASE_URL = os.getenv(
-    "OPENAI_BASE_URL",
-    "https://dashscope.aliyuncs.com/compatible-mode/v1",
-)
-
-DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
-DASHSCOPE_INTL_API_KEY = os.getenv("DASHSCOPE_INTL_API_KEY")
-DASHSCOPE_BASE_URL = os.getenv(
-    "DASHSCOPE_BASE_URL",
-    "https://dashscope.aliyuncs.com/api/v1",
-)
-
-# 模型配置
-QWEN_MAX_MODEL = "qwen-max"  # 任务决策推理模型
-QWEN_VL_MODEL = "qwen-vl-plus"  # 视觉理解模型
-QWEN_OMNI_MODEL = "qwen-omni-flash"  # 多模态交互模型
-QWEN_TTS_FLASH = "qwen3-tts-flash" # TTS 模型
 
 # Agent 配置
 ACTION_TIMEOUT = 10.0  # Action 默认超时（秒）

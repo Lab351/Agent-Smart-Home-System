@@ -10,7 +10,7 @@ from typing import Any
 from config.settings import load_settings
 from graph.builder import build_graph
 from graph.state import create_initial_state
-from integrations.llm_provider import create_llm_provider
+from integrations.llm_provider import create_llm_provider_registry
 from integrations.mcp_client import build_mcp_client
 from tools.mcp_tools import MCPToolService
 
@@ -22,7 +22,8 @@ async def run_once(
     config_path: str | None = None,
 ) -> dict[str, Any]:
     settings = load_settings(config_path)
-    llm_provider = create_llm_provider(settings.llm)
+    llm_registry = create_llm_provider_registry(settings.llm)
+    llm_provider = llm_registry.get("low_cost")
     mcp_client = build_mcp_client(settings.runtime.mcp_config_path)
     graph = build_graph(llm_provider, MCPToolService(mcp_client))
 
