@@ -9,7 +9,6 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 
 from core.room_agent.devices.device_registry import DeviceRegistry
-from core.room_agent.devices.mcp_device_wrapper import McpDeviceWrapper
 from core.room_agent.models import DeviceState, DeviceType
 
 
@@ -31,49 +30,6 @@ class DeviceController:
         self.registry = device_registry
 
         print("[DeviceController] Initialized")
-
-    async def register_mcp_tool(
-        self,
-        device_id: str,
-        device_type: DeviceType,
-        device_config: Dict[str, Any],
-        mcp_manager,
-        tool_name: str
-    ) -> bool:
-        """注册MCP工具为设备
-
-        Args:
-            device_id: 设备ID
-            device_type: 设备类型
-            device_config: 设备配置
-            mcp_manager: MCP Manager实例
-            tool_name: MCP工具名称
-
-        Returns:
-            bool: 是否成功注册
-        """
-        try:
-            # 创建MCP设备包装器
-            device = McpDeviceWrapper(
-                device_id=device_id,
-                device_type=device_type,
-                config=device_config,
-                mcp_manager=mcp_manager,
-                tool_name=tool_name
-            )
-
-            # 注册到设备表
-            success = await self.registry.register_device(device)
-
-            if success:
-                # 连接设备
-                await device.connect()
-
-            return success
-
-        except Exception as e:
-            print(f"[DeviceController] Failed to register MCP device {device_id}: {e}")
-            return False
 
     async def unregister_device(self, device_id: str) -> bool:
         """注销设备
