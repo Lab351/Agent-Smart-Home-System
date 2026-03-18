@@ -259,6 +259,14 @@ get_room_capability() -> Capability
 
 Beacon **仅广播唯一标识符**，不包含任何房间状态信息。
 
+## 7. 下一期 TODO
+
+- 在 Room Agent 的 YAML 配置中增加模型能力声明字段，例如 `supports_structured_output`。
+- 在 Agent 配置对象中增加对应字段，用于表达当前模型是否支持结构化输出。
+- LLM 接入层后续只读取该能力位，不在运行时做自动探测。
+- 该能力位用于后续结构化输出接入，例如 OpenAI 兼容接口上的 `response_format` / `json_schema` 能力选择。
+- 本期不实现真实结构化输出调用逻辑，只预留配置协议和后续接入方向。
+
 **iBeacon 格式**:
 ```json
 {
