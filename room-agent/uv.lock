@@ -1181,6 +1181,7 @@ version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "a2a-sdk", extra = ["http-server"] },
+    { name = "jsonschema" },
     { name = "langchain-core" },
     { name = "langchain-mcp-adapters" },
     { name = "langchain-openai" },
@@ -1200,6 +1201,7 @@ ble = [
 requires-dist = [
     { name = "a2a-sdk", extras = ["http-server"], specifier = ">=0.3.25" },
     { name = "bluepy", marker = "extra == 'ble'", specifier = ">=0.2.0" },
+    { name = "jsonschema", specifier = ">=4.26.0" },
     { name = "langchain-core", specifier = ">=1.0.0" },
     { name = "langchain-mcp-adapters", specifier = ">=0.1.0" },
     { name = "langchain-openai", specifier = ">=1.0.0" },
