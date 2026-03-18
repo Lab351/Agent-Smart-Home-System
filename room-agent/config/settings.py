@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Literal
 
@@ -11,7 +10,7 @@ from pydantic import BaseModel, Field
 
 
 DEFAULT_ROOM_AGENT_CONFIG_PATH = "config/room_agent.yaml"
-DEFAULT_LLM_CONFIG_PATH = Path(__file__).with_name("llm.example.yaml")
+DEFAULT_LLM_CONFIG_PATH = Path(__file__).with_name("llm.yaml")
 LLMRole = Literal["powerful", "low_cost"]
 
 
@@ -143,27 +142,22 @@ def load_settings(
     config_path: str | None = None,
     llm_config_path: str | None = None,
 ) -> Settings:
-    resolved_config_path = config_path or os.getenv(
-        "ROOM_AGENT_CONFIG_PATH",
-        DEFAULT_ROOM_AGENT_CONFIG_PATH,
-    )
+    resolved_config_path = config_path or DEFAULT_ROOM_AGENT_CONFIG_PATH
     yaml_data = _load_yaml_config(resolved_config_path)
     agent_data = yaml_data.get("agent", {}) if isinstance(yaml_data.get("agent"), dict) else {}
+    runtime_data = yaml_data.get("runtime", {}) if isinstance(yaml_data.get("runtime"), dict) else {}
 
     settings = Settings(
         agent=AgentSettings(
-            id=os.getenv("AGENT_ID", agent_data.get("id", AgentSettings.model_fields["id"].default)),
-            room_id=os.getenv(
-                "ROOM_ID",
-                agent_data.get("room_id", AgentSettings.model_fields["room_id"].default),
-            ),
+            id=agent_data.get("id", AgentSettings.model_fields["id"].default),
+            room_id=agent_data.get("room_id", AgentSettings.model_fields["room_id"].default),
             version=agent_data.get("version", AgentSettings.model_fields["version"].default),
         ),
         llm=_load_llm_settings(Path(llm_config_path) if llm_config_path else DEFAULT_LLM_CONFIG_PATH),
         runtime=RuntimeSettings(
             room_agent_config_path=resolved_config_path,
-            mcp_config_path=os.getenv("MCP_CONFIG_PATH"),
-            log_level=os.getenv("LOG_LEVEL", RuntimeSettings.model_fields["log_level"].default),
+            mcp_config_path=runtime_data.get("mcp_config_path"),
+            log_level=runtime_data.get("log_level", RuntimeSettings.model_fields["log_level"].default),
         ),
     )
     return settings

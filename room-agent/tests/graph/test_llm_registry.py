@@ -1,9 +1,12 @@
+from pathlib import Path
+
 from config.settings import _load_llm_settings
 from integrations.llm_provider import LLMProviderRegistry
 
 
 def test_load_llm_settings_uses_model_sampling_config():
-    settings = _load_llm_settings()
+    fixture_path = Path(__file__).resolve().parents[1] / "fixtures" / "llm.yaml"
+    settings = _load_llm_settings(fixture_path)
 
     assert settings.for_role("powerful").temperature == 0.1
     assert settings.for_role("low_cost").temperature == 0.2
