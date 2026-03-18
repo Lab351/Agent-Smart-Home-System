@@ -16,6 +16,7 @@ dependencies = [
     "paho-mqtt>=2.1.0",
     "a2a-sdk[http-server]>=0.3.25",
     "jsonschema>=4.26.0",
+    "json-repair==0.*",
 ]
 
 [project.optional-dependencies]
