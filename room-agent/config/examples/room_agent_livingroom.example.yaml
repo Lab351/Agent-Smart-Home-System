@@ -32,36 +32,33 @@ beacon:
   # ESP32设备标识（用于调试）
   esp32_device_id: "esp32-beacon-livingroom"
   esp32_mac: null              # 实际部署时填写ESP32的MAC地址
-
-# 心跳配置
-heartbeat:
-  interval: 30
-
+  
 # 能力
 capabilities:
   - "device_control"
   - "scene_activation"
 
+# 3.18 变更 | 接入 HomeAssistant MCP / Rest API 后不再需要声明
 # 设备配置（可选）
-devices:
-  # 客厅设备示例
-  - id: "ceiling_light"
-    name: "客厅吸顶灯"
-    type: "light"
-    protocol: "mqtt"
-    address: "mqtt/ceiling_light"
-    actions: ["on", "off", "set_brightness", "set_color_temp"]
+# devices:
+#   # 客厅设备示例
+#   - id: "ceiling_light"
+#     name: "客厅吸顶灯"
+#     type: "light"
+#     protocol: "mqtt"
+#     address: "mqtt/ceiling_light"
+#     actions: ["on", "off", "set_brightness", "set_color_temp"]
 
-  - id: "curtain"
-    name: "客厅窗帘"
-    type: "curtain"
-    protocol: "http"
-    address: "http://192.168.1.201/api"
-    actions: ["open", "close", "set_position"]
+#   - id: "curtain"
+#     name: "客厅窗帘"
+#     type: "curtain"
+#     protocol: "http"
+#     address: "http://192.168.1.201/api"
+#     actions: ["open", "close", "set_position"]
 
-  - id: "ac_unit"
-    name: "客厅空调"
-    type: "climate"
-    protocol: "mcp"
-    address: "home_ac/control"
-    actions: ["on", "off", "set_temperature", "set_mode"]
+#   - id: "ac_unit"
+#     name: "客厅空调"
+#     type: "climate"
+#     protocol: "mcp"
+#     address: "home_ac/control"
+#     actions: ["on", "off", "set_temperature", "set_mode"]
