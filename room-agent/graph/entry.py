@@ -11,8 +11,12 @@ if __package__ in {None, ""}:
     from pathlib import Path
 
     sys.path.append(str(Path(__file__).resolve().parent))
+    from nodes import direct_response, intent_recognition, tool_selection
+    from nodes.intent_recognition import route_after_intent
     from state import RoomAgentGraphState
 else:
+    from .nodes import direct_response, intent_recognition, tool_selection
+    from .nodes.intent_recognition import route_after_intent
     from .state import RoomAgentGraphState
 
 
@@ -33,15 +37,24 @@ def initialize_request(state: RoomAgentGraphState) -> RoomAgentGraphState:
 
 
 def build_graph() -> StateGraph:
-    """Build the Room Agent graph skeleton.
-
-    This is the formal entrypoint for the upcoming LangGraph rewrite.
-    It intentionally contains only the minimal initialization node for now.
-    """
+    """Build the Room Agent graph skeleton."""
     graph = StateGraph(RoomAgentGraphState)
     graph.add_node("initialize_request", initialize_request)
+    graph.add_node("intent_recognition", intent_recognition)
+    graph.add_node("direct_response", direct_response)
+    graph.add_node("tool_selection", tool_selection)
     graph.add_edge(START, "initialize_request")
-    graph.add_edge("initialize_request", END)
+    graph.add_edge("initialize_request", "intent_recognition")
+    graph.add_conditional_edges(
+        "intent_recognition",
+        route_after_intent,
+        {
+            "direct_response": "direct_response",
+            "tool_selection": "tool_selection",
+        },
+    )
+    graph.add_edge("direct_response", END)
+    graph.add_edge("tool_selection", END)
     return graph
 
 
