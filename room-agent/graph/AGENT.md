@@ -130,9 +130,9 @@ LLM 节点必须显式构建 prompt，不允许把业务逻辑散落在字符串
 ```python
 async def some_llm_node(state: RoomAgentGraphState) -> dict:
     registry = get_llm_provider_registry()
-    provider = registry.get("low_cost")
+    provider = registry.get(LLMRole.LOW_COST)
     if provider is None:
-        raise RuntimeError("LLM provider is unavailable for role=low_cost")
+        raise RuntimeError(f"LLM provider is unavailable for role={LLMRole.LOW_COST.value}")
 
     messages = [
         {"role": "system", "content": "..."},

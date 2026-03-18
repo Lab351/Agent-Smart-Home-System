@@ -16,11 +16,11 @@ if __package__ in {None, ""}:
 
     sys.path.append(str(Path(__file__).resolve().parent))
     from a2a_server import build_a2a_application
-    from config.settings import Settings, load_settings
+    from config.settings import LLMRole, Settings, load_settings
     from integrations.llm_provider import LLMProviderRegistry, create_llm_provider_registry
 else:
     from .a2a_server import build_a2a_application
-    from config.settings import Settings, load_settings
+    from config.settings import LLMRole, Settings, load_settings
     from integrations.llm_provider import LLMProviderRegistry, create_llm_provider_registry
 
 
@@ -64,8 +64,16 @@ class ServiceRuntime:
             "RoomAgent settings loaded for agent=%s room=%s powerful_provider=%s low_cost_provider=%s",
             settings.agent.id,
             settings.agent.room_id,
-            type(llm_registry.get("powerful")).__name__ if llm_registry.get("powerful") else "None",
-            type(llm_registry.get("low_cost")).__name__ if llm_registry.get("low_cost") else "None",
+            (
+                type(llm_registry.get(LLMRole.POWERFUL)).__name__
+                if llm_registry.get(LLMRole.POWERFUL)
+                else "None"
+            ),
+            (
+                type(llm_registry.get(LLMRole.LOW_COST)).__name__
+                if llm_registry.get(LLMRole.LOW_COST)
+                else "None"
+            ),
         )
 
         stop_event = asyncio.Event()

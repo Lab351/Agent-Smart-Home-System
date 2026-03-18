@@ -7,6 +7,7 @@ from typing import Any
 
 import jsonschema
 
+from config.settings import LLMRole
 from graph.state import RoomAgentGraphState
 
 
@@ -49,9 +50,9 @@ def route_after_intent(state: RoomAgentGraphState) -> str:
 def _get_low_cost_provider() -> Any:
     from app.server import get_llm_provider_registry
 
-    provider = get_llm_provider_registry().get("low_cost")
+    provider = get_llm_provider_registry().get(LLMRole.LOW_COST)
     if provider is None:
-        raise RuntimeError("LLM provider is unavailable for role=low_cost")
+        raise RuntimeError(f"LLM provider is unavailable for role={LLMRole.LOW_COST.value}")
     return provider
 
 

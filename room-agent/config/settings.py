@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
@@ -9,7 +10,9 @@ import yaml
 from pydantic import BaseModel, Field
 
 
-LLMRole = Literal["powerful", "low_cost"]
+class LLMRole(StrEnum):
+    POWERFUL = "powerful"
+    LOW_COST = "low_cost"
 
 
 class AgentSettings(BaseModel):
@@ -62,7 +65,7 @@ class LLMSettings(BaseModel):
         return self.powerful.has_credentials or self.low_cost.has_credentials
 
     def for_role(self, role: LLMRole) -> LLMModelSettings:
-        return self.powerful if role == "powerful" else self.low_cost
+        return self.powerful if role == LLMRole.POWERFUL else self.low_cost
 
 
 class RuntimeSettings(BaseModel):
@@ -101,8 +104,8 @@ def _load_llm_settings(config_path: Path) -> LLMSettings:
     }
 
     return LLMSettings(
-        powerful=_resolve_llm_role("powerful", providers, roles),
-        low_cost=_resolve_llm_role("low_cost", providers, roles),
+        powerful=_resolve_llm_role(LLMRole.POWERFUL, providers, roles),
+        low_cost=_resolve_llm_role(LLMRole.LOW_COST, providers, roles),
     )
 
 
@@ -111,7 +114,7 @@ def _resolve_llm_role(
     providers: dict[str, LLMProviderConfig],
     roles: dict[str, LLMRoleConfig],
 ) -> LLMModelSettings:
-    role_config = roles.get(role) or _select_fallback_role(roles)
+    role_config = roles.get(role.value) or _select_fallback_role(roles)
     provider_config = providers[role_config.provider]
     model_config = provider_config.models[role_config.model_key]
 
@@ -127,10 +130,10 @@ def _resolve_llm_role(
 
 
 def _select_fallback_role(roles: dict[str, LLMRoleConfig]) -> LLMRoleConfig:
-    if "low_cost" in roles:
-        return roles["low_cost"]
-    if "powerful" in roles:
-        return roles["powerful"]
+    if LLMRole.LOW_COST.value in roles:
+        return roles[LLMRole.LOW_COST.value]
+    if LLMRole.POWERFUL.value in roles:
+        return roles[LLMRole.POWERFUL.value]
     if roles:
         return next(iter(roles.values()))
     raise ValueError("LLM config must define at least one role mapping.")

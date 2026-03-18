@@ -7,7 +7,7 @@ from typing import Protocol
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
-from config.settings import LLMModelSettings, LLMSettings
+from config.settings import LLMModelSettings, LLMRole, LLMSettings
 
 
 class ChatProvider(Protocol):
@@ -61,11 +61,11 @@ class LLMProviderRegistry:
     ) -> None:
         fallback = low_cost or powerful
         self._providers = {
-            "powerful": powerful or fallback,
-            "low_cost": low_cost or fallback,
+            LLMRole.POWERFUL: powerful or fallback,
+            LLMRole.LOW_COST: low_cost or fallback,
         }
 
-    def get(self, role: str) -> ChatProvider | None:
+    def get(self, role: LLMRole) -> ChatProvider | None:
         return self._providers.get(role)
 
 
@@ -77,8 +77,8 @@ def create_llm_provider(settings: LLMModelSettings) -> ChatProvider | None:
 
 def create_llm_provider_registry(settings: LLMSettings) -> LLMProviderRegistry:
     return LLMProviderRegistry(
-        powerful=create_llm_provider(settings.for_role("powerful")),
-        low_cost=create_llm_provider(settings.for_role("low_cost")),
+        powerful=create_llm_provider(settings.for_role(LLMRole.POWERFUL)),
+        low_cost=create_llm_provider(settings.for_role(LLMRole.LOW_COST)),
     )
 
 
