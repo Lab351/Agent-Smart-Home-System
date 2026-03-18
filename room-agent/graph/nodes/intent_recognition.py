@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
-
-import jsonschema
 
 from config.settings import LLMRole
 from graph.state import RoomAgentGraphState
+from shared.llm import parse_json_with_repair
 
 
 INTENT_OUTPUT_SCHEMA = {
@@ -31,7 +29,11 @@ async def intent_recognition(state: RoomAgentGraphState) -> RoomAgentGraphState:
         _build_messages(user_input),
         json_mode=True,
     )
-    parsed = _parse_output(raw_output)
+    parsed = await parse_json_with_repair(
+        raw_output,
+        llm_provider=provider,
+        schema=INTENT_OUTPUT_SCHEMA,
+    )
 
     return {
         "intent": {
@@ -94,13 +96,3 @@ def _build_messages(user_input: str) -> list[dict[str, str]]:
             ),
         },
     ]
-
-
-def _parse_output(raw_output: str) -> dict[str, Any]:
-    try:
-        parsed = json.loads(raw_output)
-    except json.JSONDecodeError as exc:
-        raise ValueError("intent_recognition returned invalid JSON output") from exc
-
-    jsonschema.validate(parsed, INTENT_OUTPUT_SCHEMA)
-    return parsed
