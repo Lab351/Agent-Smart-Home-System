@@ -81,12 +81,5 @@ LLM 工作流对应复杂任务处理，包含以下阶段：
 
 ## 9. 对 room-agent 的实现建议
 
-在 room-agent 中可将该图映射为如下模块边界：
-
-- 规则层：事件归一化、策略匹配、自动化执行节点。
-- 路由层：LLM 健康判定、成本策略判定、分支路由。
-- LLM 层：意图识别、工具选择、工具调用编排。
-- 治理层：人工审批钩子、审计日志、失败回退。
-- 执行层：设备控制与状态落库。
-
-建议在 LangGraph 中把“规则路径”和“LLM 路径”设计为两个可独立演进的子图，并在共享状态中统一记录：`intent`、`selected_tools`、`risk_level`、`approval_required`、`execution_result`。
+- LLM 路径用 LangGraph 实现，每个节点对应一个 LangGraph Node
+- 规则引擎独立实现。
