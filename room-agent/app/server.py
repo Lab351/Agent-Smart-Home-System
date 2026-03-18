@@ -16,11 +16,36 @@ if __package__ in {None, ""}:
 
     sys.path.append(str(Path(__file__).resolve().parent))
     from a2a_server import build_a2a_application
+    from config.settings import Settings, load_settings
+    from integrations.llm_provider import LLMProviderRegistry, create_llm_provider_registry
 else:
     from .a2a_server import build_a2a_application
+    from config.settings import Settings, load_settings
+    from integrations.llm_provider import LLMProviderRegistry, create_llm_provider_registry
 
 
 logger = logging.getLogger(__name__)
+_SETTINGS: Settings | None = None
+_LLM_PROVIDER_REGISTRY: LLMProviderRegistry | None = None
+
+
+def get_settings() -> Settings:
+    """Return the process-wide settings singleton."""
+    global _SETTINGS
+    if _SETTINGS is None:
+        config_path = os.getenv("ROOM_AGENT_CONFIG_PATH")
+        llm_config_path = os.getenv("ROOM_AGENT_LLM_CONFIG_PATH")
+        _SETTINGS = load_settings(config_path=config_path, llm_config_path=llm_config_path)
+    return _SETTINGS
+
+
+def get_llm_provider_registry() -> LLMProviderRegistry:
+    """Return the process-wide LLM provider registry singleton."""
+    global _LLM_PROVIDER_REGISTRY
+    if _LLM_PROVIDER_REGISTRY is None:
+        settings = get_settings()
+        _LLM_PROVIDER_REGISTRY = create_llm_provider_registry(settings.llm)
+    return _LLM_PROVIDER_REGISTRY
 
 
 @dataclass(slots=True)
@@ -33,6 +58,16 @@ class ServiceRuntime:
 
     async def run(self) -> None:
         """Run the HTTP server loop and the business loop in one event loop."""
+        settings = get_settings()
+        llm_registry = get_llm_provider_registry()
+        logger.info(
+            "RoomAgent settings loaded for agent=%s room=%s powerful_provider=%s low_cost_provider=%s",
+            settings.agent.id,
+            settings.agent.room_id,
+            type(llm_registry.get("powerful")).__name__ if llm_registry.get("powerful") else "None",
+            type(llm_registry.get("low_cost")).__name__ if llm_registry.get("low_cost") else "None",
+        )
+
         stop_event = asyncio.Event()
         tasks = [
             asyncio.create_task(self.run_a2a_http_server(stop_event), name="roomagent-a2a-http"),
