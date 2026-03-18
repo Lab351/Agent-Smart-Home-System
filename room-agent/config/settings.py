@@ -9,8 +9,6 @@ import yaml
 from pydantic import BaseModel, Field
 
 
-DEFAULT_ROOM_AGENT_CONFIG_PATH = "config/room_agent.yaml"
-DEFAULT_LLM_CONFIG_PATH = Path(__file__).with_name("llm.yaml")
 LLMRole = Literal["powerful", "low_cost"]
 
 
@@ -68,7 +66,7 @@ class LLMSettings(BaseModel):
 
 
 class RuntimeSettings(BaseModel):
-    room_agent_config_path: str = DEFAULT_ROOM_AGENT_CONFIG_PATH
+    room_agent_config_path: str
     mcp_config_path: str | None = None
     log_level: str = "INFO"
 
@@ -82,7 +80,7 @@ class Settings(BaseModel):
 def _load_yaml_config(config_path: str) -> dict:
     path = Path(config_path)
     if not path.exists():
-        return {}
+        raise FileNotFoundError(f"Config file not found: {config_path}")
 
     with path.open("r", encoding="utf-8") as file:
         data = yaml.safe_load(file) or {}
@@ -91,7 +89,7 @@ def _load_yaml_config(config_path: str) -> dict:
         return data
 
 
-def _load_llm_settings(config_path: Path = DEFAULT_LLM_CONFIG_PATH) -> LLMSettings:
+def _load_llm_settings(config_path: Path) -> LLMSettings:
     raw = _load_yaml_config(str(config_path))
     providers = {
         name: LLMProviderConfig.model_validate(item)
@@ -142,7 +140,12 @@ def load_settings(
     config_path: str | None = None,
     llm_config_path: str | None = None,
 ) -> Settings:
-    resolved_config_path = config_path or DEFAULT_ROOM_AGENT_CONFIG_PATH
+    if not config_path:
+        raise ValueError("room-agent config path is required.")
+    if not llm_config_path:
+        raise ValueError("llm config path is required.")
+
+    resolved_config_path = config_path
     yaml_data = _load_yaml_config(resolved_config_path)
     agent_data = yaml_data.get("agent", {}) if isinstance(yaml_data.get("agent"), dict) else {}
     runtime_data = yaml_data.get("runtime", {}) if isinstance(yaml_data.get("runtime"), dict) else {}
@@ -153,7 +156,7 @@ def load_settings(
             room_id=agent_data.get("room_id", AgentSettings.model_fields["room_id"].default),
             version=agent_data.get("version", AgentSettings.model_fields["version"].default),
         ),
-        llm=_load_llm_settings(Path(llm_config_path) if llm_config_path else DEFAULT_LLM_CONFIG_PATH),
+        llm=_load_llm_settings(Path(llm_config_path)),
         runtime=RuntimeSettings(
             room_agent_config_path=resolved_config_path,
             mcp_config_path=runtime_data.get("mcp_config_path"),

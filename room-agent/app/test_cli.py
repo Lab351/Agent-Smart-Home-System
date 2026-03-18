@@ -43,8 +43,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("user_input", help="User input to send into the graph.")
     parser.add_argument("--session-id", dest="session_id", help="Optional session id.")
     parser.add_argument("--request-id", dest="request_id", help="Optional request id.")
-    parser.add_argument("--config", dest="config_path", help="Optional YAML config path.")
-    parser.add_argument("--llm-config", dest="llm_config_path", help="Optional LLM config path.")
+    parser.add_argument("--config", dest="config_path", required=True, help="YAML config path.")
+    parser.add_argument("--llm-config", dest="llm_config_path", required=True, help="LLM config path.")
     return parser
 
 
