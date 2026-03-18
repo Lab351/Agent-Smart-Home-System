@@ -1,620 +1,189 @@
-# 通信协议规范
+# 通信协议
 
-## OpenSpec 规范化描述
+本文档描述当前智能家居多 Agent 系统的通信主线。当前主推荐方案是 `A2A SDK`。`MQTT` 仍保留为兼容字段和后续适配方向，但不再作为当前协议规范主体展开。
 
-### Requirement: Beacon Identification
-The system SHALL encode room identity using iBeacon UUID/Major/Minor fields.
+## 1. 通信总览
 
-#### Scenario: Beacon room mapping
-- **GIVEN** a beacon broadcast with UUID/Major/Minor
-- **WHEN** a Personal Agent scans the beacon
-- **THEN** the room identity is resolved from the Major/Minor mapping
+当前通信链路由四个环节组成：
 
-### Requirement: Discovery via Beacon Registry
-The system SHALL allow a Personal Agent to resolve a beacon ID to a Room Agent MQTT broker endpoint.
-
-#### Scenario: Room broker discovery
-- **GIVEN** a beacon ID is detected
-- **WHEN** the Personal Agent queries the discovery service
-- **THEN** the response includes the MQTT broker host and ports
-
-### Requirement: MQTT Topic Namespace
-The system SHALL use the `room/{room_id}/agent/{agent_id}` namespace for room-scoped control and state topics.
-
-#### Scenario: Control publish
-- **GIVEN** a Personal Agent wants to control a device in a room
-- **WHEN** it publishes to `room/{room_id}/agent/{agent_id}/control`
-- **THEN** the Room Agent receives and processes the control message
-
-### Requirement: Message Validation
-The system SHALL validate MQTT payloads against the message schemas defined in this document.
-
-#### Scenario: Invalid message rejected
-- **GIVEN** a message missing required fields
-- **WHEN** the message is received by an agent
-- **THEN** the agent rejects or logs the invalid payload
-
-## 1. 协议栈概览
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    应用层 (Application)                      │
-│  Personal Agent ↔ Room Agent ↔ Central Agent                │
-├─────────────────────────────────────────────────────────────┤
-│                    消息层 (Messaging)                        │
-│  MQTT (Message Queuing Telemetry Transport)                 │
-├─────────────────────────────────────────────────────────────┤
-│                    发现层 (Discovery)                        │
-│  HTTP API (qwen-backend Beacon Service)                     │
-├─────────────────────────────────────────────────────────────┤
-│                    感知层 (Perception)                       │
-│  BLE Beacon (iBeacon)                                       │
-└─────────────────────────────────────────────────────────────┘
+```text
+Beacon -> Beacon API -> Registry / AgentCard -> A2A SDK
 ```
 
-## 2. BLE Beacon 协议（空间感知层）
+### 最小流程
 
-### 2.1 Beacon 格式（iBeacon）
+1. Personal Agent 扫描到 `beacon_id`，确认当前房间。
+2. Personal Agent 调用 Beacon API，获得 `room_id` 与 `agent_id`。
+3. Personal Agent 调用 Registry API，获得目标 Agent 的注册信息和 `AgentCard`。
+4. Personal Agent 根据 `AgentCard.communication` 和 `AgentCard.url` 建立 A2A SDK 通信。
+5. 后续控制、状态同步、能力描述、仲裁都通过 A2A 语义消息完成。
 
-| 字段 | 大小 | 示例值 | 说明 |
-|------|------|--------|------|
-| UUID | 16 bytes | `01234567-89AB-CDEF-0123456789ABCDEF` | 系统标识符 |
-| Major | 2 bytes | 1-255 | 房间标识符 |
-| Minor | 2 bytes | 0-255 | 区域/位置标识符 |
-| Measured Power | 1 byte | -59 | 1米处的 RSSI |
+### 当前约束
 
-### 2.2 房间编号映射
+- Beacon 只负责“空间绑定”，不承载动态状态。
+- Registry 只负责“Agent 发现与注册信息查询”，不负责业务决策。
+- A2A SDK 负责“Agent 间任务与消息交换”。
+- `AgentCard.communication.backend` 允许 `mqtt | a2a_sdk`，但当前文档主推荐 `a2a_sdk`。
+- 现有 Beacon DTO 仍包含 `mqtt_broker` 字段，这是兼容历史实现的返回信息，不作为当前主协议核心。
 
-| Major | 房间 | 说明 |
-|-------|------|------|
-| 1 | livingroom | 客厅 |
-| 2 | bedroom | 卧室 |
-| 3 | study | 书房 |
-| 4+ | (扩展) | 预留 |
+## 2. 发现协议
 
-### 2.3 空间绑定算法
+### Beacon API
 
-```python
-RSSI_THRESHOLD = -70  # dBm
-HYSTERESIS = 5        # dB
+Beacon API 负责把空间信号转换成可查询的房间上下文。
 
-def determine_current_space(beacons, current_space):
-    """
-    1. 过滤: RSSI > threshold
-    2. 选择: 最高 RSSI 的 beacon
-    3. 滞后: 仅在 > current + hysteresis 时切换
-    """
-    filtered = [b for b in beacons if b.rssi > RSSI_THRESHOLD]
-    if not filtered:
-        return current_space  # 保持当前
+| 接口 | 作用 |
+|---|---|
+| `POST /api/beacon/register` | Room Agent 启动时注册 Beacon 与房间映射 |
+| `GET /api/beacon/:beacon_id` | Personal Agent 根据 Beacon 查询房间与 Agent 标识 |
+| `POST /api/beacon/:beacon_id/heartbeat` | 更新 Beacon 在线状态 |
 
-    candidate = max(filtered, key=lambda b: b.rssi)
+### Registry API
 
-    if current_space:
-        current_beacon = get_beacon_for_space(current_space, beacons)
-        if candidate.rssi > current_beacon.rssi + HYSTERESIS:
-            return candidate.space_id
-        else:
-            return current_space
-    else:
-        return candidate.space_id
-```
+Registry API 负责注册 AgentCard 并支持按条件发现 Agent。
 
-### 2.4 Beacon 广播参数
+| 接口 | 作用 |
+|---|---|
+| `POST /api/registry/register` | 注册 AgentCard |
+| `GET /api/registry/discover` | 按 `agent_id`、`agent_type`、`capability` 发现 Agent |
+| `POST /api/registry/:agent_id/heartbeat` | 更新 Agent 心跳 |
 
-| 参数 | 值 | 说明 |
-|------|---|------|
-| 广播间隔 | 1 Hz | 每秒一次 |
-| 测量功率 | -59 dBm | 1米处校准值 |
-| 发射功率 | 0 dBm | 平衡功耗与覆盖 |
+### 推荐发现顺序
 
-## 3. qwen-backend Beacon API（服务发现层）
+1. `GET /api/beacon/:beacon_id`
+2. 从返回值中读取 `agent_id`、`room_id`
+3. `GET /api/registry/discover?agent_id=<room-agent-id>`
+4. 从注册结果中读取 `AgentCard`、`communication`、`url`
+5. 按 `communication.backend=a2a_sdk` 建立通信
 
-### 3.1 API 端点
+## 3. Agent 描述
 
-| 端点 | 方法 | 描述 |
-|------|------|------|
-| `/api/beacon/register` | POST | 注册/更新 Beacon 信息（Room Agent 调用） |
-| `/api/beacon/{beacon_id}` | GET | 查询 Beacon 信息（Personal Agent 调用） |
-| `/api/beacon/room/{room_id}` | GET | 按房间查询 Beacon 信息 |
-| `/api/beacon/{beacon_id}/heartbeat` | POST | 更新心跳 |
-| `/api/beacon/list` | GET | 获取所有 Beacon 列表 |
-| `/api/beacon/{beacon_id}` | DELETE | 删除 Beacon |
-| `/api/beacon/stats` | GET | 获取 Beacon 统计信息 |
+`AgentCard` 是当前系统中唯一有效的 Agent 描述对象。它既用于注册发现，也用于能力声明。
 
-### 3.2 Beacon 注册（Room Agent 启动时）
+### 关键字段
 
-**请求**:
-```http
-POST /api/beacon/register
-Content-Type: application/json
+| 字段 | 含义 |
+|---|---|
+| `id` | Agent 唯一标识 |
+| `name` | Agent 名称 |
+| `description` | Agent 描述 |
+| `version` | Agent 版本 |
+| `agent_type` | `room`、`personal`、`central` |
+| `capabilities` | 跨 Agent 可见的能力集合 |
+| `skills` | A2A 语义层的技能或能力说明 |
+| `devices` | 设备能力摘要 |
+| `communication` | 通信配置，含 `backend` 与后端配置 |
+| `url` | A2A SDK 服务入口 |
+| `authentication` | 认证信息 |
+| `metadata` | 补充信息，如 `room_id`、位置、标签 |
 
-{
-  "beacon_id": "01234567-89ab-cdef-0123456789abcdef-2-0",
-  "room_id": "bedroom_01",
-  "agent_id": "room-agent-bedroom",
-  "mqtt_broker": "192.168.1.100",
-  "mqtt_ws_port": 9001,
-  "capabilities": ["light", "curtain", "climate"],
-  "devices": [
-    {"id": "light_1", "name": "主灯", "type": "light"},
-    {"id": "curtain_1", "name": "窗帘", "type": "curtain"}
-  ]
-}
-```
+### 通信配置
 
-**响应**:
-```http
-HTTP/1.1 201 Created
-Content-Type: application/json
+`CommunicationConfig.backend` 当前允许：
 
-{
-  "beacon_id": "01234567-89ab-cdef-0123456789abcdef-2-0",
-  "room_id": "bedroom_01",
-  "agent_id": "room-agent-bedroom",
-  "mqtt_broker": "192.168.1.100",
-  "mqtt_ws_port": 9001,
-  "capabilities": ["light", "curtain", "climate"],
-  "devices": [
-    {"id": "light_1", "name": "主灯", "type": "light"}
-  ],
-  "registered_at": "2024-01-15T10:00:00Z",
-  "last_heartbeat": "2024-01-15T10:00:00Z"
-}
-```
+- `a2a_sdk`: 当前推荐主线
+- `mqtt`: 兼容或后续适配
 
-### 3.3 Beacon 查询（Personal Agent 发现时）
-
-**请求**:
-```http
-GET /api/beacon/{beacon_id}
-```
-
-**响应**:
-```http
-HTTP/1.1 200 OK
-Content-Type: application/json
-
-{
-  "beacon_id": "01234567-89ab-cdef-0123456789abcdef-2-0",
-  "room_id": "bedroom_01",
-  "agent_id": "room-agent-bedroom",
-  "mqtt_broker": "192.168.1.100",
-  "mqtt_ws_port": 9001,
-  "capabilities": ["light", "curtain", "climate"],
-  "devices": [
-    {"id": "light_1", "name": "主灯", "type": "light"}
-  ],
-  "registered_at": "2024-01-15T10:00:00Z",
-  "last_heartbeat": "2024-01-15T10:30:00Z"
-}
-```
-
-### 3.4 发现流程
-
-```
-1. Personal Agent 扫描 Beacon → 提取 beacon_id
-2. Personal Agent 调用 GET /api/beacon/{beacon_id}
-3. qwen-backend 返回 mqtt_broker、room_id、agent_id、capabilities
-4. Personal Agent 使用返回的 mqtt_broker 地址建立 MQTT 连接
-5. Personal Agent 订阅房间状态和设备控制主题
-```
-
-## 4. MQTT 协议（通信层）
-
-### 4.1 Broker 拓扑
-
-| 拓扑 | 描述 | 适用场景 |
-|------|------|---------|
-| 每房间独立 Broker | 每个房间一个 MQTT Broker | 推荐，隔离性好 |
-| 单一中央 Broker | 全家一个 Broker | 小户型 |
-| 混合模式 | 房间 Broker + 中央 Broker 联网 | 复杂场景 |
-
-### 4.2 Topic 命名空间
-
-```
-room/{room_id}/
-├── agent/{agent_id}/
-│   ├── control/          # 控制命令
-│   ├── state/            # 状态发布
-│   ├── describe/         # 能力查询
-│   ├── description/      # 能力响应
-│   └── heartbeat/        # 心跳
-├── robot/{robot_id}/
-│   ├── control/
-│   ├── state/
-│   └── telemetry/
-└── system/
-    ├── discovery/
-    └── error/
-
-home/
-├── state/                # 全局状态
-├── policy/               # 策略更新
-├── arbitration/          # 仲裁请求/响应
-├── events/               # 系统事件
-└── heartbeat/            # Central Agent 心跳
-```
-
-### 4.3 QoS 策略
-
-| Topic 类型 | QoS | 理由 |
-|-----------|-----|------|
-| control | 1 | 命令不能丢失 |
-| state | 0 | 最新状态足够 |
-| describe | 1 | 必须收到响应 |
-| description | 1 | 响应不能丢失 |
-| heartbeat | 0 | 周期性，最新足够 |
-| home/state | 0 | 全局状态，最新足够 |
-| home/policy | 1 | 策略更新不能丢失 |
-| home/arbitration | 1 | 仲裁决定必须送达 |
-| home/events | 1 | 事件不能错过 |
-
-## 5. 消息格式规范
-
-### 5.1 通用消息头
-
-所有消息必须包含以下字段：
+### 最小示例
 
 ```json
 {
-  "message_id": "uuid-v4",
-  "timestamp": "2024-01-15T10:30:00Z",
-  "source_agent": "agent-id",
-  "version": "1.0.0"
-}
-```
-
-### 5.2 控制消息
-
-**Topic**: `room/{room_id}/agent/{agent_id}/control`
-
-```json
-{
-  "message_id": "uuid-v4",
-  "timestamp": "2024-01-15T10:30:00Z",
-  "source_agent": "personal-agent-user1",
-  "target_device": "light_1",
-  "action": "on",
-  "parameters": {
-    "brightness": 80,
-    "color_temp": 4000
-  },
-  "correlation_id": "optional-correlation-id"
-}
-```
-
-### 5.3 状态消息
-
-**Topic**: `room/{room_id}/agent/{agent_id}/state`
-
-```json
-{
-  "message_id": "uuid-v4",
-  "timestamp": "2024-01-15T10:30:01Z",
-  "agent_id": "room-agent-1",
-  "room_state": {
-    "mode": "idle",
-    "occupancy": true,
-    "environment": {...},
-    "devices": {...}
-  },
-  "agent_status": "operational"
-}
-```
-
-### 5.4 Describe 请求
-
-**Topic**: `room/{room_id}/agent/{agent_id}/describe`
-
-```json
-{
-  "message_id": "uuid-v4",
-  "timestamp": "2024-01-15T10:30:00Z",
-  "source_agent": "personal-agent-user1",
-  "query_type": "capabilities"
-}
-```
-
-### 5.5 Description 响应
-
-**Topic**: `room/{room_id}/agent/{agent_id}/description`
-
-```json
-{
-  "message_id": "uuid-v4",
-  "timestamp": "2024-01-15T10:30:01Z",
-  "agent_id": "room-agent-1",
+  "id": "room-agent-bedroom-01",
+  "name": "卧室房间代理",
   "agent_type": "room",
-  "version": "1.0.0",
-  "room_capability": {
-    "supported_modes": ["idle", "sleep", "meeting"],
-    "device_types": ["light", "curtain", "ac"],
-    "environment_sensing": ["temperature", "humidity", "light"]
-  },
-  "devices": [
-    {
-      "id": "light_1",
-      "name": "Main Ceiling Light",
-      "type": "light",
-      "actions": ["on", "off", "set_brightness", "set_color_temp"],
-      "state_attributes": ["brightness", "color_temp", "power_state"]
+  "capabilities": ["light_control", "climate_control"],
+  "communication": {
+    "backend": "a2a_sdk",
+    "a2a_sdk": {
+      "server_port": 8001
     }
-  ]
-}
-```
-
-### 5.6 心跳消息
-
-**Topic**: `room/{room_id}/agent/{agent_id}/heartbeat`
-
-```json
-{
-  "message_id": "uuid-v4",
-  "timestamp": "2024-01-15T10:30:00Z",
-  "agent_id": "room-agent-1",
-  "status": "operational",
-  "uptime_seconds": 3600,
-  "metrics": {
-    "cpu_usage": 25.5,
-    "memory_usage": 45.2,
-    "active_connections": 3
-  }
-}
-```
-
-### 5.7 全局状态消息
-
-**Topic**: `home/state`
-
-```json
-{
-  "message_id": "uuid-v4",
-  "timestamp": "2024-01-15T10:30:00Z",
-  "home_mode": "home",
-  "active_users": ["user1", "user2"],
-  "risk_level": "normal",
-  "temporal_context": {
-    "day_type": "workday",
-    "time_period": "evening"
-  }
-}
-```
-
-### 5.8 策略更新消息
-
-**Topic**: `home/policy`
-
-```json
-{
-  "message_id": "uuid-v4",
-  "timestamp": "2024-01-15T10:30:00Z",
-  "policy_name": "sleep_mode",
-  "rules": {
-    "light_max": "low",
-    "noise_max": "minimum",
-    "interruptible": false
   },
-  "effective_from": "2024-01-15T22:00:00Z",
-  "effective_until": "2024-01-16T07:00:00Z"
-}
-```
-
-### 5.9 仲裁请求消息
-
-**Topic**: `home/arbitration`
-
-```json
-{
-  "message_id": "uuid-v4",
-  "timestamp": "2024-01-15T10:30:00Z",
-  "requesting_agent": "personal-agent-user1",
-  "conflicting_agents": ["personal-agent-user2"],
-  "conflict_type": "multi_user_intent",
-  "intent": {
-    "target_device": "light_1",
-    "action": "on"
-  },
-  "context": {
-    "room_id": "bedroom",
-    "current_mode": "sleep"
+  "url": "http://192.168.1.100:8001",
+  "metadata": {
+    "room_id": "bedroom_01"
   }
 }
 ```
 
-### 5.10 仲裁响应消息
+## 4. 消息语义
 
-**Topic**: `home/arbitration/response/{request_id}`
+### 基础类型
 
-```json
-{
-  "message_id": "uuid-v4",
-  "timestamp": "2024-01-15T10:30:01Z",
-  "request_id": "original-request-id",
-  "decision": "partial_accept",
-  "reason": "sleep_mode_active",
-  "suggestion": "reduced_brightness",
-  "modified_action": {
-    "target_device": "light_1",
-    "action": "on",
-    "parameters": {
-      "brightness": 20
-    }
-  }
-}
-```
+#### `A2AMessage`
 
-### 5.11 系统事件消息
+所有 A2A 消息共享以下公共字段：
 
-**Topic**: `home/events`
+| 字段 | 含义 |
+|---|---|
+| `message_id` | 消息唯一标识 |
+| `timestamp` | ISO 8601 时间戳 |
+| `correlation_id` | 请求与响应关联标识，可选 |
 
-```json
-{
-  "message_id": "uuid-v4",
-  "timestamp": "2024-01-15T10:30:00Z",
-  "event_type": "mode_switch",
-  "event_data": {
-    "from_mode": "home",
-    "to_mode": "sleep",
-    "triggered_by": "schedule",
-    "effective_immediately": true
-  }
-}
-```
+#### `A2ATask`
 
-## 6. 通信时序
+`A2ATask` 是 Agent 协作的基本单元，用于表示一个持续中的任务。
 
-### 6.1 Personal Agent 连接流程
+| 字段 | 含义 |
+|---|---|
+| `id` | 任务 ID |
+| `status` | `pending`、`running`、`completed`、`failed`、`canceled` |
+| `message` | 关联消息 |
+| `result` | 任务结果 |
+| `error` | 错误信息 |
+| `created_at` | 创建时间 |
+| `updated_at` | 更新时间 |
 
-```
-Personal Agent           qwen-backend          Room Agent
-     │                         │                     │
-     │◄── BLE Beacon ──────────┼─────────────────────┤
-     │   (beacon_id)           │                     │
-     │                         │                     │
-     │──── GET /api/beacon/────►│                     │
-     │     {beacon_id}          │                     │
-     │                         │───── Heartbeat ────►│
-     │                         │                     │
-     │◄─── 200 OK ─────────────┤                     │
-     │   (mqtt_broker,         │                     │
-     │    room_id,             │                     │
-     │    agent_id,            │                     │
-     │    capabilities)        │                     │
-     │                         │                     │
-     │──── MQTT CONNECT ─────────────────────────────►│
-     │                         │                     │
-     │◄─── CONNACK ──────────────────────────────────┤
-     │                         │                     │
-     │──── SUBSCRIBE state/description ──────────────►│
-     │                         │                     │
-     │──── PUBLISH describe ─────────────────────────►│
-     │                         │                     │
-     │◄─── PUBLISH description ───────────────────────┤
-     │     (Capabilities received)                    │
-```
+### 主要消息类型
 
-### 6.2 带仲裁的控制流程
+| 消息 | 发送方 | 作用 | 关键字段 |
+|---|---|---|---|
+| `ControlMessage` | Personal / Room | 发起控制动作 | `source_agent`、`target_device`、`action`、`parameters`、`task` |
+| `StateMessage` | Room | 发布房间内设备状态变化 | `agent_id`、`devices[]`、`agent_status` |
+| `DescriptionMessage` | 任意 Agent | 返回 Agent 描述 | `agent_id`、`agent_card` |
+| `HeartbeatMessage` | 任意 Agent | 保持在线状态 | `agent_id`、`status`、`uptime_seconds`、`metrics` |
+| `GlobalStateMessage` | Central | 发布全局状态 | `home_mode`、`active_users`、`risk_level`、`temporal_context` |
+| `ArbitrationRequestMessage` | Room / Personal | 请求仲裁 | `requesting_agent`、`conflicting_agents`、`conflict_type`、`intent`、`context` |
+| `ArbitrationResponseMessage` | Central | 返回仲裁结论 | `request_id`、`decision`、`reason`、`suggestion`、`modified_action` |
 
-```
-Personal Agent    Room Agent    Central Agent    Device
-     │               │                │           │
-     │─ 控制 ───────►│                │           │
-     │               │                │           │
-     │               │─ 仲裁 ────────►│           │
-     │               │                │           │
-     │               │◄── 结果 ───────┤           │
-     │               │                │           │
-     │               │─ 控制 ────────────────────►│
-     │               │                            │
-     │◄── 状态 ──────┤◄── 状态 ──────────────────┤
-```
+### 语义约束
 
-## 7. 安全与认证
+- `ControlMessage` 表达“想做什么”，不表达底层传输细节。
+- `StateMessage` 只发布状态结果，不替代 `Room State` 的所有内部字段。
+- `DescriptionMessage` 以 `AgentCard` 为主体，不再单独维护另一套协议级能力模型。
+- `GlobalStateMessage` 只描述全局抽象状态，不直接下发设备命令。
+- `ArbitrationResponseMessage` 返回决策结果，由 Room Agent 负责真正执行。
 
-### 7.1 MQTT 认证
+## 5. 典型时序
 
-```yaml
-authentication:
-  mechanism: "username_password"  # or client_certificates
-  username_prefix: "agent_"
-  password_format: "token_based"  # JWT or shared secret
-  token_expiry: 86400  # 24 hours
-```
+### 房间绑定
 
-### 7.2 Topic ACL
+1. Personal Agent 扫描到 Beacon。
+2. 调用 `GET /api/beacon/:beacon_id`，得到 `room_id` 和 `agent_id`。
+3. 调用 `GET /api/registry/discover?agent_id=...`，得到目标 AgentCard。
+4. 根据 `AgentCard.url` 或 `communication.a2a_sdk` 建立 A2A 会话。
 
-```yaml
-access_control:
-  personal_agent:
-    can_publish:
-      - "room/{room_id}/agent/*/control"
-      - "room/{room_id}/agent/*/describe"
-      - "home/arbitration"
-    can_subscribe:
-      - "room/{room_id}/agent/*/state"
-      - "room/{room_id}/agent/*/description"
-      - "home/state"
-      - "home/policy"
+### 控制执行
 
-  room_agent:
-    can_publish:
-      - "room/{room_id}/agent/+/state"
-      - "room/{room_id}/agent/+/description"
-      - "room/{room_id}/agent/+/heartbeat"
-      - "home/arbitration"
-    can_subscribe:
-      - "room/{room_id}/agent/+/control"
-      - "room/{room_id}/agent/+/describe"
-      - "home/policy"
+1. Personal Agent 生成结构化用户意图。
+2. Personal Agent 向 Room Agent 发送 `ControlMessage`。
+3. Room Agent 执行本地规则和设备控制。
+4. Room Agent 更新 `Room State`。
+5. Room Agent 向 Personal Agent 返回 `StateMessage` 或任务结果。
 
-  central_agent:
-    can_publish:
-      - "home/+"
-      - "room/+/agent/+/+"  # 仅状态查询
-    can_subscribe:
-      - "room/+/agent/+/state"
-      - "home/arbitration"
-```
+### 冲突仲裁
 
-### 7.3 TLS 加密
+1. Room Agent 发现请求与全局模式或多用户意图冲突。
+2. Room Agent 向 Central Agent 发送 `ArbitrationRequestMessage`。
+3. Central Agent 返回 `ArbitrationResponseMessage`。
+4. Room Agent 按决策执行，并对外发布最新状态。
 
-```yaml
-encryption:
-  mqtt:
-    tls_enabled: true  # Production
-    tls_version: "1.3"
-    certificate_validation: true
-    cipher_suites:
-      - "TLS_AES_128_GCM_SHA256"
-      - "TLS_AES_256_GCM_SHA384"
-```
+## 6. 当前有效定义
 
-## 8. 错误处理
+以下代码对象和接口是当前文档对应的真实定义来源：
 
-### 8.1 错误消息格式
-
-```json
-{
-  "message_id": "uuid-v4",
-  "timestamp": "2024-01-15T10:30:05Z",
-  "error_code": "DEVICE_TIMEOUT",
-  "error_message": "Device light_1 did not respond within 5s",
-  "retry_suggested": true,
-  "context": {
-    "device_id": "light_1",
-    "action": "on",
-    "timeout": 5
-  }
-}
-```
-
-### 8.2 错误码列表
-
-| 错误码 | 描述 | 可重试 |
-|--------|------|--------|
-| `DEVICE_NOT_FOUND` | 设备不存在 | ❌ |
-| `DEVICE_TIMEOUT` | 设备超时 | ✅ |
-| `DEVICE_OFFLINE` | 设备离线 | ⏳ |
-| `ACTION_NOT_SUPPORTED` | 不支持的操作 | ❌ |
-| `INVALID_PARAMETERS` | 参数错误 | ❌ |
-| `POLICY_VIOLATION` | 违反策略 | ❌ |
-| `AUTHENTICATION_FAILED` | 认证失败 | ❌ |
-
-## 9. 性能指标
-
-| 指标 | 目标 | 测量方法 |
-|------|------|---------|
-| Beacon API 发现延迟 | < 200ms | HTTP 请求到响应 |
-| MQTT 连接延迟 | < 200ms | CONNECT 到 CONNACK |
-| 控制端到端延迟 | < 500ms | 意图到状态更新 |
-| 消息吞吐量 | 100 msg/s | 每房间 |
-| 心跳周期 | 30s | 定时发送 |
-
----
-
-**相关文档**:
-- [Personal Agent 技术规格](./agents/personal-agent.md)
-- [Room Agent 技术规格](./agents/room-agent.md)
-- [Central Agent 技术规格](./agents/central-agent.md)
-- [系统总览](./system-overview.md)
+- `shared/models/agent_card.py`
+- `shared/models/a2a_messages.py`
+- `qwen-backend/src/registry/dto/registry.dto.ts`
+- `qwen-backend/src/registry/registry.controller.ts`
+- `qwen-backend/src/beacon/dto/beacon.dto.ts`
+- `qwen-backend/src/beacon/beacon.controller.ts`

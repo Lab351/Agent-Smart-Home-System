@@ -1,375 +1,101 @@
 # 系统总览
 
-## OpenSpec 规范化描述
+本文档描述当前智能家居多 Agent 系统的核心架构、实现功能、状态维护方式和能力边界。当前主线通信方案为 `A2A SDK`，不再以 MQTT topic 或 broker 设计作为系统主叙事。
 
-### Requirement: Spatial Binding
-The system SHALL determine the user's current room using BLE beacon scanning with an RSSI threshold and hysteresis.
+## 1. 三层架构
 
-#### Scenario: Stable room binding
-- **GIVEN** multiple beacons are detected with RSSI values
-- **WHEN** the strongest beacon exceeds the threshold and hysteresis rules
-- **THEN** the current room is updated to the beacon's room
+```text
+BLE Beacon
+  -> 提供房间级空间感知
 
-### Requirement: Decentralized Room Control
-The system SHALL delegate room-level state and device control to the Room Agent, and the Central Agent SHALL NOT directly control devices.
+Beacon / Registry API
+  -> 提供房间发现、Agent 发现、AgentCard 查询
 
-#### Scenario: Room autonomy
-- **GIVEN** a Room Agent manages devices in a room
-- **WHEN** a Personal Agent issues a device intent
-- **THEN** the Room Agent executes the control and updates room state
-
-### Requirement: Conflict Arbitration
-The system SHALL route cross-user or policy-violating intents to the Central Agent for arbitration.
-
-#### Scenario: Policy conflict
-- **GIVEN** a global sleep mode policy is active
-- **WHEN** a Room Agent receives an intent that violates the policy
-- **THEN** the Room Agent requests arbitration from the Central Agent
-
-### Requirement: End-to-End Latency
-The system SHALL complete intent-to-state updates within 500ms under normal conditions.
-
-#### Scenario: Normal control latency
-- **GIVEN** the network and room broker are healthy
-- **WHEN** a Personal Agent sends a control intent
-- **THEN** the state update is observed within 500ms
-
-### Requirement: Offline Room Operation
-The system SHALL allow Room Agents to execute local control when the internet is unavailable.
-
-#### Scenario: WAN outage
-- **GIVEN** the WAN link is down
-- **WHEN** a Personal Agent connects to a local Room Agent broker
-- **THEN** device control continues to operate locally
-
-## 1. 愿景与目标
-
-### 1.1 核心愿景
-
-构建一个以人为中心的、空间感知的智能家居系统，通过多 Agent 协作实现：
-
-- **自适应空间绑定**: 用户携带 Personal Agent 进入房间，系统自动识别并提供该空间的控制能力
-- **去中心化决策**: 每个 Room Agent 自治管理自己的空间，Central Agent 仅在必要时协调
-- **隐私优先**: 个人意图和偏好数据优先本地处理
-- **渐进式智能**: 从基础自动化开始，逐步演进到 AI 驱动的智能决策
-
-### 1.2 设计目标
-
-| 目标 | 描述 | 优先级 |
-|------|------|--------|
-| 空间感知 | 自动识别用户所在房间，无需手动切换 | P0 |
-| 响应速度 | 端到端延迟 < 500ms | P0 |
-| 离线可用 | Room Agent 在断网时仍可本地控制 | P1 |
-| 多用户 | 支持家庭多用户并发使用 | P1 |
-| 可扩展 | 新增房间/设备无需重构核心架构 | P1 |
-
-## 2. 系统架构
-
-### 2.1 整体架构图
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                          智能家居空间                                     │
-│                                                                          │
-│  ┌─────────────┐         ┌─────────────┐         ┌─────────────┐       │
-│  │  Personal   │         │    Room     │         │   Central   │       │
-│  │   Agent     │◄────────┤   Agent     │◄────────┤   Agent     │       │
-│  │  (手机/手表)│  MQTT   │  (边缘设备)  │  MQTT   │  (NAS/云端) │       │
-│  └──────┬──────┘         └──────┬──────┘         └──────┬──────┘       │
-│         │                       │                       │               │
-│         │ BLE Beacon            │ Beacon Registry API  │               │
-│         │                       │ Broker               │               │
-│         ▼                       ▼                       ▼               │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                     三层协议栈                                   │   │
-│  │  BLE Beacon ──► Beacon Registry API ──► MQTT Communication     │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────┘
+A2A SDK
+  -> 承载 Agent 间任务、控制、状态、描述、仲裁消息
 ```
 
-### 2.2 三层架构模型
+### 分层职责
 
-```
-┌───────────────────────────────────────────────────────────────┐
-│                    应用层 (Application Layer)                  │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
-│  │  意图理解     │  │  状态管理     │  │  策略协调     │       │
-│  │  Personal    │  │  Room        │  │  Central     │       │
-│  └──────────────┘  └──────────────┘  └──────────────┘       │
-├───────────────────────────────────────────────────────────────┤
-│                    通信层 (Communication Layer)                │
-│  ┌───────────────────────────────────────────────────────┐   │
-│  │  MQTT Topics: room/{room_id}/*, home/*                │   │
-│  │  Discovery API: /api/beacon/{beacon_id}               │   │
-│  └───────────────────────────────────────────────────────┘   │
-├───────────────────────────────────────────────────────────────┤
-│                    感知层 (Perception Layer)                   │
-│  ┌───────────────────────────────────────────────────────┐   │
-│  │  BLE Beacon: UUID/Major/Minor → Room ID               │   │
-│  │  RSSI Threshold: -70 dBm, Hysteresis: 5 dB            │   │
-│  └───────────────────────────────────────────────────────┘   │
-└───────────────────────────────────────────────────────────────┘
-```
+| 层 | 组件 | 作用 |
+|---|---|---|
+| 空间感知层 | BLE Beacon | 让 Personal Agent 判断当前所在房间 |
+| 发现层 | `/api/beacon/*`、`/api/registry/*` | 把房间标识解析为可访问的 Agent 信息 |
+| 通信层 | A2A SDK | 在 Agent 之间传递任务和语义化消息 |
 
-## 3. Agent 角色矩阵
+## 2. Agent 角色与状态权威
 
-### 3.1 职责划分
+| Agent | 角色职责 | 状态权威 | 主要实现功能 | 明确不负责 |
+|---|---|---|---|---|
+| Personal Agent | 代表用户发起意图，完成空间绑定 | 用户意图、个人上下文 | 意图理解、偏好维护、Beacon 扫描、动态绑定、向上游发起请求 | 不直接控制设备，不维护房间状态，不维护全局策略 |
+| Room Agent | 代表房间执行局部自治 | `Room State` | 聚合房间设备与传感器状态、执行房间规则、返回房间能力、执行设备控制 | 不理解用户自然语言，不做跨用户仲裁，不维护全局状态 |
+| Central Agent | 代表全局规则和一致性 | `Global State`、策略、仲裁结果 | 家庭模式管理、风险状态维护、策略下发、冲突仲裁 | 不直接控制设备，不替代 Room Agent 的本地决策 |
 
-| 职责 | Personal Agent | Room Agent | Central Agent |
-|------|---------------|------------|---------------|
-| 用户意图理解 | ✅ 主要 | ❌ | ❌ |
-| 个人上下文维护 | ✅ 主要 | ❌ | ❌ |
-| 近场空间发现 | ✅ 主要 | ❌ | ❌ |
-| 房间状态管理 | ❌ | ✅ 主要 | ❌ |
-| 设备控制 | ❌ | ✅ 主要 | ❌ |
-| 全局状态维护 | ❌ | ❌ | ✅ 主要 |
-| 策略与规则 | ❌ | ❌ | ✅ 主要 |
-| 冲突仲裁 | ❌ | ⚠️ 上报 | ✅ 主要 |
+### 状态维护原则
 
-### 3.2 交互模式
+- Personal Agent 是“用户意图与个人上下文”的唯一权威源。
+- Room Agent 是“房间状态”的唯一权威源。
+- Central Agent 是“全局状态、全局策略、仲裁决策”的唯一权威源。
+- 设备执行结果必须先回收敛到 Room Agent，再由 Room Agent 对外发布状态。
 
-```
-Personal → Room: 意图下发、状态查询
-Personal ← Room: 状态更新、执行反馈
-Room → Central: 冲突上报、状态摘要
-Room ← Central: 策略更新、仲裁结果
-Personal ← Central: 全局状态（订阅）
-```
+## 3. 实现功能
 
-## 4. 数据流示例
+### Personal Agent
 
-### 4.1 用户控制灯光（正常流程）
+- 扫描 Beacon 并确定当前房间。
+- 基于房间信息查找对应 Room Agent。
+- 保存用户偏好、当前活动、上下文摘要。
+- 把自然语言或快捷操作转换为结构化意图。
+- 向 Room Agent 或 Central Agent 发起 A2A 请求。
 
-```
-Time    Personal Agent                  Room Agent                  Device
-──────────────────────────────────────────────────────────────────────────
-T0      扫描 Beacon (RSSI=-55)
-        → current_room = "livingroom"
+### Room Agent
 
-T1      Beacon Registry 查询: /api/beacon/{beacon_id}
-        ← 192.168.1.100:1883
+- 维护统一的 `Room State`，对设备状态、环境状态和房间模式做统一收敛。
+- 暴露房间能力摘要，而不是直接暴露大量设备细节为系统主接口。
+- 接收来自 Personal Agent 的控制意图并执行本地决策。
+- 在本地规则无法闭环时，把冲突或违规请求上报 Central Agent。
 
-T2      MQTT CONNECT
-        ← CONNACK
+### Central Agent
 
-T3      用户说: "打开客厅的灯"
-        意图解析: {action: "light.on", room: "livingroom"}
+- 维护家庭级模式、活跃用户集合、风险等级、时间上下文。
+- 管理全局策略，例如睡眠模式、离家模式、安全模式。
+- 对跨用户、跨规则的冲突做仲裁。
+- 把“当前全局状态是什么”广播给其他 Agent，而不直接给设备下命令。
 
-T4      → Publish: room/livingroom/agent/room-agent-livingroom/control
-        {device: "ceiling_light", action: "on"}
+## 4. 能力边界
 
-T5                                      → Device: ON
-                                        ← State: ON
+### 对外边界
 
-T6                                      ← Publish: room/livingroom/agent/.../state
-                                        {device: "ceiling_light", state: "on"}
+- Personal Agent 对外提供“用户意图入口”和“个人上下文补充”，不提供设备执行能力。
+- Room Agent 对外提供“房间状态”和“房间能力”，不把内部设备编排逻辑暴露为跨 Agent 契约。
+- Central Agent 对外提供“全局状态、策略、仲裁结果”，不直接替房间执行动作。
 
-T7      ← State Update
-        → 用户反馈: "已为您打开客厅灯"
-```
+### 决策边界
 
-### 4.2 睡眠模式冲突（仲裁流程）
+- 单房间、单用户、无策略冲突的请求由 Room Agent 直接闭环。
+- 涉及全局模式、风险状态或多用户冲突的请求由 Central Agent 参与仲裁。
+- Personal Agent 负责表达“用户想做什么”，Room Agent 和 Central Agent 负责决定“系统如何执行”。
 
-```
-Time    Personal Agent          Room Agent              Central Agent         Device
-────────────────────────────────────────────────────────────────────────────────
-T0      (用户在卧室)
-        意图: "播放音乐"
+## 5. 交互关系
 
-T1      → Publish: room/bedroom/.../control
-        {action: "music.play", volume: 80}
+### 正常控制流
 
-T2                              检查: mode = "sleep"
-                                检测到冲突
+1. Personal Agent 扫描 Beacon，得到当前房间。
+2. Personal Agent 通过发现层获取 Room Agent 的标识与通信入口。
+3. Personal Agent 向 Room Agent 发送控制请求。
+4. Room Agent 执行本地控制并更新 `Room State`。
+5. Room Agent 将结果和最新状态回传给 Personal Agent。
 
-T3                              → Publish: home/arbitration
-                                {intent: "music", volume: 80,
-                                 current_mode: "sleep"}
+### 仲裁控制流
 
-T4                                                      策略检查:
-                                                        sleep_mode →
-                                                        noise_max: minimum
+1. Personal Agent 发送控制请求到 Room Agent。
+2. Room Agent 判断请求与全局模式或其他用户意图冲突。
+3. Room Agent 向 Central Agent 发起仲裁请求。
+4. Central Agent 返回 `accept`、`reject`、`partial_accept` 或 `defer`。
+5. Room Agent 按仲裁结果执行，并发布房间状态变化。
 
-T5                                                      ← Publish: home/arbitration
-                                                        {decision: "partial_accept",
-                                                         modified: {volume: 20}}
+## 6. 当前规范入口
 
-T6                              接收仲裁结果
-                                → Device: Music ON, Volume 20%
-
-T7                              ← Publish: room/.../state
-                                {music: "playing", volume: 20}
-
-T8      ← State Update
-        → 用户反馈: "已为您播放轻柔音乐"
-```
-
-## 5. 关键设计决策
-
-### 5.1 为什么需要 Central Agent？
-
-**问题**: 仅 Personal + Room Agent 架构存在：
-- 多房间协调缺失（如"离家模式"需要关闭所有房间设备）
-- 多用户冲突无仲裁机制
-- 全局约束（如安全、节能）无明确归属
-
-**解决**: Central Agent 作为"被动守护者"
-- ✅ 维护全局一致性
-- ✅ 仅在必要时介入
-- ✅ 不破坏 Room Agent 自治
-
-### 5.2 为什么 Room Agent 不 Skill 化？
-
-**问题**: 通用 Skill 抽象
-- 导致接口爆炸（每个设备一个 Skill）
-- 难以维护状态一致性
-- 跨 Agent 协作复杂
-
-**解决**: Room Agent 状态优先
-- ✅ 统一的 Room State 作为唯一可信源
-- ✅ 内部实现自由（状态机/规则引擎/硬编码）
-- ✅ 最小对外接口（get_state, set_mode, get_capability）
-
-### 5.3 Personal Agent 为什么不做设备控制？
-
-**原则**: 关注点分离
-- Personal Agent = 意图的唯一权威源
-- Room Agent = 空间执行的唯一权威源
-- 职责清晰，易于测试和演进
-
-## 6. 非功能性需求
-
-### 6.1 性能指标
-
-| 指标 | 目标 | 测量方法 |
-|------|------|---------|
-| 意图解析延迟 | < 200ms | Personal Agent 内部计时 |
-| 空间绑定延迟 | < 1s | Beacon 扫描到绑定完成 |
-| 控制端到端延迟 | < 500ms | 意图下发到状态更新 |
-| 全局状态同步 | < 2s | Central 到所有 Room |
-
-### 6.2 可靠性指标
-
-| 指标 | 目标 | 保障机制 |
-|------|------|---------|
-| Room Agent 可用性 | > 99.9% | 本地自治，断网仍可用 |
-| MQTT 消息送达 | > 99.9% | QoS 1/2，自动重传 |
-| 状态最终一致 | < 5s | 定期状态同步 |
-
-### 6.3 可扩展性
-
-| 维度 | 目标 | 设计支持 |
-|------|------|---------|
-| 房间数量 | 10+ | 每房间独立 MQTT Broker |
-| 设备/房间 | 50+ | Room Agent 内部抽象 |
-| Personal Agent | 10/房间 | MQTT Broker 连接池 |
-| 并发控制命令 | 100/s | 异步消息队列 |
-
-## 7. 安全与隐私
-
-### 7.1 隐私保护
-
-| 数据类型 | 存储位置 | 访问控制 |
-|---------|---------|---------|
-| 用户意图 | Personal Agent (本地) | 仅用户可访问 |
-| 个人偏好 | Personal Agent (本地) | 可选同步到 Central |
-| 房间状态 | Room Agent | 同房间 Personal Agent |
-| 全局状态 | Central Agent | 所有授权 Agent |
-
-### 7.2 通信安全
-
-- **MQTT 认证**: 用户名/密码或客户端证书
-- **TLS 加密**: 生产环境强制 TLS 1.3
-- **Topic ACL**: 基于角色的访问控制
-- **本地网络隔离**: Broker 仅监听 LAN 接口
-
-## 8. 部署拓扑
-
-### 8.1 单户家庭（典型）
-
-```
-Internet
-    │
-    ▼ (VPN, 可选)
-┌───────────────────────────────────────────────────┐
-│                    家庭网络                        │
-│                                                    │
-│  ┌──────────────┐      ┌──────────────┐          │
-│  │ NAS/Mini PC  │      │  Jetson x3   │          │
-│  │ Central Agent│      │ Room Agent   │          │
-│  │ MQTT Broker  │◄────►│ (per room)   │          │
-│  └──────────────┘      └──────────────┘          │
-│         │                      │                  │
-│         └──────────────────────┘                  │
-│                    │                               │
-│         ┌──────────┴──────────┐                   │
-│         ▼                     ▼                   │
-│  ┌─────────────┐      ┌─────────────┐            │
-│  │  ESP32 x3   │      │  智能设备   │            │
-│  │  Beacons    │      │  (灯光/窗帘) │            │
-│  └─────────────┘      └─────────────┘            │
-└───────────────────────────────────────────────────┘
-```
-
-### 8.2 多公寓（共享设施）
-
-```
-┌───────────────────────────────────────────────────────────────┐
-│                         楼宇网络                             │
-│                                                               │
-│  ┌────────────┐   ┌────────────┐   ┌────────────┐           │
-│  │ 家庭 A      │   │ 家庭 B      │   │ 公共区域    │           │
-│  │ Private     │   │ Private     │   │ Shared     │           │
-│  │ Broker      │   │ Broker      │   │ Broker     │           │
-│  └──────┬──────┘   └──────┬──────┘   └──────┬──────┘           │
-│         │                 │                 │                  │
-│         └─────────────────┴─────────────────┘                  │
-│                           │                                    │
-│                    ┌──────┴──────┐                            │
-│                    │   共享服务  │                            │
-│                    │  (可选)     │                            │
-│                    └─────────────┘                            │
-└───────────────────────────────────────────────────────────────┘
-```
-
-## 9. 与传统系统对比
-
-| 特性 | 传统智能家居 | 本系统 |
-|------|-------------|---------------|
-| 控制中心 | 单一中控 | 三层 Agent 协作 |
-| 空间感知 | 手动房间选择 | BLE Beacon 自动识别 |
-| 离线能力 | 云依赖 | Room Agent 本地自治 |
-| 多用户 | 单用户设计 | 原生多用户支持 |
-| 扩展性 | 中心化瓶颈 | 去中心化，易扩展 |
-| 隐私 | 数据上云 | 本地优先 |
-
-## 10. 演进路线图
-
-### Phase 1: 基础自动化（当前）
-- ✅ BLE Beacon 空间绑定
-- ✅ MQTT 通信框架
-- ✅ 基础设备控制
-- 🔄 单房间场景
-
-### Phase 2: 多房间协作
-- ⏳ Central Agent 实现
-- ⏳ 全局模式管理
-- ⏳ 多用户冲突仲裁
-
-### Phase 3: AI 增强
-- ⏳ LLM 意图理解
-- ⏍ 上下文感知决策
-- ⏍ 个性化学习
-
-### Phase 4: 生态扩展
-- ⏍ 第三方设备接入
-- ⏍ IFTTT/HomeKit 集成
-- ⏍ 云端服务（可选）
-
----
-
-**相关文档**:
-- [Personal Agent 详细规格](./agents/personal-agent.md)
-- [Room Agent 详细规格](./agents/room-agent.md)
-- [Central Agent 详细规格](./agents/central-agent.md)
-- [通信协议](./communication.md)
+- 架构、职责、状态、边界以本页为准。
+- 通信协议、发现流程、消息语义以 [communication.md](./communication.md) 为准。
+- 历史性的 Agent 独立规格页已降级为索引页，不再重复定义完整规范。
