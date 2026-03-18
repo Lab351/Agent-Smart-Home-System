@@ -1,7 +1,8 @@
 import pytest
 
-from graph.nodes.classify_intent import IntentClassifierNode, heuristic_classify
+from graph.nodes.classify_intent import IntentClassifierNode
 from graph.nodes.task_router import route_after_classification
+from graph.nodes.utils.heuristic_classify import heuristic_classify
 
 
 def test_heuristic_classify_simple_chat():
