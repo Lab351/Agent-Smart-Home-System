@@ -476,4 +476,4 @@ beacon:
 - **ESP32 BLE**: https://docs.espressif.com/projects/esp32/ble
 - **mDNS规范**: https://tools.ietf.org/html/rfc6762
 - **MQTT规范**: https://mqtt.org/mqtt-specification/
-- **HomeSystemAgent.md**: 项目根目录
+- **Architect.md / Transport.md**: 项目根目录 `docs/` 下的系统架构与通信规范

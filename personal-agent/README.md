@@ -495,10 +495,10 @@ onStateUpdate((state) => {
 
 ## 📚 相关文档
 
-- [Personal Agent 技术规格](../../docs/agents/personal-agent.md)
-- [Room Agent 技术规格](../../docs/agents/room-agent.md)
-- [Central Agent 技术规格](../../docs/agents/central-agent.md)
-- [通信协议](../../docs/communication.md)
+- [系统架构](../docs/Architect.md)
+- [传输协议](../docs/Transport.md)
+- [使用手册](../docs/Usage.md)
+- [术语表](../docs/Glossary.md)
 
 ---
 
