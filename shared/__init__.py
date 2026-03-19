@@ -1,1 +1,1 @@
-"""Workspace-shared protocol and runtime helpers."""
+"""Shared cross-project utilities and models."""

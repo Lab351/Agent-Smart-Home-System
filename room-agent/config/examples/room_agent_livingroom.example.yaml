@@ -1,0 +1,64 @@
+# Room Agent配置 - 客厅
+# 对应ESP32: major=1
+
+agent:
+  id: "room-agent-livingroom"
+  room_id: "livingroom"      # ← ESP32 major: 1
+  version: "1.0.0"
+
+# MQTT客户端配置
+mqtt:
+  broker:
+    host: "120.78.228.69"
+    port: 1884
+    username: null
+    password: null
+
+# qwen-backend 配置（Beacon API）
+backend:
+  url: "http://120.78.228.69:3088"  # qwen-backend 服务地址
+  register_on_startup: true  # 启动时自动注册
+  heartbeat_interval: 60  # 心跳间隔（秒）
+
+# BLE Beacon配置（绑定到ESP32）
+beacon:
+  enabled: false              # Python端不需要广播
+  # 以下配置用于验证和文档
+  uuid: "01234567-89AB-CDEF-0123456789ABCDEF"  # 系统UUID
+  major: 1                   # ← 对应ESP32的ROOM_ID_LIVINGROOM
+  minor: 0                   # 主区域
+  measured_power: -59        # 标准iBeacon校准值
+  interval: 1               # 1秒广播间隔
+  # ESP32设备标识（用于调试）
+  esp32_device_id: "esp32-beacon-livingroom"
+  esp32_mac: null              # 实际部署时填写ESP32的MAC地址
+  
+# 能力
+capabilities:
+  - "device_control"
+  - "scene_activation"
+
+# 3.18 变更 | 接入 HomeAssistant MCP / Rest API 后不再需要声明
+# 设备配置（可选）
+# devices:
+#   # 客厅设备示例
+#   - id: "ceiling_light"
+#     name: "客厅吸顶灯"
+#     type: "light"
+#     protocol: "mqtt"
+#     address: "mqtt/ceiling_light"
+#     actions: ["on", "off", "set_brightness", "set_color_temp"]
+
+#   - id: "curtain"
+#     name: "客厅窗帘"
+#     type: "curtain"
+#     protocol: "http"
+#     address: "http://192.168.1.201/api"
+#     actions: ["open", "close", "set_position"]
+
+#   - id: "ac_unit"
+#     name: "客厅空调"
+#     type: "climate"
+#     protocol: "mcp"
+#     address: "home_ac/control"
+#     actions: ["on", "off", "set_temperature", "set_mode"]

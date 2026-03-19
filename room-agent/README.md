@@ -1,171 +1,110 @@
-### 数字人对话系统部署指南
-#### 一、前置准备
-1. **安装项目依赖**
-   ```bash
-   # 安装项目所有依赖（不安装当前项目本身）
-   uv sync --no-install-project
-   ```
-2. **配置密钥**
-   - 填写项目根目录下 `.env` 文件中的 API Key
-   - 填写 `core\intelligent-qa-system\.env` 文件中的 API Key
+# Room Agent
 
-#### 二、服务启动步骤
-##### 步骤1：启动 RAG 服务器（知识库服务）
-1. 参考文档：`robot-agent-main\core\intelligent-qa-system\rag工具说明.md`
-2. 环境准备 & 启动命令：
-   ```bash
-   # 1. 进入 RAG 服务目录
-   cd E:\srp\robot-agent-main\core\intelligent-qa-system
-   
-   # 2. 激活 conda 环境（根据实际环境名调整）
-   conda activate intelligent-qa
-   
-   # 3. 如果更改过文件，需要重新向量化入库（可选）
-   python scripts/build_index.py
-   
-   # 4. 启动 RAG HTTP 服务（热重载模式）
-   uvicorn rag_http_api:app --host 127.0.0.1 --port 9000 --reload
-   ```
-   ✅ 启动成功标志：终端显示 `Uvicorn running on http://127.0.0.1:9000`
+当前 `room-agent` 已切到新的 LangGraph 工作流骨架。旧的数字人 / WebSocket / 前端接入说明已经失效，不再适用。
 
-##### 步骤2：启动 WebSocket 服务器（数字人对话服务）
-###### 阶段1：后端自测（可选）
+## 当前能力
+
+当前最小流程如下：
+
+- `intent_recognition`
+- `direct_response`
+- `tool_selection`（占位）
+
+其中：
+
+- `intent_recognition` 使用低成本模型判断是否需要工具调用
+- `direct_response` 在不需要工具时直接生成一条自然语言回复
+- `tool_selection` 当前还是占位节点
+
+## 依赖安装
+
+在仓库根目录执行：
+
 ```bash
-# 仅后端测试，验证服务基础功能
-uv run --no-project python scripts/run_qa_bot.py
+uv sync --project room-agent
 ```
 
-###### 阶段2：前端对接（正式启动）
+如果你只想跑单次 CLI 或服务启动，推荐都从项目根目录用 `--project room-agent` 调用。
+
+## 配置文件
+
+当前运行需要两份配置：
+
+- Room Agent 配置
+- LLM 配置
+
+示例文件：
+
+- `room-agent/config/examples/room_agent.example.yaml`
+- `room-agent/config/examples/llm.example.yaml`
+
+注意：
+
+- `llm.example.yaml` 里的 `api_key` 默认是空的
+- 如果 `low_cost` 角色没有可用凭证，graph 无法运行
+
+## 运行单次集成测试 CLI
+
+从仓库根目录执行：
+
 ```bash
-# 前端已配置好接口后，启动 WebSocket 服务
-uv run --no-project python api/websocket_server.py
+uv run --project room-agent python room-agent/app/test_cli.py "你好" \
+  --config room-agent/config/examples/room_agent.example.yaml \
+  --llm-config room-agent/config/examples/llm.example.yaml
 ```
 
+成功时会输出 graph 最终 state 的 JSON。
 
-✅ 启动成功标志（终端输出）：
-```
-🦊 数字人对话 WebSocket 服务器
-====================================
-启动中...
+如果 `low_cost` 模型不可用，会直接报错：
 
-🚀 初始化数字人对话系统...
-✅ 系统初始化完成，等待前端连接...
-
-INFO:     Uvicorn running on http://0.0.0.0:8000
+```text
+ValueError: Low-cost LLM provider is unavailable.
 ```
 
-###### 阶段3：简单前端测试
-浏览器打开 api/test_frontend.html
+这通常说明：
 
-**先连接服务器，然后点击启动监听，再说话“你好，小狐狸”即可唤醒对话**
+- `llm` 配置里没有给 `low_cost` 角色配置有效模型
+- 或者 `api_key` 为空
 
-#### 三、前端集成示例（React 版）
-```tsx
-// WebSocket 客户端封装（React 组件示例）
-import { useState, useEffect } from 'react';
+## 启动服务
 
-const DigitalHumanClient = () => {
-  // 数字人状态管理
-  const [animation, setAnimation] = useState('breathing'); // 呼吸/招手/说话/监听/告别
-  const [statusText, setStatusText] = useState('等待唤醒...');
-  const [ws, setWs] = useState<WebSocket | null>(null);
+当前服务入口仍然是：
 
-  // 初始化 WebSocket 连接
-  useEffect(() => {
-    // 创建连接（注意：生产环境需替换为实际服务器地址）
-    const socket = new WebSocket('ws://localhost:8000/ws/conversation');
-    
-    // 连接成功回调
-    socket.onopen = () => {
-      console.log('✅ 已连接到数字人服务器');
-    };
+- `room-agent/app/server.py`
 
-    // 接收消息回调
-    socket.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      switch (data.type) {
-        case 'connected':
-          console.log('欢迎消息:', data.message);
-          setAnimation('breathing'); // 初始待机状态
-          break;
-        
-        case 'state_change':
-          handleStateChange(data.state, data.data);
-          break;
-      }
-    };
+从仓库根目录启动：
 
-    // 连接关闭/错误处理
-    socket.onclose = () => {
-      console.log('❌ 与数字人服务器断开连接，正在重连...');
-      setStatusText('连接已断开');
-      setAnimation('breathing');
-    };
-
-    socket.onerror = (error) => {
-      console.error('WebSocket 错误:', error);
-    };
-
-    setWs(socket);
-
-    // 组件卸载时关闭连接
-    return () => {
-      socket.close();
-    };
-  }, []);
-
-  // 状态变更处理（核心逻辑）
-  const handleStateChange = (state: string, data: any) => {
-    switch (state) {
-      case 'waiting_wake':
-        // 待机状态：呼吸动画 + 唤醒提示
-        setAnimation('breathing');
-        setStatusText(`等待唤醒: ${data.message}`);
-        break;
-      
-      case 'awakened':
-        // 唤醒成功：招手动画 + 提示音
-        setAnimation('waving');
-        setStatusText('我在！');
-        // playSound('awakened.mp3'); // 唤醒提示音（需实现音频播放函数）
-        break;
-      
-      case 'conversing':
-        // 对话中：说话动画 + 机器人回复
-        setAnimation('talking');
-        setStatusText(data.bot_response || '正在思考...');
-        break;
-      
-      case 'idle':
-        // 闲置状态：监听动画 + 等待提示
-        setAnimation('listening');
-        setStatusText('在听...');
-        break;
-      
-      case 'goodbye':
-        // 告别状态：挥手动画 + 提示音，2秒后回到待机
-        setAnimation('goodbye');
-        setStatusText('再见！');
-        // playSound('goodbye.mp3'); // 告别提示音
-        setTimeout(() => {
-          setAnimation('breathing');
-          setStatusText('等待唤醒...');
-        }, 2000);
-        break;
-    }
-  };
-
-  // 渲染数字人组件（示例）
-  return (
-    <div className="digital-human-container">
-      {/* 数字人动画容器（根据 animation 切换样式） */}
-      <div className={`digital-human-animation ${animation}`}></div>
-      {/* 状态文本显示 */}
-      <div className="status-text">{statusText}</div>
-    </div>
-  );
-};
-
-export default DigitalHumanClient;
+```bash
+ROOM_AGENT_CONFIG_PATH=room-agent/config/examples/room_agent.example.yaml \
+ROOM_AGENT_LLM_CONFIG_PATH=room-agent/config/examples/llm.example.yaml \
+uv run --project room-agent python room-agent/app/server.py
 ```
 
+说明：
+
+- 服务启动时会初始化全局单例 `Settings`
+- 服务启动时会初始化全局单例 `LLMProviderRegistry`
+- 当前业务 loop 仍然是占位实现
+- A2A HTTP 服务入口已保留
+
+## 开发约定
+
+LLM 节点开发规范见：
+
+- `room-agent/graph/AGENT.md`
+
+其中最重要的约束有两条：
+
+- LLM 只能通过服务启动时创建的全局单例 registry 获取
+- 结构化输出解析统一复用 `llm_json_parse.JsonParserWithRepair`
+
+## 现状说明
+
+当前仓库状态适合继续做以下开发：
+
+- 完善 `tool_selection`
+- 增加 tool call planning
+- 接入人审占位节点
+- 完善真实工具执行路径
+
+不建议再参考旧版 room-agent 的历史业务结构，新的 graph 方案已经作为后续实现基线。

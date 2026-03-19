@@ -1,0 +1,49 @@
+providers:
+  dashscope:
+    provider_type: openai_compatible
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    api_key: ""
+    models:
+      qwen_max:
+        model_id: qwen-max
+        sampling:
+          temperature: 0.1
+      qwen_plus:
+        model_id: qwen-plus
+        sampling:
+          temperature: 0.2
+      qwen_vl_plus:
+        model_id: qwen-vl-plus
+        sampling:
+          temperature: 0.2
+      qwen_omni_flash:
+        model_id: qwen-omni-flash
+        sampling:
+          temperature: 0.2
+      qwen_tts_flash:
+        model_id: qwen3-tts-flash
+        sampling:
+          temperature: 0.2
+
+  dashscope_intl:
+    provider_type: openai_compatible
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    api_key: ""
+    models:
+      qwen_max:
+        model_id: qwen-max
+        sampling:
+          temperature: 0.1
+      qwen_plus:
+        model_id: qwen-plus
+        sampling:
+          temperature: 0.2
+
+roles:
+  powerful:
+    provider: dashscope
+    model_key: qwen_max
+
+  low_cost:
+    provider: dashscope
+    model_key: qwen_plus

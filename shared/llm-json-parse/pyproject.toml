@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling>=1.25.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "llm-json-parse"
+version = "0.1.0"
+description = "Shared JSON parsing utilities with optional LLM-based repair"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "json-repair>=0.58.6",
+    "jsonschema>=4.26.0",
+    "openai>=2.29.0",
+]
+
+[tool.uv]
+package = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["llm_json_parse"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "llm_json_parse",
+    "README.md",
+    "pyproject.toml",
+]
