@@ -32,6 +32,7 @@ class OpenAICompatibleProvider:
             api_key=settings.api_key,
             base_url=settings.base_url,
             temperature=settings.temperature,
+            extra_body={"enable_thinking": False},
         )
 
     async def complete_text(
