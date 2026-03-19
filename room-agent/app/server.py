@@ -29,6 +29,19 @@ _SETTINGS: Settings | None = None
 _LLM_PROVIDER_REGISTRY: LLMProviderRegistry | None = None
 
 
+def initialize_runtime_dependencies(
+    *,
+    settings: Settings,
+    llm_provider_registry: LLMProviderRegistry | None = None,
+) -> None:
+    """Initialize process-wide runtime singletons explicitly."""
+    global _SETTINGS
+    global _LLM_PROVIDER_REGISTRY
+
+    _SETTINGS = settings
+    _LLM_PROVIDER_REGISTRY = llm_provider_registry or create_llm_provider_registry(settings.llm)
+
+
 def get_settings() -> Settings:
     """Return the process-wide settings singleton."""
     global _SETTINGS
