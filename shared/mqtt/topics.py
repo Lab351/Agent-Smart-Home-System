@@ -1,298 +1,147 @@
-# shared/mqtt/topics.py
-"""A2A Topic 命名空间工具类
-
-根据 docs/communication.md 规范定义 Topic 命名空间
-"""
+"""兼容层：基于 ``TopicManager`` 的旧 Topic 工具 API。"""
 
 from typing import Optional
 
+from shared.mqtt.topic_manager import TopicManager, TopicType
+
+
+_TOPIC_MANAGER = TopicManager()
+
 
 class TopicBuilder:
-    """Topic 构建器
-    
-    用于生成标准化的 MQTT Topic
-    """
-    
+    """Topic 构建器兼容封装。"""
+
     @staticmethod
     def control(room_id: str, agent_id: str) -> str:
-        """控制命令 Topic
-        
-        Args:
-            room_id: 房间 ID
-            agent_id: Agent ID
-            
-        Returns:
-            Topic: room/{room_id}/agent/{agent_id}/control
-        """
-        return f"room/{room_id}/agent/{agent_id}/control"
-    
+        return _TOPIC_MANAGER.build_control_topic(room_id, agent_id)
+
     @staticmethod
     def state(room_id: str, agent_id: str) -> str:
-        """状态发布 Topic
-        
-        Args:
-            room_id: 房间 ID
-            agent_id: Agent ID
-            
-        Returns:
-            Topic: room/{room_id}/agent/{agent_id}/state
-        """
-        return f"room/{room_id}/agent/{agent_id}/state"
-    
+        return _TOPIC_MANAGER.build_state_topic(room_id, agent_id)
+
     @staticmethod
     def describe(room_id: str, agent_id: str) -> str:
-        """能力查询 Topic
-        
-        Args:
-            room_id: 房间 ID
-            agent_id: Agent ID
-            
-        Returns:
-            Topic: room/{room_id}/agent/{agent_id}/describe
-        """
-        return f"room/{room_id}/agent/{agent_id}/describe"
-    
+        return _TOPIC_MANAGER.build_describe_topic(room_id, agent_id)
+
     @staticmethod
     def description(room_id: str, agent_id: str) -> str:
-        """能力响应 Topic
-        
-        Args:
-            room_id: 房间 ID
-            agent_id: Agent ID
-            
-        Returns:
-            Topic: room/{room_id}/agent/{agent_id}/description
-        """
-        return f"room/{room_id}/agent/{agent_id}/description"
-    
+        return _TOPIC_MANAGER.build_description_topic(room_id, agent_id)
+
     @staticmethod
     def heartbeat(room_id: str, agent_id: str) -> str:
-        """心跳 Topic
-        
-        Args:
-            room_id: 房间 ID
-            agent_id: Agent ID
-            
-        Returns:
-            Topic: room/{room_id}/agent/{agent_id}/heartbeat
-        """
-        return f"room/{room_id}/agent/{agent_id}/heartbeat"
-    
+        return _TOPIC_MANAGER.build_heartbeat_topic(room_id, agent_id)
+
     @staticmethod
     def global_state() -> str:
-        """全局状态 Topic
-        
-        Returns:
-            Topic: home/state
-        """
-        return "home/state"
-    
+        return _TOPIC_MANAGER.build_global_state_topic()
+
     @staticmethod
     def policy() -> str:
-        """策略更新 Topic
-        
-        Returns:
-            Topic: home/policy
-        """
-        return "home/policy"
-    
+        return _TOPIC_MANAGER.build_policy_topic()
+
     @staticmethod
     def arbitration(request_id: Optional[str] = None) -> str:
-        """仲裁 Topic
-        
-        Args:
-            request_id: 请求 ID（可选，用于响应）
-            
-        Returns:
-            Topic: home/arbitration 或 home/arbitration/response/{request_id}
-        """
         if request_id:
-            return f"home/arbitration/response/{request_id}"
-        return "home/arbitration"
-    
+            return _TOPIC_MANAGER.build_arbitration_response_topic(request_id)
+        return _TOPIC_MANAGER.build_arbitration_topic()
+
     @staticmethod
     def events() -> str:
-        """系统事件 Topic
-        
-        Returns:
-            Topic: home/events
-        """
-        return "home/events"
-    
+        return _TOPIC_MANAGER.build_events_topic()
+
     @staticmethod
     def system_discovery(room_id: str) -> str:
-        """系统发现 Topic
-        
-        Args:
-            room_id: 房间 ID
-            
-        Returns:
-            Topic: room/{room_id}/system/discovery
-        """
         return f"room/{room_id}/system/discovery"
-    
+
     @staticmethod
     def system_error(room_id: str) -> str:
-        """系统错误 Topic
-        
-        Args:
-            room_id: 房间 ID
-            
-        Returns:
-            Topic: room/{room_id}/system/error
-        """
         return f"room/{room_id}/system/error"
 
 
 class TopicParser:
-    """Topic 解析器
-    
-    用于解析 MQTT Topic 提取信息
-    """
-    
+    """Topic 解析器兼容封装。"""
+
     @staticmethod
     def parse(topic: str) -> dict:
-        """解析 Topic
-        
-        Args:
-            topic: MQTT Topic
-            
-        Returns:
-            解析结果字典，包含:
-            - type: 'room' 或 'home'
-            - room_id: 房间 ID（如果 type == 'room'）
-            - agent_id: Agent ID（如果有）
-            - message_type: 消息类型 (control/state/describe/description/heartbeat)
-        """
-        parts = topic.split('/')
-        result = {}
-        
-        if parts[0] == 'room' and len(parts) >= 2:
-            result['type'] = 'room'
-            result['room_id'] = parts[1]
-            
-            if len(parts) >= 4 and parts[2] == 'agent':
-                result['agent_id'] = parts[3]
-                
-            if len(parts) >= 5:
-                result['message_type'] = parts[4]
-            elif len(parts) >= 4 and parts[2] == 'system':
-                result['message_type'] = parts[3]
-                
-        elif parts[0] == 'home':
-            result['type'] = 'home'
-            
-            if len(parts) >= 2:
-                result['message_type'] = parts[1]
-                
-            if len(parts) >= 3 and parts[1] == 'arbitration' and parts[2] == 'response':
-                result['is_response'] = True
-                if len(parts) >= 4:
-                    result['request_id'] = parts[3]
-        
+        info = _TOPIC_MANAGER.parse_topic(topic)
+        if info is None:
+            return {}
+
+        message_type_map = {
+            TopicType.GLOBAL_STATE: "state",
+            TopicType.ARBITRATION_RESPONSE: "arbitration",
+        }
+
+        result = {
+            "type": info.scope,
+            "room_id": info.room_id,
+            "agent_id": info.agent_id,
+            "message_type": message_type_map.get(info.topic_type, info.topic_type.value),
+        }
+
+        if info.topic_type == TopicType.ARBITRATION_RESPONSE:
+            result["is_response"] = True
+            result["request_id"] = info.correlation_id
+
         return result
 
 
 class QoSConfig:
-    """QoS 配置
-    
-    定义各类消息的 QoS 等级
-    """
-    
+    """QoS 配置兼容封装。"""
+
     QOS_MAP = {
-        'control': 1,
-        'state': 0,
-        'describe': 1,
-        'description': 1,
-        'heartbeat': 0,
-        'home/state': 0,
-        'home/policy': 1,
-        'home/arbitration': 1,
-        'home/events': 1,
+        "control": TopicType.CONTROL,
+        "state": TopicType.STATE,
+        "describe": TopicType.DESCRIBE,
+        "description": TopicType.DESCRIPTION,
+        "heartbeat": TopicType.HEARTBEAT,
+        "home/state": TopicType.GLOBAL_STATE,
+        "home/policy": TopicType.POLICY,
+        "home/arbitration": TopicType.ARBITRATION,
+        "home/arbitration/response": TopicType.ARBITRATION_RESPONSE,
+        "home/events": TopicType.EVENTS,
     }
-    
+
     @classmethod
     def get_qos(cls, message_type: str) -> int:
-        """获取消息类型的 QoS 等级
-        
-        Args:
-            message_type: 消息类型
-            
-        Returns:
-            QoS 等级 (0, 1, 2)
-        """
-        return cls.QOS_MAP.get(message_type, 0)
-    
+        topic_type = cls.QOS_MAP.get(message_type)
+        if topic_type is None:
+            return 0
+        return _TOPIC_MANAGER.get_qos_for_topic(topic_type)
+
     @classmethod
     def get_qos_for_topic(cls, topic: str) -> int:
-        """根据 Topic 获取 QoS 等级
-        
-        Args:
-            topic: MQTT Topic
-            
-        Returns:
-            QoS 等级 (0, 1, 2)
-        """
-        parsed = TopicParser.parse(topic)
-        
-        if parsed.get('type') == 'home':
-            message_type = f"home/{parsed.get('message_type', '')}"
-            return cls.QOS_MAP.get(message_type, 0)
-        
-        message_type = parsed.get('message_type', '')
-        return cls.QOS_MAP.get(message_type, 0)
+        info = _TOPIC_MANAGER.parse_topic(topic)
+        if info is None:
+            return 0
+        return _TOPIC_MANAGER.get_qos_for_topic(info.topic_type)
 
 
 class SubscriptionTopics:
-    """订阅 Topic 模式
-    
-    定义各 Agent 需要订阅的 Topic 模式
-    """
-    
+    """订阅 Topic 模式兼容封装。"""
+
     @staticmethod
-    def personal_agent(room_id: str) -> list:
-        """Personal Agent 订阅的 Topics
-        
-        Args:
-            room_id: 房间 ID
-            
-        Returns:
-            Topic 列表
-        """
+    def personal_agent(room_id: str) -> list[str]:
         return [
-            f"room/{room_id}/agent/+/state",
-            f"room/{room_id}/agent/+/description",
-            "home/state",
-            "home/policy",
+            _TOPIC_MANAGER.build_wildcard_topic(room_id, TopicType.STATE),
+            _TOPIC_MANAGER.build_wildcard_topic(room_id, TopicType.DESCRIPTION),
+            _TOPIC_MANAGER.build_global_state_topic(),
+            _TOPIC_MANAGER.build_policy_topic(),
             "home/arbitration/response/+",
         ]
-    
+
     @staticmethod
-    def room_agent(room_id: str, agent_id: str) -> list:
-        """Room Agent 订阅的 Topics
-        
-        Args:
-            room_id: 房间 ID
-            agent_id: Agent ID
-            
-        Returns:
-            Topic 列表
-        """
+    def room_agent(room_id: str, agent_id: str) -> list[str]:
         return [
-            f"room/{room_id}/agent/{agent_id}/control",
-            f"room/{room_id}/agent/{agent_id}/describe",
-            "home/policy",
+            _TOPIC_MANAGER.build_control_topic(room_id, agent_id),
+            _TOPIC_MANAGER.build_describe_topic(room_id, agent_id),
+            _TOPIC_MANAGER.build_policy_topic(),
         ]
-    
+
     @staticmethod
-    def central_agent() -> list:
-        """Central Agent 订阅的 Topics
-        
-        Returns:
-            Topic 列表
-        """
+    def central_agent() -> list[str]:
         return [
             "room/+/agent/+/state",
             "room/+/agent/+/heartbeat",
-            "home/arbitration",
+            _TOPIC_MANAGER.build_arbitration_topic(),
         ]
