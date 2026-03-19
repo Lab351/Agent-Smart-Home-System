@@ -148,6 +148,7 @@ export class QoSConfig {
     'home/state': 0,
     'home/policy': 1,
     'home/arbitration': 1,
+    'home/arbitration/response': 1,
     'home/events': 1,
   }
 
@@ -207,6 +208,18 @@ export class SubscriptionTopics {
       `room/${roomId}/agent/${agentId}/control`,
       `room/${roomId}/agent/${agentId}/describe`,
       'home/policy',
+    ]
+  }
+
+  /**
+   * Central Agent 订阅的 Topics
+   * @returns {string[]} Topic 列表
+   */
+  static centralAgent() {
+    return [
+      'room/+/agent/+/state',
+      'room/+/agent/+/heartbeat',
+      'home/arbitration',
     ]
   }
 }

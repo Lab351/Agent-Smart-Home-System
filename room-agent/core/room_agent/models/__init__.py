@@ -1,14 +1,14 @@
 # core/room_agent/models/__init__.py
 """数据模型导出"""
 
-from core.room_agent.models.mqtt_messages import (
+from shared.models.mqtt_messages import (
     ControlMessage,
     StateMessage,
     DescribeMessage,
     DescriptionMessage,
     HeartbeatMessage,
     DeviceState as MqttDeviceState,
-    DeviceCapability,
+    DeviceCapability as MqttDeviceCapability,
     SystemMetrics,
 )
 from core.room_agent.models.device_state import (
@@ -25,9 +25,10 @@ __all__ = [
     "DescriptionMessage",
     "HeartbeatMessage",
     "MqttDeviceState",
-    "DeviceCapability",
+    "MqttDeviceCapability",
     "SystemMetrics",
     "DeviceState",
     "DeviceType",
+    "DeviceCapability",
     "DeviceAction",
 ]

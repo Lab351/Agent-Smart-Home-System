@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 class BeaconConfig:
     """BLE Beacon配置
 
-    符合HomeSystemAgent.md规范的BLE Beacon配置
+    与根目录 docs/Architect.md、docs/Transport.md 对齐的 BLE Beacon 配置
 
     Attributes:
         uuid: System-specific UUID (16 bytes)
