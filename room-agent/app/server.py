@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import argparse
 from dataclasses import dataclass
 
 import uvicorn
@@ -27,6 +28,8 @@ else:
 logger = logging.getLogger(__name__)
 _SETTINGS: Settings | None = None
 _LLM_PROVIDER_REGISTRY: LLMProviderRegistry | None = None
+_CONFIG_PATH: str | None = None
+_LLM_CONFIG_PATH: str | None = None
 
 
 def initialize_runtime_dependencies(
@@ -46,10 +49,26 @@ def get_settings() -> Settings:
     """Return the process-wide settings singleton."""
     global _SETTINGS
     if _SETTINGS is None:
-        config_path = os.getenv("ROOM_AGENT_CONFIG_PATH")
-        llm_config_path = os.getenv("ROOM_AGENT_LLM_CONFIG_PATH")
-        _SETTINGS = load_settings(config_path=config_path, llm_config_path=llm_config_path)
+        _SETTINGS = load_settings(config_path=_CONFIG_PATH, llm_config_path=_LLM_CONFIG_PATH)
     return _SETTINGS
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments for runtime configuration."""
+    parser = argparse.ArgumentParser(description="Run RoomAgent runtime service.")
+    parser.add_argument(
+        "--config-path",
+        dest="config_path",
+        default=None,
+        help="Path to room-agent main config file.",
+    )
+    parser.add_argument(
+        "--llm-config-path",
+        dest="llm_config_path",
+        default=None,
+        help="Path to room-agent LLM config file.",
+    )
+    return parser.parse_args()
 
 
 def get_llm_provider_registry() -> LLMProviderRegistry:
@@ -168,5 +187,8 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    args = parse_args()
+    _CONFIG_PATH = args.config_path
+    _LLM_CONFIG_PATH = args.llm_config_path
     with contextlib.suppress(KeyboardInterrupt):
         asyncio.run(main())
