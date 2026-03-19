@@ -2,6 +2,27 @@
 
 本文档用于固化 Room Agent 下一版 LangGraph 工作流设计。该规划不参考现有实现，作为后续重构和重写的独立基线。
 
+## 0. 当前进度
+
+当前实现状态：
+
+- 已完成 `initialize_request`
+- 已完成 `intent_recognition`
+- 已完成 `direct_response`
+- 已添加 `tool_selection` 占位节点
+- 已接好 `intent_recognition -> direct_response / tool_selection` 条件边
+- 已接入全局单例 LLM registry
+- 已接入共享 JSON 解析能力 `llm_json_parse.JsonParserWithRepair`
+- 已有一组真实端点 smoke test
+
+当前未完成：
+
+- `tool_selection` 真实实现
+- `tool_call_planning`
+- `human_review`
+- `execute`
+- `response_render`
+
 ## 1. 目标
 
 本图的目标是把 Room Agent 的 LLM 工作流拆成明确的、可替换的节点，并满足以下要求：
