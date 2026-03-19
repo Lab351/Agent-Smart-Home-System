@@ -6,7 +6,7 @@ from typing import Any
 
 from config.settings import LLMRole
 from graph.state import RoomAgentGraphState
-from shared.llm import parse_json_with_repair
+from llm_json_parse import JsonParserWithRepair
 
 
 INTENT_OUTPUT_SCHEMA = {
@@ -29,9 +29,8 @@ async def intent_recognition(state: RoomAgentGraphState) -> RoomAgentGraphState:
         _build_messages(user_input),
         json_mode=True,
     )
-    parsed = await parse_json_with_repair(
+    parsed = await JsonParserWithRepair(llm_provider=provider)(
         raw_output,
-        llm_provider=provider,
         schema=INTENT_OUTPUT_SCHEMA,
     )
 

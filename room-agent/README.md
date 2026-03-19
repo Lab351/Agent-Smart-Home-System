@@ -96,7 +96,7 @@ LLM 节点开发规范见：
 其中最重要的约束有两条：
 
 - LLM 只能通过服务启动时创建的全局单例 registry 获取
-- 结构化输出解析统一复用 `shared.llm.parse_json_with_repair`
+- 结构化输出解析统一复用 `llm_json_parse.JsonParserWithRepair`
 
 ## 现状说明
 
