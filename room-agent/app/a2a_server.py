@@ -106,17 +106,17 @@ def build_agent_card(*, host: str, port: int) -> AgentCard:
         description="Blank RoomAgent A2A service skeleton awaiting skill and executor wiring.",
         url=f"http://{host}:{port}/",
         version="0.1.0",
-        defaultInputModes=SUPPORTED_CONTENT_TYPES,
-        defaultOutputModes=SUPPORTED_CONTENT_TYPES,
-        capabilities=AgentCapabilities(streaming=False, pushNotifications=False),
+        default_input_modes=SUPPORTED_CONTENT_TYPES,
+        default_output_modes=SUPPORTED_CONTENT_TYPES,
+        capabilities=AgentCapabilities(streaming=False, push_notifications=False),
         skills=[
             AgentSkill(
                 id="room_agent_placeholder",
                 name="RoomAgent Placeholder",
                 description="Placeholder skill card to be completed later.",
                 tags=["placeholder"],
-                inputModes=SUPPORTED_CONTENT_TYPES,
-                outputModes=SUPPORTED_CONTENT_TYPES,
+                input_modes=SUPPORTED_CONTENT_TYPES,
+                output_modes=SUPPORTED_CONTENT_TYPES,
             )
         ],
     )
