@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+import pytest
+
 from app.server import initialize_runtime_dependencies
 from config.settings import load_settings
 from graph.entry import compile_graph
@@ -14,7 +16,17 @@ ROOM_AGENT_CONFIG = ROOT / "config" / "examples" / "room_agent.example.yaml"
 LLM_CONFIG = Path(__file__).resolve().parent / "fixtures" / "llm.yaml"
 
 
+def _require_llm_fixture() -> None:
+    if not LLM_CONFIG.exists():
+        pytest.skip(
+            "Missing room-agent/tests/fixtures/llm.yaml. "
+            "Create it locally from room-agent/config/examples/llm.example.yaml "
+            "and fill in real provider credentials for the low_cost and powerful roles."
+        )
+
+
 def _initialize_real_runtime() -> None:
+    _require_llm_fixture()
     settings = load_settings(
         config_path=str(ROOM_AGENT_CONFIG),
         llm_config_path=str(LLM_CONFIG),
