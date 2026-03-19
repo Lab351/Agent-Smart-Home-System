@@ -4,14 +4,11 @@
 Central Agent 的 Agent-to-Agent 通信实现
 """
 
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List, Optional
 
 from shared.a2a.base_agent import BaseA2AAgent
 from shared.mqtt.topic_manager import AgentType, TopicType
-from shared.models.mqtt_messages import (
-    ArbitrationRequestMessage,
-    ArbitrationResponseMessage,
-)
+from shared.models.mqtt_messages import ArbitrationRequestMessage
 
 
 class CentralAgentA2A(BaseA2AAgent):
@@ -173,6 +170,10 @@ class CentralAgentA2A(BaseA2AAgent):
         )
         
         print(f"[CentralAgentA2A] Arbitration request from {message.requesting_agent}")
+
+    async def _send_heartbeat(self):
+        """Central Agent 当前没有单独定义 home scoped heartbeat 消息。"""
+        return None
     
     # ==================== Central Agent 特定方法 ====================
     
