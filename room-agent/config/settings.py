@@ -19,6 +19,14 @@ class AgentSettings(BaseModel):
     id: str = "room-agent-default"
     room_id: str = "default-room"
     version: str = "0.1.0"
+    gateway: "GatewaySettings | None" = None
+
+
+class GatewaySettings(BaseModel):
+    url: str
+    register_on_startup: bool = True
+    heartbeat_interval: int = 60
+    agent_host: str
 
 
 class LLMSamplingConfig(BaseModel):
@@ -151,6 +159,7 @@ def load_settings(
     resolved_config_path = config_path
     yaml_data = _load_yaml_config(resolved_config_path)
     agent_data = yaml_data.get("agent", {}) if isinstance(yaml_data.get("agent"), dict) else {}
+    gateway_data = yaml_data.get("gateway", {}) if isinstance(yaml_data.get("gateway"), dict) else {}
     runtime_data = yaml_data.get("runtime", {}) if isinstance(yaml_data.get("runtime"), dict) else {}
 
     settings = Settings(
@@ -158,6 +167,7 @@ def load_settings(
             id=agent_data.get("id", AgentSettings.model_fields["id"].default),
             room_id=agent_data.get("room_id", AgentSettings.model_fields["room_id"].default),
             version=agent_data.get("version", AgentSettings.model_fields["version"].default),
+            gateway=GatewaySettings.model_validate(gateway_data) if gateway_data else None,
         ),
         llm=_load_llm_settings(Path(llm_config_path)),
         runtime=RuntimeSettings(
