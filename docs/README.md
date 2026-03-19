@@ -1,24 +1,25 @@
 # 智能家居 Agent 系统文档
 
-本文档集当前以 `BLE Beacon + Beacon/Registry API + AgentCard + A2A SDK` 为主线，描述智能家居多 Agent 系统的核心设计。
+根目录 `docs/` 是当前唯一规范入口。主文档分为传输协议、系统架构、使用手册三部分。
 
 ## 核心文档
 
-- [系统总览](./system-overview.md): 架构分层、角色职责、状态维护、能力边界、协作关系
-- [通信协议](./communication.md): 发现流程、AgentCard、A2A 消息语义、典型时序
+- [Transport](./Transport.md)：Agent 间通信协议、发现链路、AgentCard、A2A 消息语义、时序图
+- [Architect](./Architect.md)：系统架构、模块边界、状态权威、职责分工
+- [Usage](./Usage.md)：启动方式、配置入口、测试与最小联调
+- [Glossary](./Glossary.md)：统一术语说明
 
-## 当前文档约束
+## 模块专属文档
 
-- 当前规范以 `A2A SDK` 作为 Agent 间通信主线。
-- `MQTT` 兼容层暂缓实现，不作为当前协议规范主体。
-- `BLE Beacon` 继续负责空间感知。
-- `Beacon API` 与 `Registry API` 继续负责空间发现和 Agent 发现。
+- [personal-agent/docs/ASR_INTEGRATION.md](../personal-agent/docs/ASR_INTEGRATION.md)
+- [personal-agent/docs/ASR_QUICKSTART.md](../personal-agent/docs/ASR_QUICKSTART.md)
+- [personal-agent/docs/ASR_SUMMARY.md](../personal-agent/docs/ASR_SUMMARY.md)
+- [personal-agent/docs/A2A_CLIENT_DEMO.md](../personal-agent/docs/A2A_CLIENT_DEMO.md)
+- [room-agent/docs/LANGGRAPH_REBUILD_MIGRATION_PLAN.md](../room-agent/docs/LANGGRAPH_REBUILD_MIGRATION_PLAN.md)
+- [room-agent/docs/ESP32_BEACON_BINDING.md](../room-agent/docs/ESP32_BEACON_BINDING.md)
 
-## 辅助资料
+## 文档约束
 
-以下文件仍保留，但不再作为当前架构与协议的规范来源：
-
-- `docs/TEST_CASES.md`
-- `docs/STAGE_1_5_COMPLETED.md`
-- `docs/HomeSystemAgent.md`
-- `docs/agents/*.md`
+- 目标架构以 `BLE Beacon + Beacon/Registry API + A2A` 为主线。
+- MQTT 兼容路径可在实现中存在，但不作为规范主叙事。
+- 架构、协议、使用说明不再分散到多套重复目录中维护。
