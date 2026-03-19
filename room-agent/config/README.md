@@ -86,6 +86,55 @@ uv run python -m app.main "你好" \
 
 ### 关于房间配置
 
+3.18 对齐，现在房间配置还需要保留的字段包括
+
+- agent 的基本配置，包括名字，id 等元数据，和原协议保持一致
+
+```yaml
+agent:
+  id: "room-agent-1"
+  room_id: "bedroom"
+  version: "1.0.0"
+```
+
+- beacon 配置块，当前主要用于声明房间与物理 Beacon 的绑定关系，以及生成 ESP32 固件参数。这一项同样和原协议保持一致。
+
+这个配置和服务 runtime 无关，只用来生成 beacon 固件代码。
+
+```yaml
+# BLE Beacon配置（空间感知层）
+beacon:
+  enabled: true # 是否启用BLE Beacon广播
+  uuid: "01234567-89AB-CDEF-0123456789ABCDEF" # 系统统一UUID
+  major: 2 # Room identifier (2=卧室, 1=客厅, 3=书房...)
+  minor: 0 # Zone/Position in room (0-65535)
+  measured_power: -59 # Calibrated RSSI at 1 meter (-59 for standard beacon)
+  interval: 1 # Broadcast interval in seconds
+```
+
+- 后端配置块，当前主要用于 Room Agent 启动后向 `qwen-backend` 注册 A2A 发现信息。
+
+具体字段待定。至少要包括
+
+- `url`: 后端地址
+- `register_on_startup`: 是否启动时注册
+- `heartbeat_interval`: 心跳间隔
+- `agent_host`: Room Agent 对外服务地址。因为 qwen-backend 是一个 AI Gateway，会将请求转发回本服务。
+
+参考配置
+
+```yaml
+gateway:
+  url: "http://home-gateway.local" # Qwen Backend地址
+  register_on_startup: true # 是否在启动时注册到后端
+  heartbeat_interval: 60 # 心跳间隔，单位秒
+  agent_host: "http://room-agent.local" # Room Agent对外服务地址
+```
+
+如果和外面根目录的 docs 有冲突，以本文档为准。
+
+---
+
 > Codex 生成
 
 `room-agent/config/` 目录下的配置，当前主要承担“房间身份声明”和“空间绑定配置源”两类职责。
