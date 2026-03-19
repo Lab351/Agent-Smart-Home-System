@@ -17,6 +17,7 @@ dependencies = [
     "a2a-sdk[http-server]>=0.3.25",
     "jsonschema>=4.26.0",
     "json-repair==0.*",
+    "pytest>=9.0.2",
 ]
 
 [project.optional-dependencies]
