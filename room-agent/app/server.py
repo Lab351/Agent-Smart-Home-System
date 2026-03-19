@@ -18,10 +18,12 @@ if __package__ in {None, ""}:
     sys.path.append(str(Path(__file__).resolve().parent))
     from a2a_server import build_a2a_application
     from config.settings import LLMRole, Settings, load_settings
+    from gateway_client import GatewayClient
     from integrations.llm_provider import LLMProviderRegistry, create_llm_provider_registry
 else:
     from .a2a_server import build_a2a_application
     from config.settings import LLMRole, Settings, load_settings
+    from .gateway_client import GatewayClient
     from integrations.llm_provider import LLMProviderRegistry, create_llm_provider_registry
 
 
@@ -87,11 +89,16 @@ class ServiceRuntime:
     host: str = os.getenv("ROOM_AGENT_HOST", "127.0.0.1")
     port: int = int(os.getenv("ROOM_AGENT_PORT", "10000"))
     business_poll_interval_seconds: float = 30.0
+    gateway_client: GatewayClient | None = None
 
     async def run(self) -> None:
         """Run the HTTP server loop and the business loop in one event loop."""
         settings = get_settings()
         llm_registry = get_llm_provider_registry()
+        gateway_client = self.gateway_client
+        if settings.agent.gateway and gateway_client is None:
+            gateway_client = GatewayClient()
+            self.gateway_client = gateway_client
         logger.info(
             "RoomAgent settings loaded for agent=%s room=%s powerful_provider=%s low_cost_provider=%s",
             settings.agent.id,
@@ -108,11 +115,25 @@ class ServiceRuntime:
             ),
         )
 
+        if (
+            settings.agent.gateway
+            and settings.agent.gateway.register_on_startup
+            and gateway_client is not None
+        ):
+            await gateway_client.register_agent(settings.agent)
+
         stop_event = asyncio.Event()
         tasks = [
             asyncio.create_task(self.run_a2a_http_server(stop_event), name="roomagent-a2a-http"),
             asyncio.create_task(self.run_business_loop(stop_event), name="roomagent-business-loop"),
         ]
+        if settings.agent.gateway and gateway_client is not None:
+            tasks.append(
+                asyncio.create_task(
+                    self.run_gateway_heartbeat_loop(stop_event),
+                    name="roomagent-gateway-heartbeat",
+                )
+            )
 
         try:
             await asyncio.gather(*tasks)
@@ -171,6 +192,30 @@ class ServiceRuntime:
             except TimeoutError:
                 continue
         logger.info("Business loop placeholder stopped.")
+
+    async def run_gateway_heartbeat_loop(self, stop_event: asyncio.Event) -> None:
+        """Send heartbeat requests to the backend gateway on the configured interval."""
+        settings = get_settings()
+        gateway = settings.agent.gateway
+        if gateway is None:
+            return
+
+        logger.info(
+            "Gateway heartbeat loop started for agent=%s interval=%ss",
+            settings.agent.id,
+            gateway.heartbeat_interval,
+        )
+        while not stop_event.is_set():
+            if self.gateway_client is not None:
+                await self.gateway_client.send_heartbeat(settings.agent)
+            try:
+                await asyncio.wait_for(
+                    stop_event.wait(),
+                    timeout=gateway.heartbeat_interval,
+                )
+            except TimeoutError:
+                continue
+        logger.info("Gateway heartbeat loop stopped.")
 
     async def tick_business_jobs(self) -> None:
         """Reserved hook for future scheduled business queries."""
