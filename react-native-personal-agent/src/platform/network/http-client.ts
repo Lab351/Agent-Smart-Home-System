@@ -1,13 +1,5 @@
-type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | JsonValue[]
-  | { [key: string]: JsonValue };
-
 type RequestOptions = Omit<RequestInit, 'body'> & {
-  body?: BodyInit | JsonValue;
+  body?: BodyInit | unknown;
   timeoutMs?: number;
 };
 
@@ -27,7 +19,7 @@ export class HttpClient {
     return this.request<T>(path, { ...init, method: 'GET' });
   }
 
-  async post<T>(path: string, body?: JsonValue, init?: Omit<RequestOptions, 'body'>): Promise<T> {
+  async post<T>(path: string, body?: unknown, init?: Omit<RequestOptions, 'body'>): Promise<T> {
     return this.request<T>(path, { ...init, method: 'POST', body });
   }
 
