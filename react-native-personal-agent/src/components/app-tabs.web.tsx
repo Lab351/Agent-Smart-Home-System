@@ -23,10 +23,16 @@ export default function AppTabs() {
       <TabList asChild>
         <CustomTabList>
           <TabTrigger name="index" href="/" asChild>
-            <TabButton>控制台</TabButton>
+            <TabButton>首页</TabButton>
           </TabTrigger>
-          <TabTrigger name="explore" href="/explore" asChild>
-            <TabButton>进度</TabButton>
+          <TabTrigger name="voice-control" href="/voice-control" asChild>
+            <TabButton>语音</TabButton>
+          </TabTrigger>
+          <TabTrigger name="room-binding" href="/room-binding" asChild>
+            <TabButton>房间</TabButton>
+          </TabTrigger>
+          <TabTrigger name="preferences" href="/preferences" asChild>
+            <TabButton>偏好</TabButton>
           </TabTrigger>
         </CustomTabList>
       </TabList>
@@ -58,9 +64,7 @@ export function CustomTabList(props: TabListProps) {
         <ThemedText type="smallBold" style={styles.brandText}>
           Personal Agent
         </ThemedText>
-
         {props.children}
-
         <ExternalLink href="https://github.com/Lab351/Agent-Smart-Home-System" asChild>
           <Pressable style={styles.externalPressable}>
             <ThemedText type="link">仓库</ThemedText>

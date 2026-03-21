@@ -1,32 +1,30 @@
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import React from 'react';
-import { useColorScheme } from 'react-native';
-
-import { Colors } from '@/constants/theme';
 
 export default function AppTabs() {
-  const scheme = useColorScheme();
-  const colors = Colors[scheme === 'unspecified' ? 'light' : scheme];
-
   return (
     <NativeTabs
-      backgroundColor={colors.background}
-      indicatorColor={colors.backgroundElement}
-      labelStyle={{ selected: { color: colors.text } }}>
+      backgroundColor="#F6F0E8"
+      iconColor="#2D5B57"
+      tintColor="#1B2E2B"
+      labelStyle={{
+        color: '#5D726F',
+        fontSize: 11,
+        selected: {
+          color: '#1B2E2B',
+        },
+      }}>
       <NativeTabs.Trigger name="index">
-        <NativeTabs.Trigger.Label>控制台</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          src={require('@/assets/images/tabIcons/home.png')}
-          renderingMode="template"
-        />
+        <NativeTabs.Trigger.Label>首页</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="explore">
-        <NativeTabs.Trigger.Label>进度</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          src={require('@/assets/images/tabIcons/explore.png')}
-          renderingMode="template"
-        />
+      <NativeTabs.Trigger name="voice-control">
+        <NativeTabs.Trigger.Label>语音</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="room-binding">
+        <NativeTabs.Trigger.Label>房间</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="preferences">
+        <NativeTabs.Trigger.Label>偏好</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
     </NativeTabs>
   );
