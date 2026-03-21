@@ -1,181 +1,187 @@
-import { Image } from 'expo-image';
-import { SymbolView } from 'expo-symbols';
-import React from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { ExternalLink } from '@/components/external-link';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Collapsible } from '@/components/ui/collapsible';
-import { WebBadge } from '@/components/web-badge';
+import { appEnv } from '@/config/env';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { buildDashboardModel } from '@/features/dashboard/dashboard-data';
 
-export default function TabTwoScreen() {
-  const safeAreaInsets = useSafeAreaInsets();
-  const insets = {
-    ...safeAreaInsets,
-    bottom: safeAreaInsets.bottom + BottomTabInset + Spacing.three,
-  };
-  const theme = useTheme();
+const dashboard = buildDashboardModel({
+  backendUrl: appEnv.backendUrl,
+  mqttHost: appEnv.mqttHost,
+  mqttWsPort: appEnv.mqttWsPort,
+  roomCount: Object.keys(appEnv.roomDisplayNames).length,
+  platform: 'android / ios / web',
+});
 
-  const contentPlatformStyle = Platform.select({
-    android: {
-      paddingTop: insets.top,
-      paddingLeft: insets.left,
-      paddingRight: insets.right,
-      paddingBottom: insets.bottom,
-    },
-    web: {
-      paddingTop: Spacing.six,
-      paddingBottom: Spacing.four,
-    },
-  });
+const statusColors = {
+  done: '#155B3A',
+  active: '#0C4A7D',
+  pending: '#4C4A45',
+  blocked: '#7D4C0C',
+} as const;
 
+const statusBackgrounds = {
+  done: '#DDF7E8',
+  active: '#D8ECFF',
+  pending: '#ECE9E2',
+  blocked: '#FFF1D6',
+} as const;
+
+export default function ProgressScreen() {
   return (
-    <ScrollView
-      style={[styles.scrollView, { backgroundColor: theme.background }]}
-      contentInset={insets}
-      contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}>
-      <ThemedView style={styles.container}>
-        <ThemedView style={styles.titleContainer}>
-          <ThemedText type="subtitle">Explore</ThemedText>
-          <ThemedText style={styles.centerText} themeColor="textSecondary">
-            This starter app includes example{'\n'}code to help you get started.
-          </ThemedText>
-
-          <ExternalLink href="https://docs.expo.dev" asChild>
-            <Pressable style={({ pressed }) => pressed && styles.pressed}>
-              <ThemedView type="backgroundElement" style={styles.linkButton}>
-                <ThemedText type="link">Expo documentation</ThemedText>
-                <SymbolView
-                  tintColor={theme.text}
-                  name={{ ios: 'arrow.up.right.square', android: 'link', web: 'link' }}
-                  size={12}
-                />
-              </ThemedView>
-            </Pressable>
-          </ExternalLink>
-        </ThemedView>
-
-        <ThemedView style={styles.sectionsWrapper}>
-          <Collapsible title="File-based routing">
-            <ThemedText type="small">
-              This app has two screens: <ThemedText type="code">src/app/index.tsx</ThemedText> and{' '}
-              <ThemedText type="code">src/app/explore.tsx</ThemedText>
+    <ThemedView style={styles.root}>
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <ThemedView style={styles.headerCard}>
+            <ThemedText type="smallBold" style={styles.headerKicker}>
+              开发推进
             </ThemedText>
-            <ThemedText type="small">
-              The layout file in <ThemedText type="code">src/app/_layout.tsx</ThemedText> sets up
-              the tab navigator.
+            <ThemedText type="subtitle" style={styles.headerTitle}>
+              今日计划与验证路径
             </ThemedText>
-            <ExternalLink href="https://docs.expo.dev/router/introduction">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
-
-          <Collapsible title="Android, iOS, and web support">
-            <ThemedView type="backgroundElement" style={styles.collapsibleContent}>
-              <ThemedText type="small">
-                You can open this project on Android, iOS, and the web. To open the web version,
-                press <ThemedText type="smallBold">w</ThemedText> in the terminal running this
-                project.
-              </ThemedText>
-              <Image
-                source={require('@/assets/images/tutorial-web.png')}
-                style={styles.imageTutorial}
-              />
-            </ThemedView>
-          </Collapsible>
-
-          <Collapsible title="Images">
-            <ThemedText type="small">
-              For static images, you can use the <ThemedText type="code">@2x</ThemedText> and{' '}
-              <ThemedText type="code">@3x</ThemedText> suffixes to provide files for different
-              screen densities.
+            <ThemedText themeColor="textSecondary">
+              这里承接 Code Review 之后的执行顺序，优先做能直接缩短联调路径的工作。
             </ThemedText>
-            <Image source={require('@/assets/images/react-logo.png')} style={styles.imageReact} />
-            <ExternalLink href="https://reactnative.dev/docs/images">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
+          </ThemedView>
 
-          <Collapsible title="Light and dark mode components">
-            <ThemedText type="small">
-              This template has light and dark mode support. The{' '}
-              <ThemedText type="code">useColorScheme()</ThemedText> hook lets you inspect what the
-              user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
+          <ThemedView type="backgroundElement" style={styles.panel}>
+            <ThemedText type="subtitle" style={styles.panelTitle}>
+              今日开发计划
             </ThemedText>
-            <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
+            <View style={styles.list}>
+              {dashboard.todayPlan.map(item => (
+                <View key={item.label} style={styles.planRow}>
+                  <View
+                    style={[
+                      styles.badge,
+                      { backgroundColor: statusBackgrounds[item.status] },
+                    ]}>
+                    <ThemedText
+                      type="smallBold"
+                      style={{ color: statusColors[item.status], textTransform: 'uppercase' }}>
+                      {item.status}
+                    </ThemedText>
+                  </View>
+                  <View style={styles.planContent}>
+                    <ThemedText type="smallBold">{item.label}</ThemedText>
+                    <ThemedText type="small" themeColor="textSecondary">
+                      {item.detail}
+                    </ThemedText>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </ThemedView>
 
-          <Collapsible title="Animations">
-            <ThemedText type="small">
-              This template includes an example of an animated component. The{' '}
-              <ThemedText type="code">src/components/ui/collapsible.tsx</ThemedText> component uses
-              the powerful <ThemedText type="code">react-native-reanimated</ThemedText> library to
-              animate opening this hint.
+          <ThemedView type="backgroundElement" style={styles.panel}>
+            <ThemedText type="subtitle" style={styles.panelTitle}>
+              测试与验证
             </ThemedText>
-          </Collapsible>
-        </ThemedView>
-        {Platform.OS === 'web' && <WebBadge />}
-      </ThemedView>
-    </ScrollView>
+            <View style={styles.list}>
+              {dashboard.testStatus.map(item => (
+                <View key={item.label} style={styles.testRow}>
+                  <ThemedText type="smallBold">{item.label}</ThemedText>
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {item.detail}
+                  </ThemedText>
+                </View>
+              ))}
+            </View>
+          </ThemedView>
+
+          <ThemedView type="backgroundElement" style={styles.panel}>
+            <ThemedText type="subtitle" style={styles.panelTitle}>
+              迁移边界
+            </ThemedText>
+            <View style={styles.list}>
+              <View style={styles.testRow}>
+                <ThemedText type="smallBold">已迁移</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  环境配置、BLE 解析、录音封装、存储封装、基础路由与控制台 UI。
+                </ThemedText>
+              </View>
+              <View style={styles.testRow}>
+                <ThemedText type="smallBold">待迁移</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  DiscoveryService、ControlService、语音识别链路、偏好编辑流和设备状态回流。
+                </ThemedText>
+              </View>
+              <View style={styles.testRow}>
+                <ThemedText type="smallBold">当前环境限制</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  无法拉取线上 main；BLE 与录音只可做单元测试和静态校验，不能替代真机验证。
+                </ThemedText>
+              </View>
+            </View>
+          </ThemedView>
+        </ScrollView>
+      </SafeAreaView>
+    </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollView: {
+  root: {
     flex: 1,
-  },
-  contentContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
   },
-  container: {
+  safeArea: {
+    flex: 1,
     maxWidth: MaxContentWidth,
-    flexGrow: 1,
   },
-  titleContainer: {
+  scrollContent: {
+    paddingHorizontal: Spacing.three,
+    paddingTop: Spacing.six,
+    paddingBottom: BottomTabInset + Spacing.four,
     gap: Spacing.three,
-    alignItems: 'center',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.six,
   },
-  centerText: {
-    textAlign: 'center',
+  headerCard: {
+    backgroundColor: '#E8F1E8',
+    borderRadius: 28,
+    padding: Spacing.four,
+    gap: Spacing.two,
   },
-  pressed: {
-    opacity: 0.7,
+  headerKicker: {
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+    color: '#155B3A',
   },
-  linkButton: {
+  headerTitle: {
+    fontSize: 30,
+    lineHeight: 36,
+  },
+  panel: {
+    borderRadius: 28,
+    padding: Spacing.three,
+    gap: Spacing.three,
+  },
+  panelTitle: {
+    fontSize: 24,
+    lineHeight: 30,
+  },
+  list: {
+    gap: Spacing.three,
+  },
+  planRow: {
     flexDirection: 'row',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.two,
-    borderRadius: Spacing.five,
-    justifyContent: 'center',
+    gap: Spacing.two,
+    alignItems: 'flex-start',
+  },
+  badge: {
+    borderRadius: 999,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.one,
+    minWidth: 72,
+    alignItems: 'center',
+  },
+  planContent: {
+    flex: 1,
     gap: Spacing.one,
-    alignItems: 'center',
   },
-  sectionsWrapper: {
-    gap: Spacing.five,
-    paddingHorizontal: Spacing.four,
-    paddingTop: Spacing.three,
-  },
-  collapsibleContent: {
-    alignItems: 'center',
-  },
-  imageTutorial: {
-    width: '100%',
-    aspectRatio: 296 / 171,
-    borderRadius: Spacing.three,
-    marginTop: Spacing.two,
-  },
-  imageReact: {
-    width: 100,
-    height: 100,
-    alignSelf: 'center',
+  testRow: {
+    gap: Spacing.one,
   },
 });
