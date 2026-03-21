@@ -2,15 +2,17 @@ import { useRouter } from 'expo-router';
 
 import { appEnv } from '@/config/env';
 import { HomeScreen } from '@/features/home/home-screen';
+import { useAppState } from '@/store';
 
 export default function HomeRoute() {
   const router = useRouter();
+  const { currentRoomBinding, isScanningBeacon, mqttStatus } = useAppState();
 
   return (
     <HomeScreen
-      currentRoomName={null}
-      mqttStatus="disconnected"
-      isScanningBeacon={false}
+      currentRoomName={currentRoomBinding?.roomName ?? null}
+      mqttStatus={mqttStatus}
+      isScanningBeacon={isScanningBeacon}
       backendLabel={appEnv.backendUrl}
       quickActions={[
         {

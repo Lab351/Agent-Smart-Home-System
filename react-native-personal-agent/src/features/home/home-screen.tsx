@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { ScreenShell } from '@/features/shared/screen-shell';
 import { SectionCard } from '@/features/shared/section-card';
 import { ThemedText } from '@/components/themed-text';
+import type { ConnectionStatus } from '@/types';
 
 type QuickAction = {
   label: string;
@@ -12,7 +13,7 @@ type QuickAction = {
 
 type HomeScreenProps = {
   currentRoomName: string | null;
-  mqttStatus: 'connected' | 'connecting' | 'disconnected';
+  mqttStatus: ConnectionStatus;
   isScanningBeacon: boolean;
   backendLabel: string;
   quickActions: QuickAction[];

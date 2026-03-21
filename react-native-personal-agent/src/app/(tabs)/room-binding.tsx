@@ -1,22 +1,26 @@
 import { RoomBindingScreen } from '@/features/room-binding/room-binding-screen';
+import { useAppState } from '@/store';
 
 export default function RoomBindingRoute() {
+  const {
+    currentRoomBinding,
+    discoveredBeacons,
+    isScanningBeacon,
+    toggleBeaconScanning,
+    unbindRoom,
+  } = useAppState();
+
   return (
     <RoomBindingScreen
-      currentRoomName={null}
-      scanning={false}
-      discoveredBeacons={[
-        {
-          roomName: '客厅',
-          rssi: -62,
-          distance: 1.4,
-        },
-        {
-          roomName: '卧室',
-          rssi: -71,
-          distance: 3.2,
-        },
-      ]}
+      currentRoomName={currentRoomBinding?.roomName ?? null}
+      scanning={isScanningBeacon}
+      discoveredBeacons={discoveredBeacons.map(beacon => ({
+        roomName: beacon.roomName,
+        rssi: beacon.rssi,
+        distance: beacon.distance,
+      }))}
+      onToggleScan={toggleBeaconScanning}
+      onUnbind={unbindRoom}
     />
   );
 }

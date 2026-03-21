@@ -1,14 +1,26 @@
 import { VoiceControlScreen } from '@/features/voice-control/voice-control-screen';
+import { useAppState } from '@/store';
 
 export default function VoiceControlRoute() {
+  const {
+    currentRoomBinding,
+    mqttStatus,
+    recorderState,
+    transcript,
+    responsePreview,
+    voiceStatusText,
+    toggleRecording,
+  } = useAppState();
+
   return (
     <VoiceControlScreen
-      currentRoomName={null}
-      isConnected={false}
-      isRecording={false}
-      statusText="点击麦克风开始录音，首版会优先接通录音、ASR 和意图解析。"
-      transcript="等待录音输入"
-      responsePreview="待接入 room-agent / home-agent 执行结果"
+      currentRoomName={currentRoomBinding?.roomName ?? null}
+      isConnected={mqttStatus === 'connected'}
+      isRecording={Boolean(recorderState?.isRecording)}
+      statusText={voiceStatusText}
+      transcript={transcript}
+      responsePreview={responsePreview}
+      onToggleRecording={toggleRecording}
     />
   );
 }
