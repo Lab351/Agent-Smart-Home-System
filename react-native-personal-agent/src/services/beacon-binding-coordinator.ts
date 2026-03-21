@@ -1,4 +1,5 @@
-import { AsyncStorageService, BleBeaconService } from '@/platform';
+import { BleBeaconService } from '@/platform/ble/ble-beacon-service';
+import { AsyncStorageService } from '@/platform/storage/async-storage-service';
 import type { IBleBeaconService, IStorageService, RoomBinding } from '@/types';
 
 const STORAGE_KEY = 'bound-room';

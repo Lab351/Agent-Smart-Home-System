@@ -1,4 +1,4 @@
-import { HttpClient } from '@/platform';
+import { HttpClient } from '@/platform/network/http-client';
 import type { AgentDiscoveryResult, ControlCommand, IControlTransport } from '@/types';
 
 type JsonRpcResponse = {

@@ -1,4 +1,4 @@
-import { AsyncStorageService } from '@/platform';
+import { AsyncStorageService } from '@/platform/storage/async-storage-service';
 import type { Habit, HabitCategory, IStorageService, UserPreferences } from '@/types';
 
 const STORAGE_KEY = 'user-preferences';

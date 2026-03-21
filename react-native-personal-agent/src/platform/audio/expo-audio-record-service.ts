@@ -28,6 +28,11 @@ export class ExpoAudioRecordService implements IAudioRecordService {
   private recorder: AudioRecorder | null = null;
   private lastKnownState: AudioRecorderSnapshot | null = null;
 
+  constructor(
+    private readonly recorderFactory: () => AudioRecorder = () =>
+      new AudioModule.AudioRecorder(RecordingPresets.HIGH_QUALITY) as AudioRecorder
+  ) {}
+
   async getPermissionStatus(): Promise<PermissionSnapshot> {
     return toPermissionSnapshot(await getRecordingPermissionsAsync());
   }
@@ -106,7 +111,7 @@ export class ExpoAudioRecordService implements IAudioRecordService {
 
   private ensureRecorder(): AudioRecorder {
     if (!this.recorder) {
-      this.recorder = new AudioModule.AudioRecorder(RecordingPresets.HIGH_QUALITY);
+      this.recorder = this.recorderFactory();
     }
 
     return this.recorder;

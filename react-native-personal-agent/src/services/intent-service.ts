@@ -1,5 +1,5 @@
 import { appEnv } from '@/config/env';
-import { HttpClient } from '@/platform';
+import { HttpClient } from '@/platform/network/http-client';
 import type { ParsedIntent } from '@/types';
 
 type IntentContext = {

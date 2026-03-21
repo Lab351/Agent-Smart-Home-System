@@ -1,56 +1,69 @@
-# Welcome to your Expo app 👋
+# React Native Personal Agent
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+`react-native-personal-agent` 是当前快应用版 `personal-agent/` 的移动端迁移骨架。它基于 Expo Router + TypeScript，优先服务手机 iOS/Android，并把 BLE、录音、房间绑定、语音入口、偏好管理这些核心能力先迁成 React Native 可持续演进的结构。
 
-## Get started
+## 当前能力
 
-1. Install dependencies
+- Expo Router 原生 tabs：`首页 / 语音 / 房间 / 偏好`
+- Expo Dev Build 工作流，适配 `react-native-ble-plx`
+- `expo-audio` 录音服务封装
+- BLE Beacon 扫描、ESP32 厂商数据解析与房间绑定协调器
+- 用户偏好与习惯本地存储
+- Discovery / Intent / Control / Home-Agent 服务骨架
+- Jest 单测基线，覆盖解析器、录音服务、BLE 服务、意图服务、发现服务、偏好服务
 
-   ```bash
-   npm install
-   ```
+## 环境要求
 
-2. Start the app
+- Node.js `>= 20.19.4`
+- Xcode / Android Studio 按 Expo Dev Build 标准安装
+- 由于使用 `react-native-ble-plx`，不能只靠 Expo Go
 
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## 开发命令
 
 ```bash
-npm run reset-project
+npm install
+npm run typecheck
+npm run lint
+npm run test:ci
+npm run prebuild
+npm run android
+npm run ios
+npm run start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+说明：
 
-### Other setup steps
+- `npm run start` 以 Dev Client 模式启动 Metro
+- `npm run android` / `npm run ios` 会生成并运行原生开发版本
+- BLE 与录音功能需要真机或具备原生能力的模拟器验证
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+## 配置
 
-## Learn more
+项目通过 Expo app config 和 `EXPO_PUBLIC_*` 变量读取运行参数。默认字段见 [`.env.example`](/Users/weishuokun/mycode/SCUT_thesis/Agent-Smart-Home-System/react-native-personal-agent/.env.example)。
 
-To learn more about developing your project with Expo, look at the following resources:
+关键配置：
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+- `EXPO_PUBLIC_USER_ID`
+- `EXPO_PUBLIC_BACKEND_URL`
+- `EXPO_PUBLIC_MQTT_HOST`
+- `EXPO_PUBLIC_MQTT_WS_PORT`
+- `EXPO_PUBLIC_BEACON_UUID`
 
-## Join the community
+## 目录说明
 
-Join our community of developers creating universal apps.
+- `src/app/`: Expo Router 路由入口
+- `src/features/`: 页面和业务 UI
+- `src/platform/`: React Native / Expo 平台适配层
+- `src/services/`: 业务服务、协调器、控制传输
+- `src/store/`: 应用状态与页面接线
+- `src/types/`: 共享领域类型与接口
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## 迁移边界
+
+这个项目目前是“可运行的迁移骨架”，不是快应用功能等价替代。已完成的是结构和关键原生能力接入，尚未完成的包括：
+
+- MQTT transport 的正式实现
+- ASR 上传和后端识别闭环
+- Room-Agent / Home-Agent 真实执行结果回流
+- 偏好编辑表单与完整交互
+- 真机上的 BLE 背景扫描策略

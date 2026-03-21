@@ -1,5 +1,5 @@
 import { appEnv, getRoomDisplayName } from '@/config/env';
-import { HttpClient } from '@/platform';
+import { HttpClient } from '@/platform/network/http-client';
 import type { AgentDiscoveryResult } from '@/types';
 
 type DiscoveryResponse = {

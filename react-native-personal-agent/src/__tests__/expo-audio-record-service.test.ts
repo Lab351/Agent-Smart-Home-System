@@ -6,43 +6,42 @@ import {
 
 import { ExpoAudioRecordService } from '@/platform/audio/expo-audio-record-service';
 
-jest.mock('expo-audio', () => {
-  class MockAudioRecorder {
-    status = {
-      canRecord: true,
-      isRecording: false,
-      durationMillis: 0,
-      metering: 0,
-      url: null,
-    };
+class MockAudioRecorder {
+  status = {
+    canRecord: true,
+    isRecording: false,
+    durationMillis: 0,
+    metering: 0,
+    url: null,
+  };
 
-    async prepareToRecordAsync() {
-      return undefined;
-    }
-
-    record() {
-      this.status = {
-        ...this.status,
-        isRecording: true,
-      };
-    }
-
-    async stop() {
-      this.status = {
-        ...this.status,
-        isRecording: false,
-        durationMillis: 1200,
-        url: 'file:///tmp/personal-agent.m4a',
-      };
-    }
-
-    getStatus() {
-      return this.status;
-    }
+  async prepareToRecordAsync() {
+    return undefined;
   }
 
+  record() {
+    this.status = {
+      ...this.status,
+      isRecording: true,
+    };
+  }
+
+  async stop() {
+    this.status = {
+      ...this.status,
+      isRecording: false,
+      durationMillis: 1200,
+      url: 'file:///tmp/personal-agent.m4a',
+    };
+  }
+
+  getStatus() {
+    return this.status;
+  }
+}
+
+jest.mock('expo-audio', () => {
   return {
-    AudioRecorder: MockAudioRecorder,
     RecordingPresets: {
       HIGH_QUALITY: {},
     },
@@ -60,9 +59,14 @@ jest.mock('expo-audio', () => {
   };
 });
 
+jest.mock('expo-audio/build/AudioModule', () => ({
+  __esModule: true,
+  default: {},
+}));
+
 describe('ExpoAudioRecordService', () => {
   it('starts and stops recording through the public expo-audio API', async () => {
-    const service = new ExpoAudioRecordService();
+    const service = new ExpoAudioRecordService(() => new MockAudioRecorder() as never);
 
     await service.startRecording();
 
@@ -91,7 +95,7 @@ describe('ExpoAudioRecordService', () => {
       status: 'undetermined',
     });
 
-    const service = new ExpoAudioRecordService();
+    const service = new ExpoAudioRecordService(() => new MockAudioRecorder() as never);
     await service.startRecording();
 
     expect(requestRecordingPermissionsAsync).toHaveBeenCalled();
