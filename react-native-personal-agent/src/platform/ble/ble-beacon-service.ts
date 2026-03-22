@@ -19,7 +19,8 @@ type AndroidPermission =
   (typeof PermissionsAndroid.PERMISSIONS)[keyof typeof PermissionsAndroid.PERMISSIONS];
 
 export class BleBeaconService implements IBleBeaconService {
-  private readonly manager = new BleManager();
+  private manager: BleManager | null = null;
+  private managerInitError: Error | null = null;
   private readonly scanListeners = new Set<(result: BeaconScanResult) => void>();
   private readonly roomBindingListeners = new Set<(binding: RoomBinding | null) => void>();
   private scanning = false;
@@ -74,6 +75,7 @@ export class BleBeaconService implements IBleBeaconService {
       return;
     }
 
+    const manager = this.getManager();
     const currentPermission = await this.getPermissionStatus();
     const permission = currentPermission.granted
       ? currentPermission
@@ -85,7 +87,7 @@ export class BleBeaconService implements IBleBeaconService {
 
     await this.waitUntilPoweredOn();
 
-    await this.manager.startDeviceScan(null, { allowDuplicates: true }, (error, device) => {
+    await manager.startDeviceScan(null, { allowDuplicates: true }, (error, device) => {
       if (error) {
         console.warn('[BleBeaconService] Scan error', error);
         return;
@@ -106,7 +108,8 @@ export class BleBeaconService implements IBleBeaconService {
       return;
     }
 
-    await this.manager.stopDeviceScan();
+    const manager = this.getManager();
+    await manager.stopDeviceScan();
     this.scanning = false;
   }
 
@@ -135,8 +138,12 @@ export class BleBeaconService implements IBleBeaconService {
   }
 
   async destroy(): Promise<void> {
-    await this.stopScanning();
-    await this.manager.destroy();
+    if (this.manager) {
+      await this.stopScanning();
+      await this.manager.destroy();
+      this.manager = null;
+    }
+
     this.scanListeners.clear();
     this.roomBindingListeners.clear();
   }
@@ -228,7 +235,8 @@ export class BleBeaconService implements IBleBeaconService {
   }
 
   private async waitUntilPoweredOn(): Promise<void> {
-    const currentState = await this.manager.state();
+    const manager = this.getManager();
+    const currentState = await manager.state();
     if (currentState === 'PoweredOn') {
       return;
     }
@@ -239,7 +247,7 @@ export class BleBeaconService implements IBleBeaconService {
         reject(new Error('Bluetooth adapter did not reach PoweredOn state in time'));
       }, 10000);
 
-      const subscription = this.manager.onStateChange(state => {
+      const subscription = manager.onStateChange(state => {
         if (state !== 'PoweredOn') {
           return;
         }
@@ -249,5 +257,26 @@ export class BleBeaconService implements IBleBeaconService {
         resolve();
       }, true);
     });
+  }
+
+  private getManager(): BleManager {
+    if (this.managerInitError) {
+      throw this.managerInitError;
+    }
+
+    if (this.manager) {
+      return this.manager;
+    }
+
+    try {
+      this.manager = new BleManager();
+      return this.manager;
+    } catch (error) {
+      const message =
+        'BLE native module is unavailable. Build and run a development build with `npm run prebuild` and `npm run android`, not Expo Go.';
+      this.managerInitError =
+        error instanceof Error ? new Error(`${message} ${error.message}`) : new Error(message);
+      throw this.managerInitError;
+    }
   }
 }
