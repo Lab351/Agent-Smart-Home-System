@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from config.settings import AgentSettings
 
-
+# TODO 对齐和后端的协议之后, 填入真实实现
 class GatewayClient:
     """Placeholder HTTP client for backend gateway integration."""
 
