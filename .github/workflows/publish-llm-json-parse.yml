@@ -1,0 +1,30 @@
+name: publish-llm-json-parse
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Build and publish llm-json-parse
+        env:
+          PACKAGE_REPOSITORY_URL: ${{ vars.PRIVATE_PYPI_URL }}
+          PACKAGE_REPOSITORY_USERNAME: ${{ secrets.PRIVATE_PYPI_USERNAME }}
+          PACKAGE_REPOSITORY_PASSWORD: ${{ secrets.PRIVATE_PYPI_PASSWORD }}
+        run: python scripts/publish_python_package.py --package-dir shared/llm-json-parse
