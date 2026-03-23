@@ -30,7 +30,6 @@ include-package-data = true
 include = ["app*", "graph*", "integrations*", "config*"]
 
 [tool.setuptools.package-data]
-graph = ["AGENT.md"]
 config = ["README.md", "examples/*.yaml"]
 
 [tool.setuptools.exclude-package-data]
