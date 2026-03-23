@@ -231,9 +231,17 @@ async def main() -> None:
     await ServiceRuntime().run()
 
 
-if __name__ == "__main__":
+def cli() -> None:
+    """Synchronous console-script entrypoint for packaging tools."""
+    global _CONFIG_PATH
+    global _LLM_CONFIG_PATH
+
     args = parse_args()
     _CONFIG_PATH = args.config_path
     _LLM_CONFIG_PATH = args.llm_config_path
     with contextlib.suppress(KeyboardInterrupt):
         asyncio.run(main())
+
+
+if __name__ == "__main__":
+    cli()

@@ -16,6 +16,8 @@ dependencies = [
 
 [tool.uv]
 package = true
+index-url = "https://pypi.mcurobot.com/root/pypi"
+publish-url = "https://pypi.mcurobot.com/root/pypi"
 
 [tool.hatch.build.targets.wheel]
 packages = ["llm_json_parse"]
