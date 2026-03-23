@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Build and optionally publish a Python package with minimal CI coupling."""
+"""Build and optionally publish Python packages with minimal CI coupling."""
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shlex
 import shutil
@@ -14,12 +15,16 @@ from pathlib import Path
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build a Python package and optionally upload it to a package registry."
+        description="Build Python packages and optionally upload them to a package registry."
+    )
+    parser.add_argument(
+        "--config",
+        default="scripts/python-publish.json",
+        help="Path to python-publish.json configuration file. Defaults to scripts/python-publish.json.",
     )
     parser.add_argument(
         "--package-dir",
-        default="shared/llm-json-parse",
-        help="Path to the package directory that contains pyproject.toml.",
+        help="(Legacy) Path to a single package directory. Overrides --config.",
     )
     parser.add_argument(
         "--repository-url",
@@ -84,25 +89,54 @@ def collect_artifacts(package_dir: Path) -> list[Path]:
     return files
 
 
+def load_packages_config(config_path: Path) -> list[dict]:
+    """Load package configuration from JSON file."""
+    with config_path.open("r", encoding="utf-8") as f:
+        config = json.load(f)
+    packages = config.get("packages", [])
+    return [pkg for pkg in packages if pkg.get("publish", True)]
+
+
 def main() -> int:
     args = parse_args()
     repo_root = Path(__file__).resolve().parents[1]
-    package_dir = (repo_root / args.package_dir).resolve()
 
-    validate_package_dir(package_dir)
+    # Determine which packages to publish
+    if args.package_dir:
+        # Legacy: single package mode
+        packages = [{"path": args.package_dir}]
+    else:
+        # Config mode: read from packages.json
+        config_path = repo_root / args.config
+        if not config_path.is_file():
+            raise SystemExit(f"Config file not found: {config_path}")
+        packages = load_packages_config(config_path)
+        if not packages:
+            raise SystemExit("No packages to publish in config.")
 
-    if not args.keep_dist:
-        clean_dist(package_dir)
+    all_artifacts: list[Path] = []
 
-    run(["uv", "build"], cwd=package_dir)
-    artifacts = collect_artifacts(package_dir)
+    # Build all packages
+    for pkg in packages:
+        package_dir = (repo_root / pkg["path"]).resolve()
+        validate_package_dir(package_dir)
 
-    print("Built artifacts:")
-    for artifact in artifacts:
-        print(f"- {artifact.relative_to(repo_root)}")
+        if not args.keep_dist:
+            clean_dist(package_dir)
+
+        run(["uv", "build"], cwd=package_dir)
+        artifacts = collect_artifacts(package_dir)
+
+        print(f"Built artifacts for {pkg['path']}:")
+        for artifact in artifacts:
+            print(f"- {artifact.relative_to(repo_root)}")
+        all_artifacts.extend(artifacts)
 
     if args.skip_upload:
         return 0
+
+    if not all_artifacts:
+        raise SystemExit("No artifacts to upload.")
 
     if not args.repository_url:
         raise SystemExit("Missing repository URL. Set --repository-url or PACKAGE_REPOSITORY_URL.")
@@ -124,7 +158,7 @@ def main() -> int:
     ]
     if args.skip_existing:
         upload_cmd.append("--skip-existing")
-    upload_cmd.extend(str(artifact) for artifact in artifacts)
+    upload_cmd.extend(str(artifact) for artifact in all_artifacts)
 
     upload_env = os.environ.copy()
     upload_env["TWINE_USERNAME"] = args.username
