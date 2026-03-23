@@ -1,4 +1,4 @@
-name: publish-llm-json-parse
+name: publish-python-packages
 
 on:
   push:
@@ -22,9 +22,10 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
 
-      - name: Build and publish llm-json-parse
+      - name: Build and publish Python packages
         env:
           PACKAGE_REPOSITORY_URL: ${{ vars.PRIVATE_PYPI_URL }}
           PACKAGE_REPOSITORY_USERNAME: ${{ secrets.PRIVATE_PYPI_USERNAME }}
           PACKAGE_REPOSITORY_PASSWORD: ${{ secrets.PRIVATE_PYPI_PASSWORD }}
-        run: python scripts/publish_python_package.py --package-dir shared/llm-json-parse
+        run: python scripts/publish_python_package.py
+
