@@ -37,8 +37,8 @@ config = ["README.md", "examples/*.yaml"]
 "*" = ["__pycache__/*", "*.pyc"]
 
 [tool.uv]
-index-url = "https://pypi.mcurobot.com/root/pypi"
-publish-url = "https://pypi.mcurobot.com/root/pypi"
+index-url = "https://pypi.mcurobot.com/root/agent-smart-home-system"
+publish-url = "https://pypi.mcurobot.com/root/agent-smart-home-system"
 
 # ==================== 构建系统 ====================
 [build-system]
