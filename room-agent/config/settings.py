@@ -32,13 +32,12 @@ class GatewaySettings(BaseModel):
 
 class MCPHealthCheckSettings(BaseModel):
     enabled: bool = True
-    fail_on_unhealthy: bool = False
 
 
 class HomeAssistantMCPSettings(BaseModel):
     enabled: bool = False
     server_name: str = "home_assistant"
-    transport: Literal["streamable_http", "sse", "stdio", "websocket"] = "streamable_http"
+    transport: Literal["streamable_http", "sse", "websocket"] = "streamable_http"
     url: str = ""
     auth_token: str = ""
     health_check: MCPHealthCheckSettings = Field(default_factory=MCPHealthCheckSettings)
