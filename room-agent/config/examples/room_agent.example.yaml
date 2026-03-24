@@ -5,6 +5,15 @@ agent:
   id: "room-agent-1"
   room_id: "bedroom"
   version: "1.0.0"
+  home_assistant_mcp:
+    enabled: false
+    server_name: "home_assistant"
+    transport: "streamable_http"
+    url: "http://home-assistant.local:8123/mcp"
+    auth_token: "YOUR_HA_TOKEN"
+    health_check:
+      enabled: true
+      fail_on_unhealthy: false
 
 # qwen-backend / AI Gateway 注册配置
 gateway:
