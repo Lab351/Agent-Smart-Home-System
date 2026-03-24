@@ -18,13 +18,21 @@
 
 ## 依赖安装
 
-在仓库根目录执行：
+推荐先进入 `room-agent/` 子项目目录，再执行本项目自己的命令。
+
+在仓库根目录初始化依赖时可以执行：
 
 ```bash
 uv sync --project room-agent
 ```
 
-如果你只想跑单次 CLI 或服务启动，推荐都从项目根目录用 `--project room-agent` 调用。
+如果你已经有 `room-agent/.venv/`，后续调试优先直接使用该环境里的入口，不要先假设仓库根环境可用。
+
+在 Codex 或沙箱环境里如果必须使用 `uv`，优先显式设置：
+
+```bash
+env UV_CACHE_DIR=/tmp/uv-cache ...
+```
 
 ## 配置文件
 
@@ -42,18 +50,30 @@ uv sync --project room-agent
 
 - `llm.example.yaml` 里的 `api_key` 默认是空的
 - 如果 `low_cost` 角色没有可用凭证，graph 无法运行
+- `room_agent.example.yaml` 支持在 `agent.home_assistant_mcp` 下配置 Home Assistant 标准 MCP 端点
+- Home Assistant MCP 默认按 `streamable_http` transport 配置，启动时会做一次 prompts 探活；失败只记录状态，不会中断服务
 
 ## 运行单次集成测试 CLI
 
-从仓库根目录执行：
+从 `room-agent/` 目录执行：
 
 ```bash
-uv run --project room-agent python room-agent/app/test_cli.py "你好" \
-  --config room-agent/config/examples/room_agent.example.yaml \
-  --llm-config room-agent/config/examples/llm.example.yaml
+cd room-agent
+.venv/bin/python app/test_cli.py "你好" \
+  --config config/examples/room_agent.example.yaml \
+  --llm-config tests/fixtures/llm.yaml
 ```
 
 成功时会输出 graph 最终 state 的 JSON。
+
+如果你更偏好 `uv` 入口，也可以执行：
+
+```bash
+cd room-agent
+env UV_CACHE_DIR=/tmp/uv-cache uv run python app/test_cli.py "你好" \
+  --config config/examples/room_agent.example.yaml \
+  --llm-config tests/fixtures/llm.yaml
+```
 
 如果 `low_cost` 模型不可用，会直接报错：
 
@@ -68,16 +88,17 @@ ValueError: Low-cost LLM provider is unavailable.
 
 ## 启动服务
 
-当前服务入口仍然是：
+当前正式服务入口是 `pyproject.toml` 中声明的 console script：
 
-- `room-agent/app/server.py`
+- `serve = "app.server:cli"`
 
-从仓库根目录启动：
+从 `room-agent/` 目录启动：
 
 ```bash
-ROOM_AGENT_CONFIG_PATH=room-agent/config/examples/room_agent.example.yaml \
-ROOM_AGENT_LLM_CONFIG_PATH=room-agent/config/examples/llm.example.yaml \
-uv run --project room-agent python room-agent/app/server.py
+cd room-agent
+uv run serve \
+  --config-path config/examples/room_agent.example.yaml \
+  --llm-config-path tests/fixtures/llm.yaml
 ```
 
 说明：
@@ -86,6 +107,52 @@ uv run --project room-agent python room-agent/app/server.py
 - 服务启动时会初始化全局单例 `LLMProviderRegistry`
 - 当前业务 loop 仍然是占位实现
 - A2A HTTP 服务入口已保留
+- 不要直接执行 `python app/server.py` 或 `python -m app.server`
+- 如果已经 `uv sync` 过，也可以直接用 `.venv/bin/serve ...`
+
+## A2A 调试
+
+仓库根目录下提供了一个最小调试脚本：
+
+- `scripts/a2a_debug_client.py`
+
+推荐先启动服务，再按下面顺序验证：
+
+1. 先拉 agent card
+2. 再发送一条普通聊天消息
+3. 最后再发送设备控制或续话请求
+
+从 `room-agent/` 目录执行：
+
+```bash
+cd room-agent
+.venv/bin/python ../scripts/a2a_debug_client.py --url http://127.0.0.1:10000 card
+```
+
+```bash
+cd room-agent
+.venv/bin/python ../scripts/a2a_debug_client.py --url http://127.0.0.1:10000 send "你好"
+```
+
+```bash
+cd room-agent
+.venv/bin/python ../scripts/a2a_debug_client.py --url http://127.0.0.1:10000 get-task <task_id>
+```
+
+如果你必须通过 `uv` 运行脚本：
+
+```bash
+cd room-agent
+env UV_CACHE_DIR=/tmp/uv-cache uv run python ../scripts/a2a_debug_client.py --url http://127.0.0.1:10000 card
+```
+
+## 已知坑 / Troubleshooting
+
+- 直接执行 `python app/server.py` 或 `python -m app.server` 会在 `__main__` 下创建独立模块实例，graph 节点读取不到同一份全局配置。当前入口已显式禁止这种启动方式。
+- 如果你看到 `room-agent config path is required.`，先检查是不是绕过了 `serve` console script。
+- 在 Codex 沙箱里，本地端口绑定可能需要提权；服务起不来时先区分是代码问题还是沙箱限制。
+- A2A 调试时优先先打 `card`，确认服务已监听，再打 `send`。不要一开始就把错误归因到 graph 逻辑。
+- 如果仓库被移动到新的 workspace 或复制了旧环境，先删除并重建 `room-agent/.venv/`，避免旧绝对路径残留导致解释器或依赖异常。
 
 ## 开发约定
 

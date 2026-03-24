@@ -17,6 +17,14 @@ agent:
   id: "room-agent-bedroom"
   room_id: "bedroom"
   version: "1.0.1"
+  home_assistant_mcp:
+    enabled: true
+    server_name: "home_assistant"
+    transport: "streamable_http"
+    url: "http://ha.local:8123/mcp"
+    auth_token: "secret-token"
+    health_check:
+      enabled: true
 
 gateway:
   url: "http://home-gateway.local"
@@ -51,5 +59,12 @@ runtime:
     assert settings.agent.gateway.register_on_startup is True
     assert settings.agent.gateway.heartbeat_interval == 45
     assert settings.agent.gateway.agent_host == "http://room-agent.local"
+    assert settings.agent.home_assistant_mcp is not None
+    assert settings.agent.home_assistant_mcp.enabled is True
+    assert settings.agent.home_assistant_mcp.server_name == "home_assistant"
+    assert settings.agent.home_assistant_mcp.transport == "streamable_http"
+    assert settings.agent.home_assistant_mcp.url == "http://ha.local:8123/mcp"
+    assert settings.agent.home_assistant_mcp.auth_token == "secret-token"
+    assert settings.agent.home_assistant_mcp.health_check.enabled is True
     assert settings.runtime.room_agent_config_path == str(config_path)
     assert settings.runtime.log_level == "DEBUG"

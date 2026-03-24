@@ -23,11 +23,13 @@ else:
 def initialize_request(state: RoomAgentGraphState) -> RoomAgentGraphState:
     """Normalize the incoming request into the shared state schema."""
     user_input = state.get("user_input", "").strip()
+    conversation_text = state.get("conversation_text", "").strip() or user_input
     metadata = dict(state.get("metadata", {}))
     metadata.setdefault("graph_version", "v1")
 
     return {
         "user_input": user_input,
+        "conversation_text": conversation_text,
         "candidate_tools": state.get("candidate_tools", []),
         "selected_tools": state.get("selected_tools", []),
         "artifacts": state.get("artifacts", {}),

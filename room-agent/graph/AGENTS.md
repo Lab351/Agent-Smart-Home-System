@@ -220,3 +220,7 @@ env UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/test_config_settings.py -q
 
 - 在 Codex 沙箱里优先显式设置 `UV_CACHE_DIR=/tmp/uv-cache`
 - 默认 `~/.cache/uv` 可能因为沙箱限制导致 `Operation not permitted`
+- 如果 `room-agent/.venv/` 已经存在，优先直接使用 `room-agent/.venv/bin/pytest` 或 `room-agent/.venv/bin/python`
+- `uv run --with ...` 在沙箱里更容易遇到缓存权限或临时环境异常，不应作为 Room Agent 测试的第一选择
+- 需要 `uv sync`、安装依赖或创建新环境时，先判断是否要提权；若因沙箱/网络失败，应直接按提权流程重试
+- 仓库迁移到新的 workspace 或绝对路径变化后，先清掉并重建 `room-agent/.venv`，避免旧路径残留造成解释器或依赖异常

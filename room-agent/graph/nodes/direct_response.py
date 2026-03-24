@@ -9,8 +9,8 @@ from graph.state import RoomAgentGraphState
 async def direct_response(state: RoomAgentGraphState) -> RoomAgentGraphState:
     """Generate a minimal natural-language reply for non-tool requests."""
     provider = _get_low_cost_provider()
-    user_input = state.get("user_input", "").strip()
-    reply = await provider.complete_text(_build_messages(user_input), json_mode=False)
+    prompt_input = _get_prompt_input(state)
+    reply = await provider.complete_text(_build_messages(prompt_input), json_mode=False)
 
     return {
         "status": "completed",
@@ -48,3 +48,7 @@ def _build_messages(user_input: str) -> list[dict[str, str]]:
             "content": user_input,
         },
     ]
+
+
+def _get_prompt_input(state: RoomAgentGraphState) -> str:
+    return state.get("conversation_text", "").strip() or state.get("user_input", "").strip()
