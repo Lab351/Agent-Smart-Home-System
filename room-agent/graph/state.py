@@ -25,6 +25,7 @@ class RoomAgentGraphState(TypedDict, total=False):
     """Shared graph state for the next-generation Room Agent workflow."""
 
     user_input: str
+    conversation_text: str
     intent: IntentResult
     need_tool_call: bool
     candidate_tools: list[dict[str, Any]]
