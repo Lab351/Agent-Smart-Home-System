@@ -13,7 +13,6 @@ agent:
     auth_token: "YOUR_HA_TOKEN"
     health_check:
       enabled: true
-      fail_on_unhealthy: false
 
 # qwen-backend / AI Gateway 注册配置
 gateway:
