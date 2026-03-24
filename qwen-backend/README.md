@@ -10,6 +10,11 @@
 - ✅ 支持多轮对话上下文
 - ✅ CORS 配置，支持快应用调用
 - ✅ Docker 支持，便于 VPS 部署
+- ✅ 提供 Beacon / Agent 注册发现能力
+
+## 协议文档
+
+- [设备接入与状态协议](./docs/DEVICE_ACCESS_PROTOCOL.md)
 
 ## 项目结构
 
