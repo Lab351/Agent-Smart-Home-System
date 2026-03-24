@@ -270,6 +270,128 @@ MQTT 仅作为兼容面保留：
 - 注册 A2A 服务入口
 - 提供能力发现基础数据
 
+请求头：
+
+```http
+Content-Type: application/json
+```
+
+请求体：
+
+```json
+{
+  "id": "room-agent-bedroom",
+  "name": "卧室房间代理",
+  "description": "管理卧室设备和房间状态",
+  "version": "1.0.0",
+  "agent_type": "room",
+  "capabilities": ["light_control", "climate_control"],
+  "skills": [
+    {
+      "id": "adjust_lighting",
+      "name": "调节照明",
+      "description": "处理灯光控制请求",
+      "tags": ["light_control"]
+    }
+  ],
+  "devices": [
+    {
+      "id": "light_1",
+      "name": "主灯",
+      "type": "light",
+      "actions": ["turn_on", "turn_off", "set_brightness"],
+      "state_attributes": ["power", "brightness"]
+    }
+  ],
+  "communication": {
+    "backend": "a2a_sdk",
+    "a2a_sdk": {
+      "transport": "jsonrpc-http"
+    }
+  },
+  "url": "http://192.168.1.20:8001/",
+  "documentation_url": "http://192.168.1.20:8001/.well-known/agent-card.json",
+  "authentication": {
+    "type": "none"
+  },
+  "metadata": {
+    "room_id": "bedroom"
+  }
+}
+```
+
+字段约束：
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `id` | 是 | Agent 唯一标识 |
+| `name` | 是 | Agent 名称 |
+| `description` | 是 | Agent 描述 |
+| `agent_type` | 是 | `room` / `personal` / `central` |
+| `version` | 否 | Agent 版本 |
+| `capabilities` | 否 | 能力标签列表 |
+| `skills` | 否 | 技能列表 |
+| `devices` | 否 | 设备能力摘要 |
+| `communication` | 否 | 通信配置，推荐标记为 `a2a_sdk` |
+| `url` | 否 | Agent A2A 服务入口 |
+| `documentation_url` | 否 | 文档或 Agent Card URL |
+| `authentication` | 否 | 认证配置 |
+| `metadata` | 否 | 附加元数据，建议带 `room_id` |
+
+成功响应：
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "room-agent-bedroom",
+    "name": "卧室房间代理",
+    "description": "管理卧室设备和房间状态",
+    "version": "1.0.0",
+    "agent_type": "room",
+    "capabilities": ["light_control", "climate_control"],
+    "skills": [
+      {
+        "id": "adjust_lighting",
+        "name": "调节照明",
+        "description": "处理灯光控制请求",
+        "tags": ["light_control"]
+      }
+    ],
+    "devices": [
+      {
+        "id": "light_1",
+        "name": "主灯",
+        "type": "light",
+        "actions": ["turn_on", "turn_off", "set_brightness"],
+        "state_attributes": ["power", "brightness"]
+      }
+    ],
+    "communication": {
+      "backend": "a2a_sdk",
+      "a2a_sdk": {
+        "transport": "jsonrpc-http"
+      }
+    },
+    "url": "http://192.168.1.20:8001/",
+    "documentation_url": "http://192.168.1.20:8001/.well-known/agent-card.json",
+    "authentication": {
+      "type": "none"
+    },
+    "metadata": {
+      "room_id": "bedroom"
+    },
+    "registered_at": "2026-03-24T10:00:00.000Z",
+    "last_heartbeat": "2026-03-24T10:00:00.000Z"
+  }
+}
+```
+
+失败响应：
+
+- 参数非法时，返回框架校验错误
+- 服务异常时，返回 Nest.js 默认错误响应
+
 ### 5.7 Agent 发现
 
 `GET /api/registry/discover?agent_id=<id>&agent_type=<type>&capability=<cap>`
@@ -280,6 +402,134 @@ MQTT 仅作为兼容面保留：
 - `agent_type`
 - `capability`
 
+查询参数：
+
+| 参数 | 必填 | 说明 |
+|---|---|---|
+| `agent_id` | 否 | 精确匹配 Agent ID |
+| `agent_type` | 否 | 枚举值：`room` / `personal` / `central` |
+| `capability` | 否 | 按 `capabilities` 或 `skills[].tags` 过滤 |
+
+请求示例 1：按 Agent ID 查询
+
+```http
+GET /api/registry/discover?agent_id=room-agent-bedroom
+```
+
+请求示例 2：按类型查询
+
+```http
+GET /api/registry/discover?agent_type=room
+```
+
+请求示例 3：按能力查询
+
+```http
+GET /api/registry/discover?capability=light_control
+```
+
+成功响应：
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "room-agent-bedroom",
+      "name": "卧室房间代理",
+      "description": "管理卧室设备和房间状态",
+      "version": "1.0.0",
+      "agent_type": "room",
+      "capabilities": ["light_control", "climate_control"],
+      "skills": [
+        {
+          "id": "adjust_lighting",
+          "name": "调节照明",
+          "description": "处理灯光控制请求",
+          "tags": ["light_control"]
+        }
+      ],
+      "devices": [
+        {
+          "id": "light_1",
+          "name": "主灯",
+          "type": "light",
+          "actions": ["turn_on", "turn_off", "set_brightness"],
+          "state_attributes": ["power", "brightness"]
+        }
+      ],
+      "communication": {
+        "backend": "a2a_sdk"
+      },
+      "url": "http://192.168.1.20:8001/",
+      "metadata": {
+        "room_id": "bedroom"
+      },
+      "registered_at": "2026-03-24T10:00:00.000Z",
+      "last_heartbeat": "2026-03-24T10:03:00.000Z"
+    }
+  ]
+}
+```
+
+空结果响应：
+
+```json
+{
+  "success": true,
+  "data": []
+}
+```
+
+过滤规则细节：
+
+- `agent_id` 命中时，返回长度为 `0` 或 `1` 的数组
+- `agent_type` 为精确匹配
+- `capability` 同时匹配：
+  - `capabilities[]`
+  - `skills[].tags[]`
+
+### 5.7.1 获取单个 Agent 详情
+
+`GET /api/registry/:agent_id`
+
+请求示例：
+
+```http
+GET /api/registry/room-agent-bedroom
+```
+
+成功响应：
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "room-agent-bedroom",
+    "name": "卧室房间代理",
+    "description": "管理卧室设备和房间状态",
+    "version": "1.0.0",
+    "agent_type": "room",
+    "capabilities": ["light_control", "climate_control"],
+    "url": "http://192.168.1.20:8001/",
+    "metadata": {
+      "room_id": "bedroom"
+    },
+    "registered_at": "2026-03-24T10:00:00.000Z",
+    "last_heartbeat": "2026-03-24T10:03:00.000Z"
+  }
+}
+```
+
+未找到响应：
+
+```json
+{
+  "success": false,
+  "message": "Agent room-agent-bedroom not found"
+}
+```
+
 ### 5.8 Agent 心跳
 
 `POST /api/registry/:agent_id/heartbeat`
@@ -288,6 +538,84 @@ MQTT 仅作为兼容面保留：
 
 - 刷新 Agent 在线状态
 - 避免注册信息被超时清理
+
+路径参数：
+
+| 参数 | 必填 | 说明 |
+|---|---|---|
+| `agent_id` | 是 | 目标 Agent ID |
+
+请求头：
+
+```http
+Content-Type: application/json
+```
+
+请求体：
+
+- 当前实现中，请求体为空
+
+请求示例：
+
+```http
+POST /api/registry/room-agent-bedroom/heartbeat
+```
+
+成功响应：
+
+```json
+{
+  "success": true,
+  "message": "Heartbeat updated"
+}
+```
+
+失败响应：
+
+```json
+{
+  "success": false,
+  "message": "Agent not found"
+}
+```
+
+行为约束：
+
+- 心跳成功时，仅刷新 `last_heartbeat`
+- 不修改 `registered_at`
+- 不修改 AgentCard 其他业务字段
+
+建议频率：
+
+- `30` 到 `60` 秒一次
+
+### 5.8.1 获取 Agent 列表
+
+`GET /api/registry/list`
+
+成功响应：
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "room-agent-bedroom",
+      "agent_type": "room",
+      "url": "http://192.168.1.20:8001/",
+      "registered_at": "2026-03-24T10:00:00.000Z",
+      "last_heartbeat": "2026-03-24T10:03:00.000Z"
+    },
+    {
+      "id": "central-agent-home",
+      "agent_type": "central",
+      "url": "http://192.168.1.30:8010/",
+      "registered_at": "2026-03-24T10:00:00.000Z",
+      "last_heartbeat": "2026-03-24T10:02:30.000Z"
+    }
+  ]
+}
+```
 
 ### 5.9 超时清理
 
