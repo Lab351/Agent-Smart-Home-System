@@ -10,6 +10,7 @@ const microphonePermission =
 const config: ExpoConfig = {
   name: appName,
   slug,
+  owner: 'shuokun',
   version: '1.0.0',
   orientation: 'portrait',
   icon: './assets/images/icon.png',
@@ -69,6 +70,9 @@ const config: ExpoConfig = {
     reactCompiler: true,
   },
   extra: {
+    eas: {
+      projectId: 'f12e5f8f-dcc8-4b96-973b-62499a1fc7e0',
+    },
     userId: process.env.EXPO_PUBLIC_USER_ID ?? 'user1',
     backendUrl: process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://120.78.228.69:3088',
     mqttHost: process.env.EXPO_PUBLIC_MQTT_HOST ?? '120.78.228.69',
