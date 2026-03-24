@@ -31,6 +31,12 @@ else:
 
 
 logger = logging.getLogger(__name__)
+DIRECT_EXECUTION_ERROR = (
+    "Do not run room-agent/app/server.py directly. "
+    "Use the project script entry instead, for example: "
+    "`cd room-agent && uv run serve --config-path config/examples/room_agent.example.yaml "
+    "--llm-config-path tests/fixtures/llm.yaml`."
+)
 _SETTINGS: Settings | None = None
 _LLM_PROVIDER_REGISTRY: LLMProviderRegistry | None = None
 _MCP_CLIENT: MCPToolClient | None = None
@@ -322,4 +328,4 @@ def cli() -> None:
 
 
 if __name__ == "__main__":
-    cli()
+    raise SystemExit(DIRECT_EXECUTION_ERROR)
