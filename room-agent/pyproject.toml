@@ -16,7 +16,6 @@ dependencies = [
     "paho-mqtt>=2.1.0",
     "a2a-sdk[http-server]>=0.3.25",
     "llm-json-parse>=0.1.0",
-    "pytest>=9.0.2",
 ]
 
 [project.scripts]
@@ -43,6 +42,12 @@ publish-url = "https://pypi.mcurobot.com/root/agent-smart-home-system"
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-asyncio",
+]
 
 # ==================== 测试 ====================
 [tool.pytest.ini_options]
