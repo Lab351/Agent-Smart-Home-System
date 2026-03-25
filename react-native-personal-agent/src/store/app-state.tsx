@@ -11,9 +11,16 @@ import {
 } from 'react';
 
 import {
+  A2AHttpControlTransport,
+  ControlService,
   BeaconBindingCoordinator,
+  DiscoveryService,
+  HomeAgentService,
+  IntentService,
   UserPreferenceService,
+  VoiceCommandOrchestrator,
 } from '@/services';
+import { appEnv } from '@/config/env';
 import {
   BleBeaconService,
   ExpoAudioRecordService,
@@ -26,6 +33,7 @@ import type {
   PermissionSnapshot,
   RoomBinding,
   UserPreferences,
+  VoiceCommandExecutionResult,
 } from '@/types';
 
 type AppStateValue = {
@@ -33,6 +41,7 @@ type AppStateValue = {
   discoveredBeacons: BeaconScanResult[];
   isScanningBeacon: boolean;
   mqttStatus: ConnectionStatus;
+  controlStatus: ConnectionStatus;
   microphonePermission: PermissionSnapshot | null;
   bluetoothPermission: PermissionSnapshot | null;
   recorderState: AudioRecorderSnapshot | null;
@@ -41,10 +50,15 @@ type AppStateValue = {
   transcript: string;
   responsePreview: string;
   preferences: UserPreferences | null;
+  commandDraft: string;
+  isExecutingCommand: boolean;
+  lastCommandExecution: VoiceCommandExecutionResult | null;
   toggleBeaconScanning: () => Promise<void>;
   unbindRoom: () => Promise<void>;
   toggleRecording: () => Promise<void>;
   reloadPreferences: () => Promise<void>;
+  updateCommandDraft: (value: string) => void;
+  submitCommandDraft: () => Promise<void>;
 };
 
 const AppStateContext = createContext<AppStateValue | null>(null);
@@ -65,11 +79,21 @@ export function AppStateProvider({ children }: PropsWithChildren) {
   const audioRecordService = useRef(new ExpoAudioRecordService()).current;
   const preferenceService = useRef(new UserPreferenceService()).current;
   const beaconBindingCoordinator = useRef(new BeaconBindingCoordinator(bleBeaconService)).current;
+  const intentService = useRef(new IntentService()).current;
+  const discoveryService = useRef(new DiscoveryService()).current;
+  const controlService = useRef(
+    new ControlService(appEnv.personalAgentId, new A2AHttpControlTransport())
+  ).current;
+  const homeAgentService = useRef(new HomeAgentService()).current;
+  const voiceCommandOrchestrator = useRef(
+    new VoiceCommandOrchestrator(intentService, discoveryService, controlService, homeAgentService)
+  ).current;
 
   const [currentRoomBinding, setCurrentRoomBinding] = useState<RoomBinding | null>(null);
   const [discoveredBeacons, setDiscoveredBeacons] = useState<BeaconScanResult[]>([]);
   const [isScanningBeacon, setIsScanningBeacon] = useState(false);
   const [mqttStatus] = useState<ConnectionStatus>('disconnected');
+  const [controlStatus, setControlStatus] = useState<ConnectionStatus>('disconnected');
   const [microphonePermission, setMicrophonePermission] = useState<PermissionSnapshot | null>(null);
   const [bluetoothPermission, setBluetoothPermission] = useState<PermissionSnapshot | null>(null);
   const [recorderState, setRecorderState] = useState<AudioRecorderSnapshot | null>(null);
@@ -78,6 +102,11 @@ export function AppStateProvider({ children }: PropsWithChildren) {
   const [transcript, setTranscript] = useState('等待录音输入');
   const [responsePreview, setResponsePreview] = useState('待接入 room-agent / home-agent 执行结果');
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
+  const [commandDraft, setCommandDraft] = useState('打开客厅主灯亮度调到80');
+  const [isExecutingCommand, setIsExecutingCommand] = useState(false);
+  const [lastCommandExecution, setLastCommandExecution] = useState<VoiceCommandExecutionResult | null>(
+    null
+  );
 
   const handleScanResult = useEffectEvent((result: BeaconScanResult) => {
     startTransition(() => {
@@ -124,6 +153,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       unsubscribeScan();
       unsubscribeBinding();
       void beaconBindingCoordinator.destroy();
+      void voiceCommandOrchestrator.destroy();
     };
   }, [
     audioRecordService,
@@ -132,6 +162,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
     handleBindingUpdate,
     handleScanResult,
     preferenceService,
+    voiceCommandOrchestrator,
   ]);
 
   const value = useMemo<AppStateValue>(
@@ -140,6 +171,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       discoveredBeacons,
       isScanningBeacon,
       mqttStatus,
+      controlStatus,
       microphonePermission,
       bluetoothPermission,
       recorderState,
@@ -148,6 +180,9 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       transcript,
       responsePreview,
       preferences,
+      commandDraft,
+      isExecutingCommand,
+      lastCommandExecution,
       toggleBeaconScanning: async () => {
         if (isScanningBeacon) {
           await beaconBindingCoordinator.stop();
@@ -166,6 +201,9 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       },
       unbindRoom: async () => {
         await beaconBindingCoordinator.unbind();
+        setControlStatus('disconnected');
+        setLastCommandExecution(null);
+        setResponsePreview('待接入 room-agent / home-agent 执行结果');
       },
       toggleRecording: async () => {
         const existingState = audioRecordService.getRecorderState();
@@ -202,16 +240,53 @@ export function AppStateProvider({ children }: PropsWithChildren) {
         const nextPreferences = await preferenceService.loadPreferences();
         setPreferences(nextPreferences);
       },
+      updateCommandDraft: (value: string) => {
+        setCommandDraft(value);
+      },
+      submitCommandDraft: async () => {
+        if (isExecutingCommand) {
+          return;
+        }
+
+        setIsExecutingCommand(true);
+        setControlStatus('connecting');
+        setVoiceStatusText('正在解析并路由调试指令...');
+        setTranscript(commandDraft.trim() || '等待输入调试指令');
+
+        try {
+          const result = await voiceCommandOrchestrator.execute(commandDraft, {
+            currentRoomBinding,
+          });
+
+          setLastCommandExecution(result);
+          setVoiceStatusText(result.status);
+          setTranscript(result.input || '等待输入调试指令');
+          setResponsePreview(result.detail);
+          setControlStatus(
+            result.route === 'room-agent'
+              ? result.success
+                ? 'connected'
+                : 'error'
+              : 'disconnected'
+          );
+        } finally {
+          setIsExecutingCommand(false);
+        }
+      },
     }),
     [
       audioRecordService,
       beaconBindingCoordinator,
       bleBeaconService,
       bluetoothPermission,
+      commandDraft,
+      controlStatus,
       currentRoomBinding,
       discoveredBeacons,
       isScanningBeacon,
+      isExecutingCommand,
       lastRecording,
+      lastCommandExecution,
       microphonePermission,
       mqttStatus,
       preferenceService,
@@ -219,6 +294,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       recorderState,
       responsePreview,
       transcript,
+      voiceCommandOrchestrator,
       voiceStatusText,
     ]
   );

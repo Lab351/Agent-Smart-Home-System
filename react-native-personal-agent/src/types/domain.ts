@@ -94,3 +94,15 @@ export interface VoiceRecognitionResult {
   uri?: string;
   raw?: unknown;
 }
+
+export interface VoiceCommandExecutionResult {
+  success: boolean;
+  input: string;
+  status: string;
+  detail: string;
+  route: 'room-agent' | 'home-agent' | 'unresolved';
+  intent: ParsedIntent;
+  roomId: string | null;
+  roomName: string | null;
+  agentId?: string | null;
+}

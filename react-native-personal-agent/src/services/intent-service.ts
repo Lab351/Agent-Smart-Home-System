@@ -120,8 +120,11 @@ export class IntentService {
       console.warn('[IntentService] Falling back to local intent parsing', error);
     }
 
+    const localIntent = this.parseLocal(text);
+
     return {
-      ...this.parseLocal(text),
+      ...localIntent,
+      room: localIntent.room ?? context.currentRoom ?? null,
       source: 'fallback',
     };
   }
@@ -174,12 +177,12 @@ export class IntentService {
       parameters.percent = Number(percentMatch[1]);
     }
 
-    const brightnessMatch = text.match(/亮度[调到]?(\d+)/);
+    const brightnessMatch = text.match(/亮度(?:调到)?(\d+)/);
     if (brightnessMatch) {
       parameters.brightness = Number(brightnessMatch[1]);
     }
 
-    const volumeMatch = text.match(/音量[调到]?(\d+)/);
+    const volumeMatch = text.match(/音量(?:调到)?(\d+)/);
     if (volumeMatch) {
       parameters.volume = Number(volumeMatch[1]);
     }
@@ -195,7 +198,9 @@ export class IntentService {
   }
 
   private extractValue<T extends Record<string, string>>(text: string, patterns: T): string | null {
-    for (const [pattern, value] of Object.entries(patterns)) {
+    const entries = Object.entries(patterns).sort(([left], [right]) => right.length - left.length);
+
+    for (const [pattern, value] of entries) {
       if (text.includes(pattern)) {
         return value;
       }

@@ -17,6 +17,7 @@ const beaconRoomMapping = {
 
 type AppExtra = {
   userId?: string;
+  personalAgentId?: string;
   backendUrl?: string;
   mqttHost?: string;
   mqttWsPort?: number;
@@ -24,9 +25,11 @@ type AppExtra = {
 };
 
 const extra = (Constants.expoConfig?.extra ?? {}) as AppExtra;
+const userId = extra.userId ?? 'user1';
 
 export const appEnv = {
-  userId: extra.userId ?? 'user1',
+  userId,
+  personalAgentId: extra.personalAgentId ?? `personal-agent-${userId}`,
   backendUrl: extra.backendUrl ?? 'http://120.78.228.69:3088',
   mqttHost: extra.mqttHost ?? '120.78.228.69',
   mqttWsPort: Number(extra.mqttWsPort ?? 9002),

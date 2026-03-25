@@ -4,22 +4,32 @@ import { useAppState } from '@/store';
 export default function VoiceControlRoute() {
   const {
     currentRoomBinding,
-    mqttStatus,
+    controlStatus,
     recorderState,
     transcript,
     responsePreview,
     voiceStatusText,
+    commandDraft,
+    isExecutingCommand,
+    lastCommandExecution,
     toggleRecording,
+    updateCommandDraft,
+    submitCommandDraft,
   } = useAppState();
 
   return (
     <VoiceControlScreen
       currentRoomName={currentRoomBinding?.roomName ?? null}
-      isConnected={mqttStatus === 'connected'}
+      isConnected={controlStatus === 'connected'}
       isRecording={Boolean(recorderState?.isRecording)}
       statusText={voiceStatusText}
       transcript={transcript}
       responsePreview={responsePreview}
+      commandDraft={commandDraft}
+      isSubmittingCommand={isExecutingCommand}
+      lastCommandExecution={lastCommandExecution}
+      onChangeCommandDraft={updateCommandDraft}
+      onSubmitCommandDraft={submitCommandDraft}
       onToggleRecording={toggleRecording}
     />
   );

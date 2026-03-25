@@ -12,7 +12,7 @@ export class HomeAgentService {
   async sendTask(intent: ParsedIntent): Promise<boolean> {
     try {
       const response = await this.http.post<HomeTaskResponse>('/api/home/tasks', {
-        source_agent: `watch-${appEnv.userId}`,
+        source_agent: appEnv.personalAgentId,
         intent: {
           room: intent.room,
           device: intent.device,

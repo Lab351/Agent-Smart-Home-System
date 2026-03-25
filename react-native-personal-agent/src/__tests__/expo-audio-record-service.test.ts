@@ -7,7 +7,13 @@ import {
 import { ExpoAudioRecordService } from '@/platform/audio/expo-audio-record-service';
 
 class MockAudioRecorder {
-  status = {
+  status: {
+    canRecord: boolean;
+    isRecording: boolean;
+    durationMillis: number;
+    metering: number;
+    url: string | null;
+  } = {
     canRecord: true,
     isRecording: false,
     durationMillis: 0,
