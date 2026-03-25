@@ -7,7 +7,8 @@ import contextlib
 import logging
 import os
 import argparse
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 
 import uvicorn
 
@@ -17,32 +18,62 @@ if __package__ in {None, ""}:
 
     sys.path.append(str(Path(__file__).resolve().parent))
     from a2a_server import build_a2a_application
-    from config.settings import LLMRole, Settings, load_settings
+    from config.settings import HomeAssistantMCPSettings, LLMRole, Settings, load_settings
+    from gateway_client import GatewayClient
+    from integrations.mcp_client import MCPToolClient, build_home_assistant_mcp_client
     from integrations.llm_provider import LLMProviderRegistry, create_llm_provider_registry
 else:
     from .a2a_server import build_a2a_application
-    from config.settings import LLMRole, Settings, load_settings
+    from config.settings import HomeAssistantMCPSettings, LLMRole, Settings, load_settings
+    from .gateway_client import GatewayClient
+    from integrations.mcp_client import MCPToolClient, build_home_assistant_mcp_client
     from integrations.llm_provider import LLMProviderRegistry, create_llm_provider_registry
 
 
 logger = logging.getLogger(__name__)
+DIRECT_EXECUTION_ERROR = (
+    "Do not run room-agent/app/server.py directly. "
+    "Use the project script entry instead, for example: "
+    "`cd room-agent && uv run serve --config-path config/examples/room_agent.example.yaml "
+    "--llm-config-path tests/fixtures/llm.yaml`."
+)
 _SETTINGS: Settings | None = None
 _LLM_PROVIDER_REGISTRY: LLMProviderRegistry | None = None
+_MCP_CLIENT: MCPToolClient | None = None
 _CONFIG_PATH: str | None = None
 _LLM_CONFIG_PATH: str | None = None
+
+
+@dataclass(slots=True)
+class MCPHealthStatus:
+    enabled: bool = False
+    healthy: bool = False
+    server_name: str | None = None
+    checked_at: str | None = None
+    prompt_count: int | None = None
+    error: str | None = None
+
+
+_MCP_HEALTH_STATUS = MCPHealthStatus()
 
 
 def initialize_runtime_dependencies(
     *,
     settings: Settings,
     llm_provider_registry: LLMProviderRegistry | None = None,
+    mcp_client: MCPToolClient | None = None,
+    mcp_health_status: MCPHealthStatus | None = None,
 ) -> None:
     """Initialize process-wide runtime singletons explicitly."""
     global _SETTINGS
     global _LLM_PROVIDER_REGISTRY
+    global _MCP_CLIENT
+    global _MCP_HEALTH_STATUS
 
     _SETTINGS = settings
     _LLM_PROVIDER_REGISTRY = llm_provider_registry or create_llm_provider_registry(settings.llm)
+    _MCP_CLIENT = mcp_client
+    _MCP_HEALTH_STATUS = mcp_health_status or MCPHealthStatus()
 
 
 def get_settings() -> Settings:
@@ -51,6 +82,16 @@ def get_settings() -> Settings:
     if _SETTINGS is None:
         _SETTINGS = load_settings(config_path=_CONFIG_PATH, llm_config_path=_LLM_CONFIG_PATH)
     return _SETTINGS
+
+
+def get_mcp_client() -> MCPToolClient | None:
+    """Return the process-wide MCP client singleton."""
+    return _MCP_CLIENT
+
+
+def get_mcp_health_status() -> dict[str, object | None]:
+    """Return the last known Home Assistant MCP health status."""
+    return asdict(_MCP_HEALTH_STATUS)
 
 
 def parse_args() -> argparse.Namespace:
@@ -80,6 +121,35 @@ def get_llm_provider_registry() -> LLMProviderRegistry:
     return _LLM_PROVIDER_REGISTRY
 
 
+async def probe_home_assistant_mcp(
+    client: MCPToolClient | None,
+    settings: HomeAssistantMCPSettings | None,
+) -> MCPHealthStatus:
+    """Probe prompt capability without interrupting room-agent startup."""
+    status = MCPHealthStatus(
+        enabled=bool(settings and settings.enabled),
+        server_name=settings.server_name if settings else None,
+        checked_at=datetime.now(timezone.utc).isoformat(),
+    )
+    if settings is None or not settings.enabled:
+        return status
+    if client is None:
+        status.error = "Home Assistant MCP is enabled but client was not initialized."
+        return status
+    if not settings.health_check.enabled:
+        status.healthy = True
+        return status
+
+    try:
+        result = await client.list_prompts(settings.server_name)
+        prompts = getattr(result, "prompts", None)
+        status.prompt_count = len(prompts) if prompts is not None else 0
+        status.healthy = True
+    except Exception as exc:
+        status.error = str(exc)
+    return status
+
+
 @dataclass(slots=True)
 class ServiceRuntime:
     """Coordinates the long-lived tasks hosted by the RoomAgent process."""
@@ -87,11 +157,24 @@ class ServiceRuntime:
     host: str = os.getenv("ROOM_AGENT_HOST", "127.0.0.1")
     port: int = int(os.getenv("ROOM_AGENT_PORT", "10000"))
     business_poll_interval_seconds: float = 30.0
+    gateway_client: GatewayClient | None = None
 
     async def run(self) -> None:
         """Run the HTTP server loop and the business loop in one event loop."""
+        global _MCP_CLIENT
+        global _MCP_HEALTH_STATUS
+
         settings = get_settings()
         llm_registry = get_llm_provider_registry()
+        _MCP_CLIENT = build_home_assistant_mcp_client(settings.agent.home_assistant_mcp)
+        _MCP_HEALTH_STATUS = await probe_home_assistant_mcp(
+            _MCP_CLIENT,
+            settings.agent.home_assistant_mcp,
+        )
+        gateway_client = self.gateway_client
+        if settings.agent.gateway and gateway_client is None:
+            gateway_client = GatewayClient()
+            self.gateway_client = gateway_client
         logger.info(
             "RoomAgent settings loaded for agent=%s room=%s powerful_provider=%s low_cost_provider=%s",
             settings.agent.id,
@@ -107,12 +190,34 @@ class ServiceRuntime:
                 else "None"
             ),
         )
+        logger.info(
+            "Home Assistant MCP status enabled=%s healthy=%s server=%s prompt_count=%s error=%s",
+            _MCP_HEALTH_STATUS.enabled,
+            _MCP_HEALTH_STATUS.healthy,
+            _MCP_HEALTH_STATUS.server_name,
+            _MCP_HEALTH_STATUS.prompt_count,
+            _MCP_HEALTH_STATUS.error,
+        )
+
+        if (
+            settings.agent.gateway
+            and settings.agent.gateway.register_on_startup
+            and gateway_client is not None
+        ):
+            await gateway_client.register_agent(settings.agent)
 
         stop_event = asyncio.Event()
         tasks = [
             asyncio.create_task(self.run_a2a_http_server(stop_event), name="roomagent-a2a-http"),
             asyncio.create_task(self.run_business_loop(stop_event), name="roomagent-business-loop"),
         ]
+        if settings.agent.gateway and gateway_client is not None:
+            tasks.append(
+                asyncio.create_task(
+                    self.run_gateway_heartbeat_loop(stop_event),
+                    name="roomagent-gateway-heartbeat",
+                )
+            )
 
         try:
             await asyncio.gather(*tasks)
@@ -172,6 +277,30 @@ class ServiceRuntime:
                 continue
         logger.info("Business loop placeholder stopped.")
 
+    async def run_gateway_heartbeat_loop(self, stop_event: asyncio.Event) -> None:
+        """Send heartbeat requests to the backend gateway on the configured interval."""
+        settings = get_settings()
+        gateway = settings.agent.gateway
+        if gateway is None:
+            return
+
+        logger.info(
+            "Gateway heartbeat loop started for agent=%s interval=%ss",
+            settings.agent.id,
+            gateway.heartbeat_interval,
+        )
+        while not stop_event.is_set():
+            if self.gateway_client is not None:
+                await self.gateway_client.send_heartbeat(settings.agent)
+            try:
+                await asyncio.wait_for(
+                    stop_event.wait(),
+                    timeout=gateway.heartbeat_interval,
+                )
+            except TimeoutError:
+                continue
+        logger.info("Gateway heartbeat loop stopped.")
+
     async def tick_business_jobs(self) -> None:
         """Reserved hook for future scheduled business queries."""
         return None
@@ -186,9 +315,17 @@ async def main() -> None:
     await ServiceRuntime().run()
 
 
-if __name__ == "__main__":
+def cli() -> None:
+    """Synchronous console-script entrypoint for packaging tools."""
+    global _CONFIG_PATH
+    global _LLM_CONFIG_PATH
+
     args = parse_args()
     _CONFIG_PATH = args.config_path
     _LLM_CONFIG_PATH = args.llm_config_path
     with contextlib.suppress(KeyboardInterrupt):
         asyncio.run(main())
+
+
+if __name__ == "__main__":
+    raise SystemExit(DIRECT_EXECUTION_ERROR)

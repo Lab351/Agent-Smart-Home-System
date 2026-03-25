@@ -1,7 +1,7 @@
 [project]
 name = "room-agent"
-version = "0.2.0"
-description = "智能机器人代理系统 - 集成语音交互、MCP 工具和 RAG 问答"
+version = "0.2.1"
+description = "房间智能体, 支持 Google A2A 服务协议."
 readme = "README.md"
 requires-python = ">=3.12"
 
@@ -15,28 +15,40 @@ dependencies = [
     "langchain-mcp-adapters>=0.1.0",
     "paho-mqtt>=2.1.0",
     "a2a-sdk[http-server]>=0.3.25",
-    "llm-json-parse",
-    "pytest>=9.0.2",
+    "llm-json-parse>=0.1.0",
 ]
 
-[project.optional-dependencies]
-# BLE Beacon 支持（用于在 Python 端实现 BLE 广播，实际使用 ESP32 硬件）
-ble = ["bluepy>=0.2.0"]
+[project.scripts]
+serve = "app.server:cli"
 
-# ==================== 告诉 setuptools：这是脚本工程，不是包 ====================
 [tool.setuptools]
 py-modules = []
+include-package-data = true
 
 [tool.setuptools.packages.find]
-include = []
+include = ["app*", "graph*", "integrations*", "config*"]
 
-[tool.uv.sources]
-llm-json-parse = { path = "../shared/llm-json-parse", editable = true }
+[tool.setuptools.package-data]
+config = ["README.md", "examples/*.yaml"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["__pycache__/*", "*.pyc"]
+
+[tool.uv]
+index-url = "https://pypi.mcurobot.com/root/agent-smart-home-system"
+publish-url = "https://pypi.mcurobot.com/root/agent-smart-home-system"
 
 # ==================== 构建系统 ====================
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-asyncio",
+    "types-pyyaml>=6.0.12.20250915",
+]
 
 # ==================== 测试 ====================
 [tool.pytest.ini_options]

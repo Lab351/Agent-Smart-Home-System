@@ -13,17 +13,20 @@ from a2a.types import (
     AgentCapabilities,
     AgentCard,
     AgentSkill,
+    Message,
     Part,
+    Task,
     TaskState,
     TextPart,
     UnsupportedOperationError,
 )
-from a2a.utils import new_agent_text_message, new_task
+from a2a.utils import new_task
 from a2a.utils.errors import ServerError
 
 
 logger = logging.getLogger(__name__)
 SUPPORTED_CONTENT_TYPES = ["text", "text/plain"]
+A2A_FALLBACK_RESPONSE = "RoomAgent 已收到请求，当前返回仍为最简占位结果。"
 
 
 class RoomAgentExecutor(AgentExecutor):
@@ -47,19 +50,12 @@ class RoomAgentExecutor(AgentExecutor):
             user_input=user_input,
             context_id=task.context_id,
             task_id=task.id,
+            conversation_text=_build_conversation_text(
+                task=task,
+                current_message=context.message,
+            ),
         )
-
-        if result is None:
-            await updater.update_status(
-                TaskState.input_required,
-                new_agent_text_message(
-                    "RoomAgent A2A executor placeholder is ready, but the LangChain entrypoint is not wired yet.",
-                    task.context_id,
-                    task.id,
-                ),
-                final=True,
-            )
-            return
+        result = result or A2A_FALLBACK_RESPONSE
 
         await updater.add_artifact(
             [Part(root=TextPart(text=result))],
@@ -73,10 +69,26 @@ class RoomAgentExecutor(AgentExecutor):
         user_input: str,
         context_id: str,
         task_id: str,
-    ) -> str | None:
-        """Reserved hook for the future LangChain/LangGraph execution entrypoint."""
-        _ = (user_input, context_id, task_id)
-        return None
+        conversation_text: str | None = None,
+    ) -> str:
+        """Invoke the RoomAgent LangGraph entrypoint and return a minimal text result."""
+        app = _compile_graph()
+        final_state = await app.ainvoke(
+            {
+                "user_input": user_input,
+                "conversation_text": (conversation_text or user_input).strip() or user_input,
+                "metadata": {
+                    "context_id": context_id,
+                    "task_id": task_id,
+                    "source": "a2a",
+                },
+            }
+        )
+        execution_result = final_state.get("execution_result", {})
+        message = execution_result.get("message")
+        if isinstance(message, str) and message.strip():
+            return message.strip()
+        return A2A_FALLBACK_RESPONSE
 
     async def cancel(
         self,
@@ -85,6 +97,74 @@ class RoomAgentExecutor(AgentExecutor):
     ) -> None:
         _ = (context, event_queue)
         raise ServerError(error=UnsupportedOperationError())
+
+
+def _build_conversation_text(
+    *,
+    task: Task | None,
+    current_message: Message | None,
+) -> str:
+    history = list(task.history or []) if task and task.history else []
+    if current_message and (
+        not history or history[-1].message_id != current_message.message_id
+    ):
+        history.append(current_message)
+
+    transcript_lines: list[str] = []
+    for message in history:
+        text = _extract_text_from_message(message)
+        if not text:
+            continue
+        transcript_lines.append(f"{_normalize_role(message.role)}: {text}")
+
+    current_user_input = _extract_text_from_message(current_message)
+    if not current_user_input and history:
+        for message in reversed(history):
+            if _normalize_role(message.role) == "user":
+                current_user_input = _extract_text_from_message(message)
+                if current_user_input:
+                    break
+
+    if not transcript_lines:
+        return current_user_input
+
+    if not current_user_input:
+        return "Conversation transcript:\n" + "\n".join(transcript_lines)
+
+    return (
+        "Conversation transcript:\n"
+        + "\n".join(transcript_lines)
+        + "\n\nCurrent user input:\n"
+        + current_user_input
+    )
+
+
+def _extract_text_from_message(message: Message | None) -> str:
+    if message is None:
+        return ""
+
+    parts = []
+    for part in message.parts:
+        if isinstance(part.root, TextPart):
+            text = part.root.text.strip()
+            if text:
+                parts.append(text)
+    return "\n".join(parts)
+
+
+def _normalize_role(role: object) -> str:
+    value = getattr(role, "value", role)
+    if value == "agent":
+        return "assistant"
+    if value == "user":
+        return "user"
+    return str(value)
+
+
+def _compile_graph():
+    from graph.entry import compile_graph
+
+    return compile_graph()
 
 
 def build_a2a_application(*, host: str, port: int) -> A2AStarletteApplication:

@@ -23,10 +23,10 @@ INTENT_OUTPUT_SCHEMA = {
 async def intent_recognition(state: RoomAgentGraphState) -> RoomAgentGraphState:
     """Classify whether the request needs tool execution."""
     provider = _get_low_cost_provider()
-    user_input = state.get("user_input", "").strip()
+    prompt_input = _get_prompt_input(state)
 
     raw_output = await provider.complete_text(
-        _build_messages(user_input),
+        _build_messages(prompt_input),
         json_mode=True,
     )
     parsed = await JsonParserWithRepair(llm_provider=provider)(
@@ -95,3 +95,7 @@ def _build_messages(user_input: str) -> list[dict[str, str]]:
             ),
         },
     ]
+
+
+def _get_prompt_input(state: RoomAgentGraphState) -> str:
+    return state.get("conversation_text", "").strip() or state.get("user_input", "").strip()

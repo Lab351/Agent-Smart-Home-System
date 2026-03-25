@@ -1,0 +1,17 @@
+{
+  "description": "Python packages to publish. This configuration is used by CI workflows.",
+  "packages": [
+    {
+      "name": "llm-json-parse",
+      "path": "shared/llm-json-parse",
+      "publish": true,
+      "description": "JSON parsing with LLM fallback"
+    },
+    {
+      "name": "room-agent",
+      "path": "room-agent",
+      "publish": true,
+      "description": "Room intelligent agent with Google A2A support"
+    }
+  ]
+}
