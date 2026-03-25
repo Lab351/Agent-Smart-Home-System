@@ -1,8 +1,11 @@
-from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional
-from datetime import datetime
 import uuid
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field
+
 from shared.models.agent_card import AgentCard
+from shared.utils import utc_now_iso
 
 
 class A2AMessage(BaseModel):
@@ -12,13 +15,13 @@ class A2AMessage(BaseModel):
     """
     message_id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="消息唯一标识符")
     timestamp: str = Field(
-        default_factory=lambda: datetime.utcnow().isoformat(),
+        default_factory=utc_now_iso,
         description="ISO 8601格式时间戳"
     )
     correlation_id: Optional[str] = Field(None, description="关联ID（用于请求-响应模式）")
 
 
-class TaskState(str):
+class TaskState(str, Enum):
     """任务状态"""
     PENDING = "pending"
     RUNNING = "running"
@@ -33,17 +36,20 @@ class A2ATask(BaseModel):
     任务是Agent间协作的基本单元
     """
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="任务ID")
-    status: str = Field(default="pending", description="任务状态: pending/running/completed/failed/canceled")
+    status: TaskState = Field(
+        default=TaskState.PENDING,
+        description="任务状态: pending/running/completed/failed/canceled",
+    )
     message: Optional[A2AMessage] = Field(None, description="任务消息")
     result: Optional[Dict[str, Any]] = Field(None, description="任务结果")
     error: Optional[str] = Field(None, description="错误信息")
     
     created_at: str = Field(
-        default_factory=lambda: datetime.utcnow().isoformat(),
+        default_factory=utc_now_iso,
         description="创建时间"
     )
     updated_at: str = Field(
-        default_factory=lambda: datetime.utcnow().isoformat(),
+        default_factory=utc_now_iso,
         description="更新时间"
     )
 

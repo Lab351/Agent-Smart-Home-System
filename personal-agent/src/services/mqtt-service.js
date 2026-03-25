@@ -5,7 +5,18 @@
  * 使用快应用原生 WebSocket 实现 MQTT 3.1.1 协议
  */
 
-import websocketfactory from '@system.websocketfactory'
+function loadWebSocketFactory() {
+  if (typeof require !== 'function') {
+    throw new Error('Quick App websocket factory is unavailable in this environment')
+  }
+
+  const websocketfactory = require('@system.websocketfactory')
+  if (!websocketfactory || typeof websocketfactory.create !== 'function') {
+    throw new Error('Quick App websocket factory does not expose create()')
+  }
+
+  return websocketfactory
+}
 
 export default class MqttService {
   constructor() {
@@ -39,6 +50,7 @@ export default class MqttService {
 
     return new Promise((resolve) => {
       try {
+        const websocketfactory = loadWebSocketFactory()
         // 创建快应用 WebSocket 连接
         this.ws = websocketfactory.create({
           url: wsUrl,
@@ -355,7 +367,7 @@ export default class MqttService {
       // 调用回调函数
       for (const [subscribedTopic, callback] of this.messageCallbacks) {
         if (this.topicMatch(subscribedTopic, topic)) {
-          callback(payload)
+          callback(payload, topic)
         }
       }
     } catch (err) {

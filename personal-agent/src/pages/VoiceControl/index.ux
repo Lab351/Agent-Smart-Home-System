@@ -57,6 +57,7 @@
 
 <script>
 import ControlService from '../../services/ControlService'
+import MqttService from '../../services/mqtt-service'
 import QwenService from '../../services/QwenService'
 import AsrService from '../../services/AsrService'
 import BeaconService from '../../services/BeaconService'
@@ -64,6 +65,9 @@ import DiscoveryService from '../../services/DiscoveryService'
 import IntentService from '../../services/IntentService'
 import RouterService from '../../services/RouterService'
 import HomeAgentService from '../../services/HomeAgentService'
+import A2AControlTransport from '../../services/transports/A2AControlTransport.js'
+import MqttControlTransport from '../../services/transports/MqttControlTransport.js'
+import quickappJsonRequest from '../../services/quickappJsonRequest.js'
 import config from '../../config/agent.config'
 
 export default {
@@ -107,7 +111,10 @@ export default {
 onInit() {
     console.log('[VoiceControl] Page initialized')
 
-    this.controlService = new ControlService()
+    const mqttService = new MqttService()
+    this.controlService = new ControlService(mqttService, {
+      personalAgentId: `watch-${config.agent.userId}`,
+    })
     this.beaconService = new BeaconService()
     this.discoveryService = new DiscoveryService(this.controlService.getMqttService())
     this.intentService = new IntentService()
@@ -474,12 +481,18 @@ this.beaconService.onRoomChanged = async (data) => {
     this.statusText = '正在连接...'
 
     try {
-      const mqtt = this.controlService.getMqttService()
-      
-      const success = await mqtt.connect({
-        host: agentInfo.mqtt_broker || config.mqtt.host,
-        port: agentInfo.mqtt_ws_port || config.mqtt.wsPort,
-        clientId: `watch-${config.agent.userId}-${Date.now()}`
+      const transport = this.createRoomTransport(agentInfo)
+      this.controlService.setTransport(transport)
+
+      const success = await transport.connect({
+        roomId: agentInfo.room_id,
+        roomAgentId: agentInfo.agent_id,
+        agentInfo,
+        personalAgentId: `watch-${config.agent.userId}-${Date.now()}`,
+        fallbackBroker: {
+          host: config.mqtt.host,
+          port: config.mqtt.wsPort,
+        },
       })
 
       this.isConnected = success
@@ -488,20 +501,30 @@ this.beaconService.onRoomChanged = async (data) => {
 if (success) {
         console.log('[VoiceControl] Connected to room agent:', agentInfo.agent_id)
         this.statusText = '点击麦克风开始录音'
-        
+
         this.controlService.setRoomAgent(agentInfo.room_id, agentInfo.agent_id)
         this.routerService.setCurrentRoom(agentInfo.room_id, this.currentBeaconId)
-        
-        await this.controlService.subscribeToState(agentInfo.room_id, (state) => {
-          console.log('[VoiceControl] State update received:', state)
-          if (state && state.devices) {
-            this.addMessageToList('system', '设备状态已更新', 'success')
+
+        if (this.isA2ATransport(transport)) {
+          const description = await this.controlService.queryCapabilities(
+            agentInfo.room_id,
+            agentInfo
+          )
+
+          if (description && Array.isArray(description.devices)) {
+            this.availableDevices = description.devices
+          } else {
+            this.availableDevices = []
           }
-        })
-        
-        await mqtt.subscribe(`room/${agentInfo.room_id}/agent/${agentInfo.agent_id}/state`)
-        await mqtt.subscribe(`room/${agentInfo.room_id}/agent/${agentInfo.agent_id}/description`)
-        
+        } else {
+          await this.controlService.subscribeToState(agentInfo.room_id, (state) => {
+            console.log('[VoiceControl] State update received:', state)
+            if (state && state.devices) {
+              this.addMessageToList('system', '设备状态已更新', 'success')
+            }
+          })
+        }
+
         this.addMessageToList('system', `已连接到${this.currentRoomName}`, 'success')
       } else {
         console.error('[VoiceControl] Failed to connect to room agent')
@@ -515,6 +538,20 @@ if (success) {
       this.statusText = '连接失败'
       this.addMessageToList('system', `连接错误: ${err.message}`, 'error')
     }
+  },
+
+  createRoomTransport(agentInfo) {
+    if (agentInfo && agentInfo.url) {
+      return new A2AControlTransport({
+        requestFn: quickappJsonRequest,
+      })
+    }
+
+    return new MqttControlTransport(this.controlService.getMqttService())
+  },
+
+  isA2ATransport(transport) {
+    return transport instanceof A2AControlTransport
   },
 
   /**

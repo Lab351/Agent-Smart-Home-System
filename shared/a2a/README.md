@@ -460,13 +460,12 @@ if not topic_info:
 
 ---
 
-**kunkun，这个 A2A 模块现在已经完全可用了！** 🎉
+当前 A2A 共享层以 `shared.models.mqtt_messages` + `shared.mqtt` 运行时为准。
 
-所有核心功能都已实现，包括：
+已收敛的能力包括：
 - ✅ Topic 管理
-- ✅ 消息处理
-- ✅ 请求-响应模式
-- ✅ 事件分发
-- ✅ Personal/Room/Central Agent 实现
+- ✅ 消息处理与校验
+- ✅ 请求-响应匹配
+- ✅ Personal/Room/Central Agent 共用基类
 
-你可以直接在项目中使用这个模块。如果需要任何调整或有疑问，请告诉我！
+使用时请显式区分 MQTT 运行时模型与 A2A 扩展模型，避免再从 `shared.models` 顶层导入同名消息类型。

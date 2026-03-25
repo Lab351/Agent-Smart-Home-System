@@ -5,10 +5,12 @@
 """
 
 import asyncio
-from typing import Dict, List, Callable, Any, Optional
 from dataclasses import dataclass, field
-from enum import Enum
 from datetime import datetime
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional
+
+from shared.utils import utc_now
 
 
 class EventPriority(int, Enum):
@@ -36,7 +38,7 @@ class Event:
     """事件对象"""
     event_type: str
     data: Any
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=utc_now)
     source: Optional[str] = None
     cancelled: bool = False
     
@@ -308,7 +310,7 @@ class EventDispatcher:
                 
                 # 记录
                 handler.call_count += 1
-                handler.last_called = datetime.utcnow()
+                handler.last_called = utc_now()
                 
                 # 如果是一次性处理器，标记移除
                 if handler.once:
@@ -340,7 +342,7 @@ class EventDispatcher:
                 await self._call_handler(handler, event)
                 
                 handler.call_count += 1
-                handler.last_called = datetime.utcnow()
+                handler.last_called = utc_now()
                 
                 if handler.once:
                     handlers.remove(handler)

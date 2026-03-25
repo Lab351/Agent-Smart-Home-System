@@ -1,22 +1,20 @@
 # shared/tests/test_messages.py
-"""消息模型单元测试"""
+"""MQTT 协议消息模型单元测试。"""
 
-import pytest
-from datetime import datetime
-from shared.models import (
-    ControlMessage,
-    StateMessage,
-    DescribeMessage,
-    DescriptionMessage,
-    HeartbeatMessage,
-    DeviceState,
-    DeviceCapability,
-    SystemMetrics,
-    GlobalStateMessage,
-    PolicyUpdateMessage,
+from shared.models.mqtt_messages import (
     ArbitrationRequestMessage,
     ArbitrationResponseMessage,
+    ControlMessage,
+    DescribeMessage,
+    DescriptionMessage,
+    DeviceCapability,
+    DeviceState,
+    GlobalStateMessage,
+    HeartbeatMessage,
+    PolicyUpdateMessage,
+    StateMessage,
     SystemEventMessage,
+    SystemMetrics,
 )
 
 

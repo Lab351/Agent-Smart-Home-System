@@ -5,17 +5,17 @@
  */
 
 import MqttService from './mqtt-service.js'
-import { TopicBuilder, TopicParser, QoSConfig, SubscriptionTopics } from '../../shared/js/topics.js'
+import { TopicBuilder, TopicParser, SubscriptionTopics } from '../../../shared/js/topics.js'
 import { 
   ControlMessage, 
   DescribeMessage, 
   ArbitrationRequestMessage,
   MessageParser 
-} from '../../shared/js/messages.js'
+} from '../../../shared/js/messages.js'
 
 export default class A2ACommunicationService {
-  constructor() {
-    this.mqttService = new MqttService()
+  constructor(mqttService = null) {
+    this.mqttService = mqttService || new MqttService()
     this.agentId = null
     this.roomId = null
     this.roomAgentId = null
@@ -70,7 +70,9 @@ export default class A2ACommunicationService {
     const topics = SubscriptionTopics.personalAgent(this.roomId)
     
     for (const topic of topics) {
-      await this.mqttService.subscribe(topic, this._handleMessage.bind(this))
+      await this.mqttService.subscribe(topic, (payload, receivedTopic = topic) => {
+        this._handleMessage(receivedTopic, payload)
+      })
     }
 
     console.log('[A2ACommunicationService] Subscribed to topics:', topics)
@@ -78,26 +80,25 @@ export default class A2ACommunicationService {
 
   /**
    * 处理接收到的消息
+   * @param {string} topic - MQTT Topic
    * @param {string} payload - 消息内容
    */
-  _handleMessage(payload) {
+  _handleMessage(topic, payload) {
     try {
-      const parsed = TopicParser.parse(payload)
+      const parsedTopic = TopicParser.parse(topic)
       const message = MessageParser.parse(payload)
 
-      if (!message) return
+      if (!message || !parsedTopic.messageType) return
 
-      const parsedTopic = TopicParser.parse(this._extractTopicFromPayload(payload))
-
-      if (parsedTopic.messageType === 'state') {
+      if (parsedTopic.type === 'home' && parsedTopic.messageType === 'state') {
+        const globalState = MessageParser.parseGlobalStateMessage(payload)
+        this.globalStateCallbacks.forEach(cb => cb(globalState))
+      } else if (parsedTopic.messageType === 'state') {
         const stateMessage = MessageParser.parseStateMessage(payload)
         this.stateCallbacks.forEach(cb => cb(stateMessage))
       } else if (parsedTopic.messageType === 'description') {
         const descMessage = MessageParser.parseDescriptionMessage(payload)
         this.descriptionCallbacks.forEach(cb => cb(descMessage))
-      } else if (parsedTopic.messageType === 'state' && parsedTopic.type === 'home') {
-        const globalState = MessageParser.parseGlobalStateMessage(payload)
-        this.globalStateCallbacks.forEach(cb => cb(globalState))
       } else if (parsedTopic.isResponse && parsedTopic.messageType === 'arbitration') {
         const arbitrationResponse = MessageParser.parseArbitrationResponse(payload)
         this.arbitrationCallbacks.forEach(cb => cb(arbitrationResponse))
