@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from uuid import uuid4
+from unittest.mock import Mock
 
 from a2a.server.agent_execution import RequestContext
 from a2a.server.events import EventQueue
@@ -54,6 +55,7 @@ def test_invoke_roomagent_entrypoint_falls_back_when_graph_message_missing(
     monkeypatch,
 ) -> None:
     executor = RoomAgentExecutor()
+    logger = Mock()
 
     class FakeGraph:
         async def ainvoke(self, payload):
@@ -61,6 +63,7 @@ def test_invoke_roomagent_entrypoint_falls_back_when_graph_message_missing(
             return {"execution_result": {"type": "placeholder"}}
 
     monkeypatch.setattr("app.a2a_server._compile_graph", lambda: FakeGraph())
+    monkeypatch.setattr("app.a2a_server.logger", logger)
 
     result = asyncio.run(
         executor.invoke_roomagent_entrypoint(
@@ -72,6 +75,8 @@ def test_invoke_roomagent_entrypoint_falls_back_when_graph_message_missing(
     )
 
     assert result == A2A_FALLBACK_RESPONSE
+    logger.info.assert_called_once()
+    assert '"type": "placeholder"' in logger.info.call_args.args[3]
 
 
 def test_execute_enqueues_artifact_for_new_task(monkeypatch) -> None:
