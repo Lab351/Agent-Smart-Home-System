@@ -41,7 +41,7 @@ class MCPToolService:
             MCPToolDescriptor(
                 name=tool.name,
                 description=tool.description or "",
-                args_schema=getattr(tool, "args", {}) or {},
+                args_schema=_extract_tool_schema(tool),
             )
             for tool in tools
         ]
@@ -195,3 +195,21 @@ def _build_tool_args(tool: BaseTool, user_input: str) -> dict[str, Any]:
     if not args:
         args[arg_names[0]] = user_input
     return args
+
+
+def _extract_tool_schema(tool: BaseTool) -> dict[str, Any]:
+    get_input_schema = getattr(tool, "get_input_schema", None)
+    if callable(get_input_schema):
+        schema_model = get_input_schema()
+        model_json_schema = getattr(schema_model, "model_json_schema", None)
+        if callable(model_json_schema):
+            return model_json_schema() or {}
+
+    args_schema = getattr(tool, "args", {}) or {}
+    if args_schema:
+        return {
+            "type": "object",
+            "properties": args_schema,
+        }
+
+    return {}

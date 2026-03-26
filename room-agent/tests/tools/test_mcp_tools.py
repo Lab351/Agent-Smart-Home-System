@@ -65,3 +65,26 @@ async def test_invoke_tool_standardizes_result():
     assert result.success is True
     assert result.tool_name == "weather_lookup"
     assert result.result == "ok:上海天气"
+
+
+@pytest.mark.asyncio
+async def test_describe_tools_returns_full_input_schema():
+    async def weather_lookup(query: str) -> str:
+        return query
+
+    service = MCPToolService(
+        StaticMCPClient(
+            [
+                StructuredTool.from_function(
+                    coroutine=weather_lookup,
+                    name="weather_lookup",
+                    description="查询天气信息",
+                )
+            ]
+        )
+    )
+
+    descriptors = await service.describe_tools()
+
+    assert descriptors[0].args_schema["type"] == "object"
+    assert "query" in descriptors[0].args_schema["properties"]

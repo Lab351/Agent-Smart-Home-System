@@ -4,6 +4,7 @@ import asyncio
 from pathlib import Path
 
 import pytest
+from openai import APIConnectionError
 
 from app.server import initialize_runtime_dependencies
 from config.settings import load_settings
@@ -38,10 +39,17 @@ def _initialize_real_runtime() -> None:
     )
 
 
+def _invoke_graph_or_skip(user_input: str) -> dict[str, object]:
+    try:
+        return asyncio.run(compile_graph().ainvoke({"user_input": user_input}))
+    except APIConnectionError as exc:
+        pytest.skip(f"Skipping smoke test because upstream LLM is unreachable: {exc}")
+
+
 def test_graph_routes_chat_to_direct_response():
     _initialize_real_runtime()
 
-    final_state = asyncio.run(compile_graph().ainvoke({"user_input": "你好"}))
+    final_state = _invoke_graph_or_skip("你好")
 
     assert final_state["need_tool_call"] is False
     assert final_state["next_action"] == "direct_response"
@@ -52,8 +60,9 @@ def test_graph_routes_chat_to_direct_response():
 def test_graph_routes_tool_request_to_tool_selection():
     _initialize_real_runtime()
 
-    final_state = asyncio.run(compile_graph().ainvoke({"user_input": "帮我打开卧室的灯"}))
+    final_state = _invoke_graph_or_skip("帮我打开卧室的灯")
 
     assert final_state["need_tool_call"] is True
     assert final_state["next_action"] == "tool_selection"
-    assert final_state["execution_result"]["type"] == "placeholder"
+    assert final_state["execution_result"]["type"] == "tool_selection"
+    assert "comment" in final_state["execution_result"]
