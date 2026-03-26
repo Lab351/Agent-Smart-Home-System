@@ -22,6 +22,14 @@ class FailingClient:
         raise RuntimeError(f"server unavailable: {server_name}")
 
 
+class GroupedFailingClient:
+    async def list_prompts(self, server_name: str):
+        raise ExceptionGroup(
+            "unhandled errors in a TaskGroup",
+            [PermissionError(f"401 Unauthorized for {server_name}")],
+        )
+
+
 def test_probe_home_assistant_mcp_marks_healthy_from_prompt_listing() -> None:
     status = asyncio.run(
         probe_home_assistant_mcp(
@@ -55,7 +63,26 @@ def test_probe_home_assistant_mcp_failure_does_not_raise() -> None:
     assert status.enabled is True
     assert status.healthy is False
     assert status.prompt_count is None
-    assert status.error == "server unavailable: home_assistant"
+    assert status.error_type == "RuntimeError"
+    assert status.error == "RuntimeError: server unavailable: home_assistant"
+
+
+def test_probe_home_assistant_mcp_expands_exception_group_details() -> None:
+    status = asyncio.run(
+        probe_home_assistant_mcp(
+            GroupedFailingClient(),
+            HomeAssistantMCPSettings(
+                enabled=True,
+                server_name="home_assistant",
+                url="http://ha.local:8123/mcp",
+            ),
+        )
+    )
+
+    assert status.enabled is True
+    assert status.healthy is False
+    assert status.error_type == "ExceptionGroup"
+    assert "PermissionError: 401 Unauthorized for home_assistant" in status.error
 
 
 def test_initialize_runtime_dependencies_exposes_health_status_snapshot() -> None:
@@ -73,6 +100,7 @@ def test_initialize_runtime_dependencies_exposes_health_status_snapshot() -> Non
             enabled=True,
             healthy=False,
             server_name="home_assistant",
+            error_type="RuntimeError",
             error="server unavailable",
         ),
     )
@@ -82,4 +110,5 @@ def test_initialize_runtime_dependencies_exposes_health_status_snapshot() -> Non
     assert health["enabled"] is True
     assert health["healthy"] is False
     assert health["server_name"] == "home_assistant"
+    assert health["error_type"] == "RuntimeError"
     assert health["error"] == "server unavailable"
