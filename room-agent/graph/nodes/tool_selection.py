@@ -8,8 +8,8 @@ from typing import Any
 
 from config.settings import LLMRole
 from graph.state import RoomAgentGraphState
+from langchain_core.tools import BaseTool
 from llm_json_parse import JsonParserWithRepair
-from tools.mcp_tools import MCPToolService
 
 
 TOOL_SELECTION_OUTPUT_SCHEMA = {
@@ -30,9 +30,8 @@ TOOL_SELECTION_OUTPUT_SCHEMA = {
 async def tool_selection(state: RoomAgentGraphState) -> RoomAgentGraphState:
     """Select up to three MCP tools for the current request."""
     provider = _get_low_cost_provider()
-    tool_service = _get_tool_service()
     prompt_input = _get_prompt_input(state)
-    candidate_tools = [tool.model_dump() for tool in await tool_service.describe_tools()]
+    candidate_tools = await _describe_tools()
 
     if not candidate_tools:
         comment = "No MCP tools are available for this request."
@@ -74,10 +73,26 @@ def _get_low_cost_provider() -> Any:
     return provider
 
 
-def _get_tool_service() -> MCPToolService:
+def _get_mcp_client():
     from app.server import get_mcp_client
 
-    return MCPToolService(get_mcp_client())
+    return get_mcp_client()
+
+
+async def _describe_tools() -> list[dict[str, Any]]:
+    client = _get_mcp_client()
+    if client is None:
+        return []
+
+    tools = await client.get_tools()
+    return [
+        {
+            "name": tool.name,
+            "description": tool.description or "",
+            "args_schema": _extract_tool_schema(tool),
+        }
+        for tool in tools
+    ]
 
 
 def _build_messages(
@@ -170,3 +185,21 @@ def _log_zero_tool_selection(
 
 def _get_prompt_input(state: RoomAgentGraphState) -> str:
     return state.get("conversation_text", "").strip() or state.get("user_input", "").strip()
+
+
+def _extract_tool_schema(tool: BaseTool) -> dict[str, Any]:
+    get_input_schema = getattr(tool, "get_input_schema", None)
+    if callable(get_input_schema):
+        schema_model = get_input_schema()
+        model_json_schema = getattr(schema_model, "model_json_schema", None)
+        if callable(model_json_schema):
+            return model_json_schema() or {}
+
+    args_schema = getattr(tool, "args", {}) or {}
+    if args_schema:
+        return {
+            "type": "object",
+            "properties": args_schema,
+        }
+
+    return {}

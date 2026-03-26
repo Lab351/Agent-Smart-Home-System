@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, TypeAlias
 
 from langchain_core.tools import BaseTool
@@ -30,7 +28,7 @@ class MCPToolClient(Protocol):
 
 
 class LangChainMCPClient:
-    """Thin wrapper over MultiServerMCPClient with file-based config loading."""
+    """Thin wrapper over MultiServerMCPClient."""
 
     def __init__(self, connections: dict[str, MCPConnection]) -> None:
         self._client = MultiServerMCPClient(connections)
@@ -41,23 +39,6 @@ class LangChainMCPClient:
     async def list_prompts(self, server_name: str) -> Any:
         async with self._client.session(server_name) as session:
             return await session.list_prompts()
-
-
-def build_mcp_client(config_path: str | None) -> MCPToolClient | None:
-    if not config_path:
-        return None
-
-    path = Path(config_path)
-    if not path.exists():
-        return None
-
-    with path.open("r", encoding="utf-8") as file:
-        raw_config = json.load(file)
-
-    connections = _load_connections(raw_config)
-    if not connections:
-        return None
-    return LangChainMCPClient(connections)
 
 
 def build_home_assistant_mcp_client(
@@ -73,15 +54,6 @@ def build_home_assistant_mcp_client(
         "headers": _build_auth_headers(settings.auth_token),
     }
     return LangChainMCPClient({settings.server_name: _normalize_connection(server)})
-
-
-def _load_connections(raw_config: dict[str, Any]) -> dict[str, MCPConnection]:
-    servers = raw_config.get("mcp_servers", [])
-    connections: dict[str, MCPConnection] = {}
-    for server in servers:
-        server_id = server["id"]
-        connections[server_id] = _normalize_connection(server)
-    return connections
 
 
 def _normalize_connection(server: dict[str, Any]) -> MCPConnection:

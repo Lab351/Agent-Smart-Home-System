@@ -36,6 +36,7 @@ class FakeToolDescriptor:
         self.name = name
         self.description = description
         self.args_schema = args_schema
+        self.args = args_schema
 
     def model_dump(self) -> dict[str, object]:
         return {
@@ -45,11 +46,11 @@ class FakeToolDescriptor:
         }
 
 
-class FakeToolService:
+class FakeMCPClient:
     def __init__(self, descriptors: list[FakeToolDescriptor]) -> None:
         self.descriptors = descriptors
 
-    async def describe_tools(self) -> list[FakeToolDescriptor]:
+    async def get_tools(self) -> list[FakeToolDescriptor]:
         return self.descriptors
 
 
@@ -107,8 +108,8 @@ def test_tool_selection_prefers_conversation_text_and_selects_tools(monkeypatch)
     monkeypatch.setattr(tool_selection_module, "_get_low_cost_provider", lambda: provider)
     monkeypatch.setattr(
         tool_selection_module,
-        "_get_tool_service",
-        lambda: FakeToolService(
+        "_get_mcp_client",
+        lambda: FakeMCPClient(
             [
                 FakeToolDescriptor("weather_lookup", "查询天气", {"query": {"type": "string"}}),
                 FakeToolDescriptor("calendar_lookup", "查询日历", {"query": {"type": "string"}}),
@@ -144,8 +145,8 @@ def test_tool_selection_logs_to_stderr_when_llm_returns_zero_tools(
     monkeypatch.setattr(tool_selection_module, "_get_low_cost_provider", lambda: provider)
     monkeypatch.setattr(
         tool_selection_module,
-        "_get_tool_service",
-        lambda: FakeToolService(
+        "_get_mcp_client",
+        lambda: FakeMCPClient(
             [FakeToolDescriptor("weather_lookup", "查询天气", {"query": {"type": "string"}})]
         ),
     )
@@ -166,8 +167,8 @@ def test_tool_selection_filters_unknown_names_and_deduplicates(monkeypatch, caps
     monkeypatch.setattr(tool_selection_module, "_get_low_cost_provider", lambda: provider)
     monkeypatch.setattr(
         tool_selection_module,
-        "_get_tool_service",
-        lambda: FakeToolService(
+        "_get_mcp_client",
+        lambda: FakeMCPClient(
             [FakeToolDescriptor("weather_lookup", "查询天气", {"query": {"type": "string"}})]
         ),
     )
@@ -189,8 +190,8 @@ def test_tool_selection_truncates_to_three_tools(monkeypatch) -> None:
     monkeypatch.setattr(tool_selection_module, "_get_low_cost_provider", lambda: provider)
     monkeypatch.setattr(
         tool_selection_module,
-        "_get_tool_service",
-        lambda: FakeToolService(
+        "_get_mcp_client",
+        lambda: FakeMCPClient(
             [
                 FakeToolDescriptor("tool_1", "d1", {}),
                 FakeToolDescriptor("tool_2", "d2", {}),
@@ -223,7 +224,7 @@ def test_tool_selection_truncates_to_three_tools(monkeypatch) -> None:
 def test_tool_selection_logs_when_no_candidate_tools(monkeypatch, capsys) -> None:
     provider = RecordingProvider('{"selected_tool_names":["weather_lookup"],"comment":"unused"}')
     monkeypatch.setattr(tool_selection_module, "_get_low_cost_provider", lambda: provider)
-    monkeypatch.setattr(tool_selection_module, "_get_tool_service", lambda: FakeToolService([]))
+    monkeypatch.setattr(tool_selection_module, "_get_mcp_client", lambda: FakeMCPClient([]))
 
     result = asyncio.run(
         tool_selection_function({"user_input": "帮我开灯", "intent": {"name": "device_control"}})

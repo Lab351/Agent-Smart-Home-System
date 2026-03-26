@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 LLM_CONFIG = ROOT / "config" / "examples" / "llm.example.yaml"
 
 
-def test_load_settings_parses_gateway_runtime_from_room_config(tmp_path: Path) -> None:
+def test_load_settings_parses_gateway_and_runtime_from_room_config(tmp_path: Path) -> None:
     config_path = tmp_path / "room_agent.yaml"
     config_path.write_text(
         """
