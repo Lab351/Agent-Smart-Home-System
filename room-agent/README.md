@@ -15,6 +15,7 @@
 - `intent_recognition` 使用低成本模型判断是否需要工具调用
 - `direct_response` 在不需要工具时直接生成一条自然语言回复
 - `tool_selection` 当前还是占位节点
+- MCP 层当前只保留 client 接入与启动期健康检查，不再承载工具选择、参数构造或执行编排
 
 ## 依赖安装
 
@@ -105,6 +106,7 @@ uv run serve \
 
 - 服务启动时会初始化全局单例 `Settings`
 - 服务启动时会初始化全局单例 `LLMProviderRegistry`
+- 服务启动时会初始化全局单例 `MCP client`，并执行一次 Home Assistant MCP 健康检查
 - 当前业务 loop 仍然是占位实现
 - A2A HTTP 服务入口已保留
 - 不要直接执行 `python app/server.py` 或 `python -m app.server`
@@ -173,5 +175,6 @@ LLM 节点开发规范见：
 - 增加 tool call planning
 - 接入人审占位节点
 - 完善真实工具执行路径
+- 在 graph 节点里实现工具选择、参数构造和执行编排，而不是回填到 MCP service
 
 不建议再参考旧版 room-agent 的历史业务结构，新的 graph 方案已经作为后续实现基线。

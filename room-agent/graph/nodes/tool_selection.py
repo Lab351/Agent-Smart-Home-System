@@ -1,20 +1,210 @@
-"""Placeholder tool-selection node."""
+"""LLM-driven tool-selection node."""
 
 from __future__ import annotations
 
+import json
+import sys
+from typing import Any
+
+from config.settings import LLMRole
 from graph.state import RoomAgentGraphState
+from langchain_core.tools import BaseTool
+from llm_json_parse import JsonParserWithRepair
+
+
+TOOL_SELECTION_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "selected_tool_names": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1},
+        },
+        "comment": {"type": "string"},
+    },
+    "required": ["selected_tool_names", "comment"],
+    "additionalProperties": False,
+}
 
 
 async def tool_selection(state: RoomAgentGraphState) -> RoomAgentGraphState:
-    """Placeholder node for the tool path."""
+    """Select up to three MCP tools for the current request."""
+    provider = _get_low_cost_provider()
+    prompt_input = _get_prompt_input(state)
+    candidate_tools = await _describe_tools()
+
+    if not candidate_tools:
+        comment = "No MCP tools are available for this request."
+        _log_zero_tool_selection(prompt_input, state.get("intent", {}), comment)
+        return _build_result(candidate_tools, [], comment)
+
+    raw_output = await provider.complete_text(
+        _build_messages(
+            prompt_input=prompt_input,
+            intent=state.get("intent", {}),
+            candidate_tools=candidate_tools,
+        ),
+        temperature=0,
+        json_mode=True,
+    )
+    parsed = await JsonParserWithRepair(llm_provider=provider)(
+        raw_output,
+        schema=TOOL_SELECTION_OUTPUT_SCHEMA,
+    )
+
+    selected_tools = _select_tools(
+        candidate_tools,
+        parsed.get("selected_tool_names", []),
+    )
+    comment = parsed.get("comment", "").strip() or "No tool-selection comment provided."
+
+    if not selected_tools:
+        _log_zero_tool_selection(prompt_input, state.get("intent", {}), comment)
+
+    return _build_result(candidate_tools, selected_tools, comment)
+
+
+def _get_low_cost_provider() -> Any:
+    from app.server import get_llm_provider_registry
+
+    provider = get_llm_provider_registry().get(LLMRole.LOW_COST)
+    if provider is None:
+        raise RuntimeError(f"LLM provider is unavailable for role={LLMRole.LOW_COST.value}")
+    return provider
+
+
+def _get_mcp_client():
+    from app.server import get_mcp_client
+
+    return get_mcp_client()
+
+
+async def _describe_tools() -> list[dict[str, Any]]:
+    client = _get_mcp_client()
+    if client is None:
+        return []
+
+    tools = await client.get_tools()
+    return [
+        {
+            "name": tool.name,
+            "description": tool.description or "",
+            "args_schema": _extract_tool_schema(tool),
+        }
+        for tool in tools
+    ]
+
+
+def _build_messages(
+    *,
+    prompt_input: str,
+    intent: dict[str, Any],
+    candidate_tools: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    return [
+        {
+            "role": "system",
+            "content": (
+                "你是 Room Agent 的工具选择节点。"
+                "你的职责只有一个：从候选 MCP 工具中挑选最适合当前请求的 0 到 3 个工具。如果用户提到了多个意图，你可以选择多个。按执行顺序或者相关程度排序。"
+                "如果没有任何合适工具，返回空数组。"
+                "只输出 JSON，不要输出额外解释。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": json.dumps(
+                {
+                    "task": (
+                        "请基于用户输入、已识别意图和候选工具，选择最合适的 0 到 3 个工具。"
+                        "输出 JSON，字段为 selected_tool_names(string[]) 和 comment(string)。"
+                    ),
+                    "user_input": prompt_input,
+                    "intent": intent,
+                    "candidate_tools": candidate_tools,
+                },
+                ensure_ascii=False,
+            ),
+        },
+    ]
+
+
+def _normalize_tool_name(name: str) -> str:
+    return name.strip().lower().replace(" ", "_").replace("-", "_")
+
+
+def _select_tools(
+    candidate_tools: list[dict[str, Any]],
+    selected_tool_names: list[str],
+) -> list[dict[str, Any]]:
+    tool_by_name = {_normalize_tool_name(tool["name"]): tool for tool in candidate_tools}
+    selected_tools: list[dict[str, Any]] = []
+    seen_names: set[str] = set()
+
+    for tool_name in selected_tool_names:
+        _normalized_selected_name = _normalize_tool_name(tool_name)
+
+        if _normalized_selected_name in seen_names:
+            continue
+        tool = tool_by_name.get(_normalized_selected_name)
+        if tool is None:
+            continue
+        selected_tools.append(tool)
+        seen_names.add(_normalized_selected_name)
+
+    # 提示词防止模型发狂, 实际上我们不写死上限
+    return selected_tools
+
+
+def _build_result(
+    candidate_tools: list[dict[str, Any]],
+    selected_tools: list[dict[str, Any]],
+    comment: str,
+) -> RoomAgentGraphState:
     return {
         "status": "completed",
         "next_action": "tool_selection",
-        "candidate_tools": state.get("candidate_tools", []),
-        "selected_tools": state.get("selected_tools", []),
+        "candidate_tools": candidate_tools,
+        "selected_tools": selected_tools,
         "execution_result": {
-            "type": "placeholder",
-            "message": "tool_selection node is not implemented yet",
-            "intent": state.get("intent", {}),
+            "type": "tool_selection",
+            "comment": comment,
+            "selected_count": len(selected_tools),
         },
     }
+
+
+def _log_zero_tool_selection(
+    prompt_input: str,
+    intent: dict[str, Any],
+    comment: str,
+) -> None:
+    print(
+        "[tool_selection] no tools selected "
+        f"intent={json.dumps(intent, ensure_ascii=False)} "
+        f"comment={comment} "
+        f"user_input={prompt_input}",
+        file=sys.stderr,
+    )
+
+
+def _get_prompt_input(state: RoomAgentGraphState) -> str:
+    return state.get("conversation_text", "").strip() or state.get("user_input", "").strip()
+
+
+def _extract_tool_schema(tool: BaseTool) -> dict[str, Any]:
+    get_input_schema = getattr(tool, "get_input_schema", None)
+    if callable(get_input_schema):
+        schema_model = get_input_schema()
+        model_json_schema = getattr(schema_model, "model_json_schema", None)
+        if callable(model_json_schema):
+            schema = model_json_schema()
+            return schema if isinstance(schema, dict) else {}
+
+    args_schema = getattr(tool, "args", {}) or {}
+    if args_schema:
+        return {
+            "type": "object",
+            "properties": args_schema,
+        }
+
+    return {}

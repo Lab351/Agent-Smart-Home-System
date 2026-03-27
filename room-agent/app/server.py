@@ -51,6 +51,7 @@ class MCPHealthStatus:
     server_name: str | None = None
     checked_at: str | None = None
     prompt_count: int | None = None
+    error_type: str | None = None
     error: str | None = None
 
 
@@ -121,6 +122,19 @@ def get_llm_provider_registry() -> LLMProviderRegistry:
     return _LLM_PROVIDER_REGISTRY
 
 
+def _describe_exception(exc: BaseException) -> tuple[str, str]:
+    """Format exception details for structured health-check logging."""
+    error_type = type(exc).__name__
+    message = f"{error_type}: {exc}"
+
+    if isinstance(exc, BaseExceptionGroup):
+        nested_messages = [_describe_exception(item)[1] for item in exc.exceptions]
+        if nested_messages:
+            message = f"{message} | nested=[{'; '.join(nested_messages)}]"
+
+    return error_type, message
+
+
 async def probe_home_assistant_mcp(
     client: MCPToolClient | None,
     settings: HomeAssistantMCPSettings | None,
@@ -146,7 +160,7 @@ async def probe_home_assistant_mcp(
         status.prompt_count = len(prompts) if prompts is not None else 0
         status.healthy = True
     except Exception as exc:
-        status.error = str(exc)
+        status.error_type, status.error = _describe_exception(exc)
     return status
 
 
@@ -191,11 +205,12 @@ class ServiceRuntime:
             ),
         )
         logger.info(
-            "Home Assistant MCP status enabled=%s healthy=%s server=%s prompt_count=%s error=%s",
+            "Home Assistant MCP status enabled=%s healthy=%s server=%s prompt_count=%s error_type=%s error=%s",
             _MCP_HEALTH_STATUS.enabled,
             _MCP_HEALTH_STATUS.healthy,
             _MCP_HEALTH_STATUS.server_name,
             _MCP_HEALTH_STATUS.prompt_count,
+            _MCP_HEALTH_STATUS.error_type,
             _MCP_HEALTH_STATUS.error,
         )
 

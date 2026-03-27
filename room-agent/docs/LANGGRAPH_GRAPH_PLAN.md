@@ -13,6 +13,7 @@
 - 已接好 `intent_recognition -> direct_response / tool_selection` 条件边
 - 已接入全局单例 LLM registry
 - 已接入共享 JSON 解析能力 `llm_json_parse.JsonParserWithRepair`
+- MCP 层当前仅保留 client 接入与启动期健康检查
 - 已有一组真实端点 smoke test
 
 当前未完成：
@@ -187,6 +188,7 @@ State 采用结构化定义，不使用松散字典作为长期方案。
 设计原因：
 
 - 刻意把“选什么工具”和“怎么调用工具”拆开，方便替换为本地推理模型实现。
+- 该节点直接消费薄 MCP client 暴露的工具信息，不依赖额外 service 层做业务判断。
 
 ### 5.4 `tool_call_planning`
 

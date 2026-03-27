@@ -96,7 +96,6 @@ class LLMSettings(BaseModel):
 
 class RuntimeSettings(BaseModel):
     room_agent_config_path: str
-    mcp_config_path: str | None = None
     log_level: str = "INFO"
 
 
@@ -198,7 +197,6 @@ def load_settings(
         llm=_load_llm_settings(Path(llm_config_path)),
         runtime=RuntimeSettings(
             room_agent_config_path=resolved_config_path,
-            mcp_config_path=runtime_data.get("mcp_config_path"),
             log_level=runtime_data.get("log_level", RuntimeSettings.model_fields["log_level"].default),
         ),
     )

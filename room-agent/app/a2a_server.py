@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
@@ -83,6 +84,12 @@ class RoomAgentExecutor(AgentExecutor):
                     "source": "a2a",
                 },
             }
+        )
+        logger.info(
+            "RoomAgent graph final state task_id=%s context_id=%s state=%s",
+            task_id,
+            context_id,
+            json.dumps(final_state, ensure_ascii=False, default=str),
         )
         execution_result = final_state.get("execution_result", {})
         message = execution_result.get("message")
