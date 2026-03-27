@@ -51,7 +51,7 @@ env UV_CACHE_DIR=/tmp/uv-cache ...
 
 - `llm.example.yaml` 里的 `api_key` 默认是空的
 - 如果 `low_cost` 角色没有可用凭证，graph 无法运行
-- `room_agent.example.yaml` 支持在 `agent.home_assistant_mcp` 下配置 Home Assistant 标准 MCP 端点
+- `room_agent.example.yaml` 支持在 `agent.home_assistant_mcp` 下配置 Home Assistant `base_url`，MCP client 会自动拼成 `{base_url}/api/mcp`
 - Home Assistant MCP 默认按 `streamable_http` transport 配置，启动时会做一次 prompts 探活；失败只记录状态，不会中断服务
 
 ## 运行单次集成测试 CLI

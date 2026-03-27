@@ -97,6 +97,20 @@ agent:
   version: "1.0.0"
 ```
 
+- Home Assistant MCP 配置块，当前输入使用 `base_url`，运行时会自动拼成 `{base_url}/api/mcp` 作为 MCP endpoint。
+
+```yaml
+agent:
+  home_assistant_mcp:
+    enabled: true
+    server_name: "home_assistant"
+    transport: "streamable_http"
+    base_url: "http://home-assistant.local:8123"
+    auth_token: "YOUR_HA_TOKEN"
+    health_check:
+      enabled: true
+```
+
 - beacon 配置块，当前主要用于声明房间与物理 Beacon 的绑定关系，以及生成 ESP32 固件参数。这一项同样和原协议保持一致。
 
 这个配置和服务 runtime 无关，只用来生成 beacon 固件代码。

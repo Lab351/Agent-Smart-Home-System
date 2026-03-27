@@ -37,7 +37,7 @@ def test_probe_home_assistant_mcp_marks_healthy_from_prompt_listing() -> None:
             HomeAssistantMCPSettings(
                 enabled=True,
                 server_name="home_assistant",
-                url="http://ha.local:8123/mcp",
+                base_url="http://ha.local:8123",
             ),
         )
     )
@@ -55,7 +55,7 @@ def test_probe_home_assistant_mcp_failure_does_not_raise() -> None:
             HomeAssistantMCPSettings(
                 enabled=True,
                 server_name="home_assistant",
-                url="http://ha.local:8123/mcp",
+                base_url="http://ha.local:8123",
             ),
         )
     )
@@ -74,7 +74,7 @@ def test_probe_home_assistant_mcp_expands_exception_group_details() -> None:
             HomeAssistantMCPSettings(
                 enabled=True,
                 server_name="home_assistant",
-                url="http://ha.local:8123/mcp",
+                base_url="http://ha.local:8123",
             ),
         )
     )
