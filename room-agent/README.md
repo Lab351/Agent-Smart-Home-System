@@ -128,24 +128,17 @@ uv run serve \
 
 ```bash
 cd room-agent
-.venv/bin/python ../scripts/a2a_debug_client.py --url http://127.0.0.1:10000 card
+uv run a2at --url http://127.0.0.1:10000 card
 ```
 
 ```bash
 cd room-agent
-.venv/bin/python ../scripts/a2a_debug_client.py --url http://127.0.0.1:10000 send "你好"
+uv run a2at --url http://127.0.0.1:10000 send "你好"
 ```
 
 ```bash
 cd room-agent
-.venv/bin/python ../scripts/a2a_debug_client.py --url http://127.0.0.1:10000 get-task <task_id>
-```
-
-如果你必须通过 `uv` 运行脚本：
-
-```bash
-cd room-agent
-env UV_CACHE_DIR=/tmp/uv-cache uv run python ../scripts/a2a_debug_client.py --url http://127.0.0.1:10000 card
+uv run a2at --url http://127.0.0.1:10000 get-task <task_id>
 ```
 
 ## 已知坑 / Troubleshooting
