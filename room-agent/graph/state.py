@@ -30,6 +30,7 @@ class RoomAgentGraphState(TypedDict, total=False):
     need_tool_call: bool
     candidate_tools: list[dict[str, Any]]
     selected_tools: list[dict[str, Any]]
+    tool_call_history: list[dict[str, Any]]
     plan: dict[str, Any]
     human_review: dict[str, Any]
     execution_args: dict[str, Any]

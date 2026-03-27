@@ -50,7 +50,7 @@ def build_home_assistant_mcp_client(
     server = {
         "id": settings.server_name,
         "transport": settings.transport,
-        "url": settings.url,
+        "url": settings.mcp_url,
         "headers": _build_auth_headers(settings.auth_token),
     }
     return LangChainMCPClient({settings.server_name: _normalize_connection(server)})

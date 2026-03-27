@@ -21,7 +21,7 @@ agent:
     enabled: true
     server_name: "home_assistant"
     transport: "streamable_http"
-    url: "http://ha.local:8123/mcp"
+    base_url: "http://ha.local:8123"
     auth_token: "secret-token"
     health_check:
       enabled: true
@@ -63,7 +63,8 @@ runtime:
     assert settings.agent.home_assistant_mcp.enabled is True
     assert settings.agent.home_assistant_mcp.server_name == "home_assistant"
     assert settings.agent.home_assistant_mcp.transport == "streamable_http"
-    assert settings.agent.home_assistant_mcp.url == "http://ha.local:8123/mcp"
+    assert settings.agent.home_assistant_mcp.base_url == "http://ha.local:8123"
+    assert settings.agent.home_assistant_mcp.mcp_url == "http://ha.local:8123/api/mcp"
     assert settings.agent.home_assistant_mcp.auth_token == "secret-token"
     assert settings.agent.home_assistant_mcp.health_check.enabled is True
     assert settings.runtime.room_agent_config_path == str(config_path)

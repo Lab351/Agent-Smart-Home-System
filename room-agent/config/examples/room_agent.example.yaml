@@ -9,7 +9,7 @@ agent:
     enabled: false
     server_name: "home_assistant"
     transport: "streamable_http"
-    url: "http://home-assistant.local:8123/mcp"
+    base_url: "http://home-assistant.local:8123"
     auth_token: "YOUR_HA_TOKEN"
     health_check:
       enabled: true
