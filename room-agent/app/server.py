@@ -101,13 +101,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--config-path",
         dest="config_path",
-        default=None,
+        required=True,
         help="Path to room-agent main config file.",
     )
     parser.add_argument(
         "--llm-config-path",
         dest="llm_config_path",
-        default=None,
+        required=True,
         help="Path to room-agent LLM config file.",
     )
     return parser.parse_args()
