@@ -269,8 +269,10 @@ def test_agent_execution_returns_structured_final_output(monkeypatch) -> None:
     assert result["execution_result"]["type"] == "agent_final_output"
     assert result["execution_result"]["message"] == "已为你生成结果"
     assert result["execution_result"]["tool_call_history"] == []
-    payload = json.loads(provider.calls[0]["messages"][1]["content"])
-    assert payload["available_tools"] == [{"name": "light_control", "description": "控制灯光"}]
+    assert "args_schema" in provider.calls[0]["messages"][0]["content"]
+    planner_context = provider.calls[0]["messages"][1]["content"]
+    assert "可用工具: - light_control: 控制灯光" in planner_context
+    assert "args_schema: {}" in planner_context
 
 
 def test_agent_execution_loops_reason_then_final_output(monkeypatch) -> None:
@@ -297,9 +299,9 @@ def test_agent_execution_loops_reason_then_final_output(monkeypatch) -> None:
     assert result["status"] == "completed"
     assert result["execution_result"]["message"] == "执行完成"
     assert len(provider.calls) == 2
-    second_payload = json.loads(provider.calls[1]["messages"][1]["content"])
-    assert second_payload["step_history"][0]["step_type"] == "reason"
-    assert second_payload["step_count"] == 1
+    second_context = provider.calls[1]["messages"][1]["content"]
+    assert "执行历史: [{'step_index': 1, 'step_type': 'reason', 'reason_summary': '先思考一下'}]" in second_context
+    assert "当前步数: 1 / 最多步数: 6" in second_context
 
 
 def test_agent_execution_fails_when_step_limit_is_exceeded(monkeypatch) -> None:
@@ -321,6 +323,7 @@ def test_agent_execution_fails_when_step_limit_is_exceeded(monkeypatch) -> None:
 
     assert result["status"] == "failed"
     assert result["execution_result"]["unfinished"] is True
+    assert result["execution_result"]["message"] == "任务暂时无法完成，请稍后重试。"
     assert result["error"]["type"] == "agent_step_limit_exceeded"
 
 
@@ -357,6 +360,7 @@ def test_agent_execution_records_toolcall_summary_without_raw_observation(monkey
     assert history_entry["tool_name"] == "light_control"
     assert "result_summary" in history_entry
     assert "observation" not in history_entry
+    assert '"entity_id"' in provider.calls[0]["messages"][1]["content"]
 
 
 def test_agent_execution_replans_once_after_tool_failure(monkeypatch) -> None:
@@ -388,5 +392,44 @@ def test_agent_execution_replans_once_after_tool_failure(monkeypatch) -> None:
 
     assert result["status"] == "failed"
     assert result["error"]["type"] == "tool_execution_error"
+    assert result["execution_result"]["message"] == "任务暂时无法完成，请稍后重试。"
+    assert "RuntimeError: ha failed" in result["error"]["message"]
     assert len(result["execution_result"]["tool_call_history"]) == 2
     assert tool.calls == [{"entity_id": "light.one"}, {"entity_id": "light.two"}]
+
+
+def test_agent_execution_dry_run_skips_real_tool_invocation(monkeypatch, caplog) -> None:
+    provider = SequenceProvider(
+        [
+            '{"step_type":"toolcall","is_done":false,"tool_name":"light_control","tool_args":{"entity_id":"light.bedroom"}}',
+            '{"step_type":"final_output","is_done":true,"final_output":{"message":"dry run done"}}',
+        ]
+    )
+    tool = FakeInvokableTool(
+        "light_control",
+        "控制灯光",
+        {"entity_id": {"type": "string"}},
+        result={"ok": True},
+    )
+    monkeypatch.setenv("RA_DRY_RUN", "1")
+    monkeypatch.setattr(agent_execution_module, "_get_powerful_provider", lambda: provider)
+    monkeypatch.setattr(agent_execution_module, "get_mcp_client", lambda: FakeMCPClient([tool]))
+
+    with caplog.at_level("INFO"):
+        result = asyncio.run(
+            agent_execution_function(
+                {
+                    "user_input": "帮我打开卧室灯",
+                    "conversation_text": "user: 帮我打开卧室灯",
+                    "intent": {"name": "device_control"},
+                    "selected_tools": [{"name": "light_control", "description": "控制灯光"}],
+                }
+            )
+        )
+
+    history_entry = result["execution_result"]["tool_call_history"][0]
+    assert result["status"] == "completed"
+    assert tool.calls == []
+    assert history_entry["tool_name"] == "light_control"
+    assert "RA_DRY_RUN enabled; skipped real MCP invocation." in history_entry["result_summary"]
+    assert "RA_DRY_RUN intercepted MCP tool call" in caplog.text

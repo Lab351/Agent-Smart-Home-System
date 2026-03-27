@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 from typing import Any
 
+from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
 
 from app.server import get_llm_provider_registry, get_mcp_client
@@ -15,7 +18,9 @@ from llm_json_parse import JsonParserWithRepair
 from .state import AgentExecutionState, FinalOutput, PlannerStep
 
 
+logger = logging.getLogger(__name__)
 DEFAULT_STEP_LIMIT = 6
+USER_VISIBLE_UNFINISHED_MESSAGE = "任务暂时无法完成，请稍后重试。"
 PLANNER_OUTPUT_SCHEMA = {
     "type": "object",
     "properties": {
@@ -199,6 +204,20 @@ async def agent_execute_toolcall(state: AgentExecutionState) -> AgentExecutionSt
     current_step = state.get("current_step", {})
     tool_name = str(current_step.get("tool_name", "")).strip()
     tool_args = current_step.get("tool_args", {}) or {}
+    if _is_dry_run_enabled():
+        observation = _build_dry_run_observation(tool_name=tool_name, tool_args=tool_args)
+        logger.info(
+            "RA_DRY_RUN intercepted MCP tool call tool=%s observation=%s",
+            tool_name,
+            json.dumps(observation, ensure_ascii=False, default=str),
+        )
+        return _build_tool_success_state(
+            state,
+            tool_name=tool_name,
+            tool_args=tool_args,
+            observation=observation,
+        )
+
     tool_instances = state.get("available_tool_instances", {})
     tool = tool_instances.get(tool_name)
     if tool is None:
@@ -221,33 +240,12 @@ async def agent_execute_toolcall(state: AgentExecutionState) -> AgentExecutionSt
             source_node="agent_execute_toolcall",
         )
 
-    tool_results = list(state.get("tool_results", []))
-    step_history = list(state.get("step_history", []))
-    result_summary = _summarize_value(observation)
-    tool_results.append(
-        {
-            "step_index": state.get("step_count", 0),
-            "tool_name": tool_name,
-            "tool_args": tool_args,
-            "observation": observation,
-            "args_summary": _summarize_value(tool_args),
-            "result_summary": result_summary,
-        }
+    return _build_tool_success_state(
+        state,
+        tool_name=tool_name,
+        tool_args=tool_args,
+        observation=observation,
     )
-    step_history.append(
-        {
-            "step_index": state.get("step_count", 0),
-            "step_type": "toolcall",
-            "tool_name": tool_name,
-            "args_summary": _summarize_value(tool_args),
-            "result_summary": result_summary,
-        }
-    )
-    return {
-        "tool_results": tool_results,
-        "step_history": step_history,
-        "loop_decision": "plan",
-    }
 
 
 def agent_finalize_output(state: AgentExecutionState) -> AgentExecutionState:
@@ -323,7 +321,7 @@ def subgraph_output_transform(state: AgentExecutionState) -> AgentExecutionState
         },
         "execution_result": {
             "type": "agent_execution_unfinished",
-            "message": error_message or "任务未完成。",
+            "message": USER_VISIBLE_UNFINISHED_MESSAGE,
             "tool_call_history": tool_call_history,
             "unfinished": True,
         },
@@ -404,37 +402,59 @@ def _validate_planner_step(step: PlannerStep) -> None:
     raise ValueError(f"Unsupported planner step_type={step_type!r}.")
 
 
+def _render_tool_list(tools: list[dict[str, Any]]) -> str:
+    if not tools:
+        return "(none)"
+
+    rendered_tools = []
+    for tool in tools:
+        rendered_tools.append(
+            "\n".join(
+                [
+                    f"- {tool.get('name', '<unknown>')}: {tool.get('description') or 'No description'}",
+                    f"  args_schema: {json.dumps(tool.get('args_schema', {}), ensure_ascii=False, sort_keys=True)}",
+                ]
+            )
+        )
+    return "\n".join(rendered_tools)
+
+
 def _build_planner_messages(state: AgentExecutionState) -> list[dict[str, str]]:
     return [
         {
             "role": "system",
             "content": (
-                "你是 Room Agent 的 agent planner。"
-                "你每轮只能输出一个 step。"
-                "合法 step_type 只有 reason、toolcall、final_output。"
-                "reason 只用于记录简短推理摘要，不执行工具，必须 is_done=false。"
-                "toolcall 只调用一个工具，必须提供 tool_name 和 tool_args，且 is_done=false。"
-                "final_output 是唯一正常完成信号，必须提供 final_output.message，且 is_done=true。"
-                "不要输出额外解释，只输出 JSON。"
+                "你是一个房间的智能管理助手。你的工作是管理房间的各种设备和事务，根据用户的需求进行推理和决策。\n"
+                "\n"
+                "**你每轮的任务很简单：决定下一步该做什么。** 你有三个选择：\n"
+                "\n"
+                "1. **思考与分析**：如果问题比较复杂，你可以先思考一下思路，理清思路后再执行动作。简洁地说出你的想法即可。\n"
+                "\n"
+                "2. **执行工具**：当你知道需要做什么时，就拿起一个可用的工具去执行。记住每次只能用一个工具。告诉系统工具的名称和所需参数。\n"
+                "   你必须严格参考每个工具给出的 args_schema 来构造 tool_args。"
+                "不要编造 schema 里没有的字段，字段名和结构必须与 schema 对齐。\n"
+                "\n"
+                "3. **给出最终答案**：当任务完成或问题解决了，就告诉用户结果。这是唯一一个真正结束对话的方式。\n"
+                "\n"
+                "**重要规则**: \n"
+                "• 你最多可以进行 6 个步骤。如果无法完成，就坦诚告诉用户。\n"
+                "• 思考和工具调用都会让步骤计数器增加，所以要高效地思考。\n"
+                "• 如果工具执行失败，你可以重新规划一次。再次失败的话就放弃吧。\n"
+                "\n"
+                "响应时准确描述你的行动就好了，系统会自动理解你的意图。"
             ),
         },
         {
             "role": "user",
-            "content": json.dumps(
-                {
-                    "task": "根据当前对话、工具上下文和执行历史，决定下一步单步行动。",
-                    "user_input": state.get("user_input", ""),
-                    "conversation_text": state.get("conversation_text", ""),
-                    "intent": state.get("intent", {}),
-                    "available_tools": state.get("available_tools", []),
-                    "step_count": state.get("step_count", 0),
-                    "step_limit": state.get("step_limit", DEFAULT_STEP_LIMIT),
-                    "step_history": state.get("step_history", []),
-                    "tool_results": state.get("tool_results", []),
-                    "replan_used": state.get("replan_used", False),
-                },
-                ensure_ascii=False,
-                default=str,
+            "content": (
+                f"用户的原始输入: {state.get('user_input', '')}\n"
+                f"对话上下文: {state.get('conversation_text', '')}\n"
+                f"识别的意图: {state.get('intent', {})}\n"
+                f"可用工具: {_render_tool_list(state.get('available_tools', []))}\n"
+                f"当前步数: {state.get('step_count', 0)} / 最多步数: {state.get('step_limit', DEFAULT_STEP_LIMIT)}\n"
+                f"执行历史: {state.get('step_history', [])}\n"
+                f"工具结果: {state.get('tool_results', [])}\n"
+                f"已重新规划: {state.get('replan_used', False)}"
             ),
         },
     ]
@@ -449,7 +469,7 @@ def _get_powerful_provider() -> Any:
 
 async def _load_selected_tools(
     selected_tools: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], dict[str, BaseTool]]:
     client = get_mcp_client()
     selected_names = {
         str(tool.get("name", "")).strip()
@@ -461,7 +481,7 @@ async def _load_selected_tools(
 
     tools = await client.get_tools()
     available_tools = []
-    tool_instances = {}
+    tool_instances: dict[str, BaseTool] = {}
     for tool in tools:
         if selected_names and tool.name not in selected_names:
             continue
@@ -476,10 +496,9 @@ async def _load_selected_tools(
     if available_tools:
         return available_tools, tool_instances
     return list(selected_tools), {}
-    return available_tools, tool_instances
 
 
-async def _invoke_tool(tool: Any, tool_args: dict[str, Any]) -> Any:
+async def _invoke_tool(tool: BaseTool, tool_args: dict[str, Any]) -> Any:
     if hasattr(tool, "ainvoke"):
         return await tool.ainvoke(tool_args)
     if hasattr(tool, "arun"):
@@ -491,7 +510,7 @@ async def _invoke_tool(tool: Any, tool_args: dict[str, Any]) -> Any:
     raise RuntimeError(f"Tool {getattr(tool, 'name', '<unknown>')} is not invokable.")
 
 
-def _extract_tool_schema(tool: Any) -> dict[str, Any]:
+def _extract_tool_schema(tool: BaseTool) -> dict[str, Any]:
     get_input_schema = getattr(tool, "get_input_schema", None)
     if callable(get_input_schema):
         schema_model = get_input_schema()
@@ -559,6 +578,42 @@ def _build_tool_failure_state(
     }
 
 
+def _build_tool_success_state(
+    state: AgentExecutionState,
+    *,
+    tool_name: str,
+    tool_args: dict[str, Any],
+    observation: Any,
+) -> AgentExecutionState:
+    tool_results = list(state.get("tool_results", []))
+    step_history = list(state.get("step_history", []))
+    result_summary = _summarize_value(observation)
+    tool_results.append(
+        {
+            "step_index": state.get("step_count", 0),
+            "tool_name": tool_name,
+            "tool_args": tool_args,
+            "observation": observation,
+            "args_summary": _summarize_value(tool_args),
+            "result_summary": result_summary,
+        }
+    )
+    step_history.append(
+        {
+            "step_index": state.get("step_count", 0),
+            "step_type": "toolcall",
+            "tool_name": tool_name,
+            "args_summary": _summarize_value(tool_args),
+            "result_summary": result_summary,
+        }
+    )
+    return {
+        "tool_results": tool_results,
+        "step_history": step_history,
+        "loop_decision": "plan",
+    }
+
+
 def _build_tool_call_history(tool_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     history = []
     for entry in tool_results:
@@ -587,3 +642,17 @@ def _summarize_value(value: Any, *, limit: int = 180) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 3] + "..."
+
+
+def _is_dry_run_enabled() -> bool:
+    value = os.getenv("RA_DRY_RUN", "").strip().lower()
+    return value not in {"", "0", "false", "no", "off"}
+
+
+def _build_dry_run_observation(*, tool_name: str, tool_args: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "dry_run": True,
+        "tool_name": tool_name,
+        "tool_args": tool_args,
+        "message": "RA_DRY_RUN enabled; skipped real MCP invocation.",
+    }
