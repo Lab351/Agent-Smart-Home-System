@@ -38,13 +38,20 @@ class HomeAssistantMCPSettings(BaseModel):
     enabled: bool = False
     server_name: str = "home_assistant"
     transport: Literal["streamable_http", "sse", "websocket"] = "streamable_http"
-    url: str = ""
+    base_url: str = ""
     auth_token: str = ""
     health_check: MCPHealthCheckSettings = Field(default_factory=MCPHealthCheckSettings)
 
     @property
     def is_configured(self) -> bool:
-        return bool(self.url.strip())
+        return bool(self.base_url.strip())
+
+    @property
+    def mcp_url(self) -> str:
+        base_url = self.base_url.strip().rstrip("/")
+        if not base_url:
+            return ""
+        return f"{base_url}/api/mcp"
 
 
 class LLMSamplingConfig(BaseModel):
