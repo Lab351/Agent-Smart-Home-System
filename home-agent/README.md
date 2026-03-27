@@ -314,11 +314,10 @@ Central Agent - 智能家居中央协调智能体
 
 ## 📚 相关文档
 
-- [Personal Agent 规格](../docs/agents/personal-agent.md)
-- [Room Agent 规格](../docs/agents/room-agent.md)
-- [Central Agent 规格](../docs/agents/central-agent.md)
-- [通信协议](../docs/communication.md)
-- [测试用例](../docs/TEST_CASES.md)
+- [系统架构](../docs/Architect.md)
+- [传输协议](../docs/Transport.md)
+- [使用手册](../docs/Usage.md)
+- [术语表](../docs/Glossary.md)
 
 ## 🤝 贡献
 

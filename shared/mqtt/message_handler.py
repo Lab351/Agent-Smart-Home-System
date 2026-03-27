@@ -6,7 +6,6 @@
 
 import json
 import uuid
-from datetime import datetime
 from typing import Dict, Any, Optional, Callable, Awaitable
 from pydantic import ValidationError
 
@@ -23,6 +22,7 @@ from shared.models.mqtt_messages import (
     ArbitrationResponseMessage,
     SystemEventMessage,
 )
+from shared.utils import utc_now_iso
 
 
 class MessageHandler:
@@ -93,7 +93,7 @@ class MessageHandler:
     
     def _get_timestamp(self) -> str:
         """获取 ISO 8601 格式的时间戳"""
-        return datetime.utcnow().isoformat() + "Z"
+        return utc_now_iso()
     
     async def send_control(
         self,

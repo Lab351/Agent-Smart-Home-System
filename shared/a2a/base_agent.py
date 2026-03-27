@@ -7,20 +7,14 @@
 import asyncio
 import time
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, List, Callable
+from typing import Any, Callable, Dict, Optional
 
 from shared.mqtt.client_manager import MqttClientManager
 from shared.mqtt.topic_manager import TopicManager, TopicType, AgentType
 from shared.mqtt.message_handler import MessageHandler
 from shared.mqtt.request_response import RequestResponseManager
 from shared.mqtt.event_dispatcher import EventDispatcher, Event
-from shared.models.mqtt_messages import (
-    ControlMessage,
-    StateMessage,
-    DescribeMessage,
-    DescriptionMessage,
-    HeartbeatMessage,
-)
+from shared.models.mqtt_messages import DescriptionMessage
 
 
 class BaseA2AAgent(ABC):
@@ -143,20 +137,20 @@ class BaseA2AAgent(ABC):
         if not connected:
             raise RuntimeError(f"Failed to connect to MQTT broker")
         
+        # 注册原始消息处理器
+        self._setup_message_handler()
+
         # 设置订阅
         await self._setup_subscriptions()
-        
-        # 注册消息处理器
-        self._setup_message_handlers()
-        
-        # 启动心跳
-        self._start_heartbeat()
-        
+
+        self._running = True
+        self._start_time = time.time()
+
         # 启动请求-响应管理器的清理任务
         await self.request_response_manager.start_cleanup_task()
         
-        self._running = True
-        self._start_time = time.time()
+        # 启动心跳
+        self._start_heartbeat()
         
         print(f"[{self.__class__.__name__}] Started successfully")
     
@@ -181,30 +175,9 @@ class BaseA2AAgent(ABC):
         
         print(f"[{self.__class__.__name__}] Stopped")
     
-    def _setup_message_handlers(self):
-        """设置消息处理器路由"""
-        # 注册 MqttClientManager 的消息回调
-        self.mqtt_client.register_handler("control", self._route_message)
-        self.mqtt_client.register_handler("state", self._route_message)
-        self.mqtt_client.register_handler("describe", self._route_message)
-        self.mqtt_client.register_handler("description", self._route_message)
-        self.mqtt_client.register_handler("heartbeat", self._route_message)
-        self.mqtt_client.register_handler("arbitration", self._route_message)
-        self.mqtt_client.register_handler("arbitration_response", self._route_message)
-        self.mqtt_client.register_handler("global_state", self._route_message)
-        self.mqtt_client.register_handler("policy", self._route_message)
-        self.mqtt_client.register_handler("events", self._route_message)
-    
-    async def _route_message(self, message_data: Dict[str, Any]):
-        """路由消息到处理器
-        
-        Args:
-            message_data: 消息数据
-        """
-        # 这个方法会在 MqttClientManager 的消息路由中被调用
-        # 但我们需要 topic 信息，所以我们需要修改 MqttClientManager 的实现
-        # 暂时留空，具体实现在子类中覆盖
-        pass
+    def _setup_message_handler(self):
+        """注册原始 MQTT 消息处理器。"""
+        self.mqtt_client.set_message_handler(self._handle_raw_message)
     
     async def _handle_raw_message(self, topic: str, payload: str):
         """处理原始 MQTT 消息
@@ -217,29 +190,45 @@ class BaseA2AAgent(ABC):
         message = self.message_handler.deserialize_message(topic, payload)
         
         if message:
+            topic_info = self.topic_manager.parse_topic(topic)
+
             # 检查是否是响应消息（需要匹配 correlation_id）
-            if hasattr(message, 'correlation_id') and message.correlation_id:
+            response_key = self._get_response_key(topic_info, message)
+            if response_key:
                 # 尝试匹配请求-响应
                 matched = self.request_response_manager.handle_response(
-                    message.correlation_id, 
+                    response_key,
                     message
                 )
                 
                 if matched:
                     # 已匹配到请求，不需要进一步处理
                     return
+
+            if topic_info and topic_info.topic_type == TopicType.ARBITRATION_RESPONSE:
+                print(
+                    f"[{self.__class__.__name__}] Ignoring unmatched arbitration "
+                    f"response: {response_key}"
+                )
+                return
             
             # 分发给具体的消息处理器
             await self._handle_message(topic, message)
             
             # 触发事件
-            topic_info = self.topic_manager.parse_topic(topic)
             if topic_info:
                 await self.event_dispatcher.emit(
                     event_type=topic_info.topic_type.value,
                     data=message,
                     source=self.agent_id
                 )
+
+    def _get_response_key(self, topic_info, message: Any) -> Optional[str]:
+        """根据消息语义提取请求-响应匹配键。"""
+        if topic_info and topic_info.topic_type == TopicType.ARBITRATION_RESPONSE:
+            return getattr(message, "request_id", None) or topic_info.correlation_id
+
+        return getattr(message, "correlation_id", None)
     
     async def _publish_message(self, topic: str, payload: str, qos: int):
         """发布消息（内部方法）
@@ -280,7 +269,7 @@ class BaseA2AAgent(ABC):
     
     async def _send_heartbeat(self):
         """发送心跳消息（由子类实现具体逻辑）"""
-        pass
+        return None
     
     def get_uptime(self) -> int:
         """获取运行时间（秒）
@@ -362,20 +351,27 @@ class BaseA2AAgent(ABC):
         
         # 发送请求并等待响应
         try:
-            response = await self.request_response_manager.send_request(
+            self.request_response_manager.create_request(
                 correlation_id=correlation_id,
-                publish_func=lambda topic, msg: self.message_handler.send_describe(
-                    room_id=room_id,
-                    target_agent_id=target_agent_id,
-                    query_type="capabilities",
-                    correlation_id=correlation_id
-                ),
-                topic=self.topic_manager.build_describe_topic(room_id, target_agent_id),
+                topic=response_topic,
                 message={"query_type": "capabilities"},
-                timeout=timeout
+                timeout=timeout,
             )
-            
-            return response
+
+            await self.message_handler.send_describe(
+                room_id=room_id,
+                target_agent_id=target_agent_id,
+                query_type="capabilities",
+                correlation_id=correlation_id
+            )
+
+            return await self.request_response_manager.wait_for_response(
+                correlation_id,
+                timeout=timeout,
+            )
+        except Exception:
+            self.request_response_manager.cancel_request(correlation_id, "Describe request failed")
+            raise
             
         finally:
             # 取消订阅

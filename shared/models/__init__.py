@@ -1,82 +1,27 @@
 # shared/models/__init__.py
-"""共享数据模型导出"""
+"""共享数据模型导出。
 
-# 新的统一A2A模型
+只导出没有歧义的顶层类型。运行时 MQTT 协议模型请显式从
+``shared.models.mqtt_messages`` 导入；A2A 扩展模型请显式从
+``shared.models.a2a_messages`` 导入。
+"""
+
 from shared.models.agent_card import (
     AgentCard,
-    AgentType,
     AgentSkill,
-    DeviceCapability,
+    AgentType,
     CommunicationConfig,
 )
-
-from shared.models.a2a_messages import (
-    A2AMessage,
-    A2ATask,
-    TaskState,
-    ControlMessage,
-    StateMessage,
-    DescriptionMessage,
-    HeartbeatMessage,
-    DeviceState,
-    SystemMetrics,
-    GlobalStateMessage,
-    PolicyUpdateMessage,
-    ArbitrationRequestMessage,
-    ArbitrationResponseMessage,
-    SystemEventMessage,
-)
-
-# 保留对旧mqtt_messages的兼容性导入
-from shared.models.mqtt_messages import (
-    ControlMessage as MqttControlMessage,
-    StateMessage as MqttStateMessage,
-    DescribeMessage,
-    DescriptionMessage as MqttDescriptionMessage,
-    HeartbeatMessage as MqttHeartbeatMessage,
-    DeviceState as MqttDeviceState,
-    DeviceCapability as MqttDeviceCapability,
-    SystemMetrics as MqttSystemMetrics,
-    GlobalStateMessage as MqttGlobalStateMessage,
-    PolicyUpdateMessage as MqttPolicyUpdateMessage,
-    ArbitrationRequestMessage as MqttArbitrationRequestMessage,
-    ArbitrationResponseMessage as MqttArbitrationResponseMessage,
-    SystemEventMessage as MqttSystemEventMessage,
-)
+from shared.models.a2a_messages import A2AMessage, A2ATask, TaskState
+from shared.models.mqtt_messages import DescribeMessage
 
 __all__ = [
-    # 新的A2A标准模型（推荐使用）
     "AgentCard",
     "AgentType",
     "AgentSkill",
-    "DeviceCapability",
     "CommunicationConfig",
     "A2AMessage",
     "A2ATask",
     "TaskState",
-    "ControlMessage",
-    "StateMessage",
-    "DescriptionMessage",
-    "HeartbeatMessage",
-    "DeviceState",
-    "SystemMetrics",
-    "GlobalStateMessage",
-    "PolicyUpdateMessage",
-    "ArbitrationRequestMessage",
-    "ArbitrationResponseMessage",
-    "SystemEventMessage",
-    # 旧模型（保持兼容性）
     "DescribeMessage",
-    "MqttControlMessage",
-    "MqttStateMessage",
-    "MqttDescriptionMessage",
-    "MqttHeartbeatMessage",
-    "MqttDeviceState",
-    "MqttDeviceCapability",
-    "MqttSystemMetrics",
-    "MqttGlobalStateMessage",
-    "MqttPolicyUpdateMessage",
-    "MqttArbitrationRequestMessage",
-    "MqttArbitrationResponseMessage",
-    "MqttSystemEventMessage",
 ]

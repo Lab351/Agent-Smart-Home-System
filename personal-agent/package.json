@@ -6,6 +6,7 @@
     "start": "hap server --watch",
     "server": "hap server",
     "build": "hap build",
+    "test": "node --test ../tests/node/*.mjs",
     "release": "hap release",
     "watch": "hap watch",
     "debug": "hap debug",

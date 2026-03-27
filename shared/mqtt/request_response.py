@@ -86,6 +86,60 @@ class RequestResponseManager:
             UUID 格式的 correlation ID
         """
         return str(uuid.uuid4())
+
+    def create_request(
+        self,
+        correlation_id: str,
+        topic: str,
+        message: Dict[str, Any],
+        timeout: Optional[float] = None,
+    ) -> PendingRequest:
+        """登记待处理请求，不负责发送消息。"""
+        timeout = timeout or self.default_timeout
+        future = asyncio.get_running_loop().create_future()
+
+        pending_request = PendingRequest(
+            correlation_id=correlation_id,
+            topic=topic,
+            message=message,
+            future=future,
+            created_at=time.time(),
+            timeout=timeout,
+        )
+        self.pending_requests[correlation_id] = pending_request
+        return pending_request
+
+    async def wait_for_response(
+        self,
+        correlation_id: str,
+        timeout: Optional[float] = None,
+    ) -> Any:
+        """等待已登记请求的响应。"""
+        pending_request = self.pending_requests.get(correlation_id)
+        if pending_request is None:
+            raise KeyError(f"Unknown pending request: {correlation_id}")
+
+        timeout = timeout or pending_request.timeout
+
+        try:
+            response = await asyncio.wait_for(pending_request.future, timeout=timeout)
+            pending_request.state = RequestState.COMPLETED
+            pending_request.response = response
+            return response
+        except asyncio.TimeoutError:
+            pending_request.state = RequestState.TIMEOUT
+            pending_request.error = asyncio.TimeoutError(
+                f"Request {correlation_id} timeout after {timeout}s"
+            )
+            print(f"[RequestResponseManager] Request {correlation_id} timeout")
+            raise
+        except Exception as e:
+            pending_request.state = RequestState.ERROR
+            pending_request.error = e
+            print(f"[RequestResponseManager] Request {correlation_id} error: {e}")
+            raise
+        finally:
+            self.pending_requests.pop(correlation_id, None)
     
     async def send_request(
         self,
@@ -114,23 +168,13 @@ class RequestResponseManager:
             Exception: 其他错误
         """
         timeout = timeout or self.default_timeout
-        
-        # 创建 Future
-        future = asyncio.Future()
-        
-        # 创建待处理请求记录
-        pending_request = PendingRequest(
+        pending_request = self.create_request(
             correlation_id=correlation_id,
             topic=topic,
             message=message,
-            future=future,
-            created_at=time.time(),
-            timeout=timeout
+            timeout=timeout,
         )
-        
-        # 存储请求
-        self.pending_requests[correlation_id] = pending_request
-        
+
         try:
             # 添加 correlation_id 到消息
             message["correlation_id"] = correlation_id
@@ -141,33 +185,12 @@ class RequestResponseManager:
             print(f"[RequestResponseManager] Sent request {correlation_id} to {topic}")
             
             # 等待响应
-            response = await asyncio.wait_for(future, timeout=timeout)
-            
-            # 更新状态
-            pending_request.state = RequestState.COMPLETED
-            pending_request.response = response
-            
-            return response
-            
-        except asyncio.TimeoutError:
-            # 超时
-            pending_request.state = RequestState.TIMEOUT
-            pending_request.error = asyncio.TimeoutError(
-                f"Request {correlation_id} timeout after {timeout}s"
-            )
-            print(f"[RequestResponseManager] Request {correlation_id} timeout")
+            return await self.wait_for_response(correlation_id, timeout=timeout)
+
+        except Exception:
+            if correlation_id in self.pending_requests:
+                pending_request.state = RequestState.ERROR
             raise
-            
-        except Exception as e:
-            # 错误
-            pending_request.state = RequestState.ERROR
-            pending_request.error = e
-            print(f"[RequestResponseManager] Request {correlation_id} error: {e}")
-            raise
-            
-        finally:
-            # 清理请求
-            self.pending_requests.pop(correlation_id, None)
     
     def handle_response(self, correlation_id: str, response: Any) -> bool:
         """处理响应

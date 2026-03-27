@@ -4,20 +4,19 @@
 Room Agent 的 Agent-to-Agent 通信实现
 """
 
+import asyncio
 import psutil
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List, Optional
 
 from shared.a2a.base_agent import BaseA2AAgent
 from shared.mqtt.topic_manager import AgentType, TopicType
 from shared.models.mqtt_messages import (
+    ArbitrationResponseMessage,
     ControlMessage,
-    StateMessage,
     DescribeMessage,
-    DescriptionMessage,
-    HeartbeatMessage,
     DeviceCapability,
     DeviceState,
-    ArbitrationRequestMessage,
+    PolicyUpdateMessage,
 )
 
 
@@ -168,7 +167,7 @@ class RoomAgentA2A(BaseA2AAgent):
         
         print(f"[RoomAgentA2A] Responded to describe request from {message.source_agent}")
     
-    async def _handle_policy_update(self, message):
+    async def _handle_policy_update(self, message: PolicyUpdateMessage):
         """处理策略更新
         
         Args:
@@ -184,7 +183,7 @@ class RoomAgentA2A(BaseA2AAgent):
         
         print(f"[RoomAgentA2A] Policy update: {message.policy_name}")
     
-    async def _handle_arbitration_response(self, message):
+    async def _handle_arbitration_response(self, message: ArbitrationResponseMessage):
         """处理仲裁响应
         
         Args:
@@ -201,15 +200,21 @@ class RoomAgentA2A(BaseA2AAgent):
         )
         
         print(f"[RoomAgentA2A] Arbitration response: {message.decision}")
+
+    def _collect_metrics(self) -> Dict[str, float]:
+        """在线程池中采集系统指标，避免阻塞事件循环。"""
+        return {
+            "cpu_usage": psutil.cpu_percent(interval=None),
+            "memory_usage": psutil.virtual_memory().percent,
+            "active_connections": 0,  # TODO: 实际连接数
+        }
     
     async def _send_heartbeat(self):
         """发送心跳消息"""
-        # 获取系统指标
-        metrics = {
-            "cpu_usage": psutil.cpu_percent(interval=1),
-            "memory_usage": psutil.virtual_memory().percent,
-            "active_connections": 0  # TODO: 实际连接数
-        }
+        metrics = await asyncio.get_running_loop().run_in_executor(
+            None,
+            self._collect_metrics,
+        )
         
         await self.message_handler.send_heartbeat(
             room_id=self.room_id,
@@ -283,7 +288,7 @@ class RoomAgentA2A(BaseA2AAgent):
         await self.message_handler.send_description(
             room_id=self.room_id,
             agent_id=self.agent_id,
-            devices=[device.model_dump() for device in self.devices],
+            devices=self.devices,
             capabilities=self.capabilities,
             correlation_id=correlation_id
         )
@@ -316,27 +321,32 @@ class RoomAgentA2A(BaseA2AAgent):
             ... )
         """
         correlation_id = self.request_response_manager.generate_correlation_id()
-        
-        # 发送仲裁请求
-        await self.message_handler.send_arbitration_request(
-            requesting_agent=self.agent_id,
-            conflict_type=conflict_type,
-            intent=intent,
-            conflicting_agents=conflicting_agents,
-            context=context,
-            correlation_id=correlation_id
-        )
-        
-        # 等待响应
-        response = await self.request_response_manager.send_request(
+        response_topic = f"home/arbitration/response/{correlation_id}"
+
+        self.request_response_manager.create_request(
             correlation_id=correlation_id,
-            publish_func=lambda topic, msg: None,  # 已发送
-            topic=f"home/arbitration/response/{correlation_id}",
-            message={},
-            timeout=timeout
+            topic=response_topic,
+            message={"conflict_type": conflict_type},
+            timeout=timeout,
         )
-        
-        return response
+
+        try:
+            await self.message_handler.send_arbitration_request(
+                requesting_agent=self.agent_id,
+                conflict_type=conflict_type,
+                intent=intent,
+                conflicting_agents=conflicting_agents,
+                context=context,
+                correlation_id=correlation_id
+            )
+
+            return await self.request_response_manager.wait_for_response(
+                correlation_id,
+                timeout=timeout,
+            )
+        except Exception:
+            self.request_response_manager.cancel_request(correlation_id, "Arbitration request failed")
+            raise
     
     # ==================== 事件便捷方法 ====================
     

@@ -89,10 +89,12 @@ export class DescribeMessage extends BaseMessage {
   /**
    * @param {string} sourceAgent - 查询方 Agent ID
    * @param {string} [queryType] - 查询类型
+   * @param {string|null} [correlationId] - 关联 ID
    */
-  constructor(sourceAgent, queryType = 'capabilities') {
+  constructor(sourceAgent, queryType = 'capabilities', correlationId = null) {
     super(sourceAgent)
     this.queryType = queryType
+    this.correlationId = correlationId
   }
 
   toJSON() {
@@ -100,6 +102,7 @@ export class DescribeMessage extends BaseMessage {
     return {
       ...base,
       query_type: this.queryType,
+      correlation_id: this.correlationId,
     }
   }
 }
@@ -117,13 +120,15 @@ export class ArbitrationRequestMessage extends BaseMessage {
    * @param {Object} intent - 用户意图
    * @param {Object} [context] - 上下文信息
    * @param {string[]} [conflictingAgents] - 冲突的 Agent 列表
+   * @param {string|null} [correlationId] - 关联 ID
    */
-  constructor(sourceAgent, conflictType, intent, context = {}, conflictingAgents = []) {
+  constructor(sourceAgent, conflictType, intent, context = {}, conflictingAgents = [], correlationId = null) {
     super(sourceAgent)
     this.conflictType = conflictType
     this.intent = intent
     this.context = context
     this.conflictingAgents = conflictingAgents
+    this.correlationId = correlationId
   }
 
   toJSON() {
@@ -135,6 +140,7 @@ export class ArbitrationRequestMessage extends BaseMessage {
       conflict_type: this.conflictType,
       intent: this.intent,
       context: this.context,
+      correlation_id: this.correlationId,
     }
   }
 }

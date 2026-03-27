@@ -4,15 +4,14 @@
 Personal Agent 的 Agent-to-Agent 通信实现
 """
 
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 from shared.a2a.base_agent import BaseA2AAgent
 from shared.mqtt.topic_manager import AgentType, TopicType
 from shared.models.mqtt_messages import (
-    ControlMessage,
-    StateMessage,
-    DescriptionMessage,
     ArbitrationResponseMessage,
+    DescriptionMessage,
+    StateMessage,
 )
 
 
@@ -192,6 +191,10 @@ class PersonalAgentA2A(BaseA2AAgent):
         )
         
         print(f"[PersonalAgentA2A] Arbitration response: {message.decision}")
+
+    async def _send_heartbeat(self):
+        """Personal Agent 当前不发布 MQTT 心跳。"""
+        return None
     
     # ==================== Personal Agent 特定方法 ====================
     

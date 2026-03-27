@@ -68,7 +68,9 @@ import config from '../../config/agent.config'
 
 const mqttService = new MqttService()
 const beaconService = new BeaconService()
-const controlService = new ControlService(mqttService)
+const controlService = new ControlService(mqttService, {
+  personalAgentId: `watch-${config.agent.userId}`
+})
 const discoveryService = new DiscoveryService(mqttService)
 
 export default {

@@ -7,8 +7,7 @@
 
 import asyncio
 import json
-from typing import Dict, Any, Optional, Callable
-from datetime import datetime
+from typing import Callable, Dict, Optional, Union
 
 import paho.mqtt.client as mqtt
 
@@ -52,9 +51,13 @@ class MqttClientManager:
         # Paho MQTT客户端
         self.client = None
         self._connected = False
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
-        # 消息处理器注册表
-        self.message_handlers: Dict[str, Callable] = {}
+        # 原始消息回调：handler(topic, payload)
+        self.message_handler: Optional[Callable[[str, str], asyncio.Future]] = None
+
+        # 已注册的订阅，用于重连后自动恢复
+        self._subscriptions: Dict[str, int] = {}
 
         # 重连配置
         self._should_reconnect = True
@@ -69,8 +72,7 @@ class MqttClientManager:
 
         print(f"[MqttClientManager] Connected to {self.broker_host}:{self.broker_port}")
 
-        # 订阅默认topics（由子类实现）
-        self._subscribe_to_topics()
+        self._resubscribe_to_topics()
 
     def _on_disconnect(self, *args):
         """MQTT断开回调"""
@@ -81,7 +83,7 @@ class MqttClientManager:
         # 如果需要重连
         if self._should_reconnect and reason_code != 0:
             print(f"[MqttClientManager] Scheduling reconnect in {self._reconnect_delay}s...")
-            asyncio.create_task(self._reconnect())
+            self._schedule_coroutine(self._reconnect())
 
     def _on_message(self, client, userdata, msg):
         """MQTT消息接收回调"""
@@ -91,45 +93,38 @@ class MqttClientManager:
 
             print(f"[MqttClientManager] Received message on {topic}")
 
-            # 路由到对应的处理器
-            asyncio.create_task(self._route_message(topic, payload))
+            self._schedule_coroutine(self._dispatch_message(topic, payload))
 
         except Exception as e:
             print(f"[MqttClientManager] Error processing message: {e}")
 
-    def _subscribe_to_topics(self):
-        """订阅相关的topics（子类覆盖）"""
-        pass
+    def _schedule_coroutine(self, coroutine):
+        """在线程安全的前提下调度协程到主事件循环。"""
+        if self._loop is None or self._loop.is_closed():
+            print("[MqttClientManager] Event loop unavailable, dropping scheduled task")
+            return
 
-    async def _route_message(self, topic: str, payload: str):
-        """路由消息到对应的处理器
+        asyncio.run_coroutine_threadsafe(coroutine, self._loop)
 
-        Args:
-            topic: 消息topic
-            payload: 消息内容（JSON字符串）
-        """
+    def _resubscribe_to_topics(self):
+        """重连成功后恢复全部订阅。"""
+        if not self.client or not self._connected:
+            return
+
+        for topic, qos in self._subscriptions.items():
+            self.client.subscribe(topic, qos=qos)
+            print(f"[MqttClientManager] Resubscribed to {topic} (QoS {qos})")
+
+    async def _dispatch_message(self, topic: str, payload: str):
+        """将原始 MQTT 消息转发给上层处理器。"""
+        if self.message_handler is None:
+            print(f"[MqttClientManager] No message handler registered for {topic}")
+            return
+
         try:
-            # 解析topic类型
-            topic_parts = topic.split('/')
-            if len(topic_parts) < 2:
-                print(f"[MqttClientManager] Invalid topic format: {topic}")
-                return
-
-            # 最后一个部分通常是消息类型
-            topic_type = topic_parts[-1]  # control, state, describe, etc.
-
-            # 解析JSON payload
-            message_data = json.loads(payload)
-
-            # 路由到处理器
-            handler = self.message_handlers.get(topic_type)
-            if handler:
-                await handler(message_data)
-            else:
-                print(f"[MqttClientManager] No handler for topic type: {topic_type}")
-
+            await self.message_handler(topic, payload)
         except Exception as e:
-            print(f"[MqttClientManager] Error routing message: {e}")
+            print(f"[MqttClientManager] Error dispatching message: {e}")
 
     async def connect(self) -> bool:
         """连接到MQTT Broker
@@ -138,6 +133,8 @@ class MqttClientManager:
             bool: 是否成功连接
         """
         try:
+            self._loop = asyncio.get_running_loop()
+
             # 创建MQTT客户端
             self.client = mqtt.Client(
                 client_id=self.agent_id,
@@ -187,6 +184,7 @@ class MqttClientManager:
             self.client.disconnect()
 
         self._connected = False
+        self._loop = None
         print("[MqttClientManager] Disconnected")
 
     async def _reconnect(self):
@@ -205,7 +203,7 @@ class MqttClientManager:
                 self._reconnect_delay = min(self._reconnect_delay * 2, 60)
                 print(f"[MqttClientManager] Reconnect failed, retrying in {self._reconnect_delay}s")
 
-    async def publish(self, topic: str, payload: str | dict, qos: int = 0):
+    async def publish(self, topic: str, payload: Union[str, dict], qos: int = 0):
         """发布消息
 
         Args:
@@ -232,6 +230,8 @@ class MqttClientManager:
             topic: 订阅的topic
             qos: QoS等级
         """
+        self._subscriptions[topic] = qos
+
         try:
             if self.client and self._connected:
                 self.client.subscribe(topic, qos=qos)
@@ -239,15 +239,15 @@ class MqttClientManager:
         except Exception as e:
             print(f"[MqttClientManager] Failed to subscribe: {e}")
 
-    def register_handler(self, message_type: str, handler: Callable):
-        """注册消息处理器
+    def set_message_handler(self, handler: Callable[[str, str], asyncio.Future]):
+        """注册原始 MQTT 消息处理器。"""
+        self.message_handler = handler
+        print("[MqttClientManager] Registered raw message handler")
 
-        Args:
-            message_type: 消息类型（control, state, describe等）
-            handler: 处理器函数（async）
-        """
-        self.message_handlers[message_type] = handler
-        print(f"[MqttClientManager] Registered handler for '{message_type}'")
+    def register_handler(self, message_type: str, handler: Callable[[str, str], asyncio.Future]):
+        """兼容旧接口，统一注册为原始消息处理器。"""
+        _ = message_type
+        self.set_message_handler(handler)
 
     @property
     def is_connected(self) -> bool:

@@ -1,5 +1,5 @@
 # Room Agent配置文件
-# 3.18 对齐示例
+# 配置字段与根目录 docs/Architect.md、docs/Transport.md 保持一致
 
 agent:
   id: "room-agent-1"
