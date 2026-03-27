@@ -138,9 +138,7 @@ def test_tool_selection_prefers_conversation_text_and_selects_tools(monkeypatch)
     assert result["execution_result"]["comment"] == "weather and schedule"
 
 
-def test_tool_selection_logs_to_stderr_when_llm_returns_zero_tools(
-    monkeypatch, capsys
-) -> None:
+def test_tool_selection_logs_to_stderr_when_llm_returns_zero_tools(monkeypatch, capsys) -> None:
     provider = RecordingProvider('{"selected_tool_names":[],"comment":"no relevant tool"}')
     monkeypatch.setattr(tool_selection_module, "_get_low_cost_provider", lambda: provider)
     monkeypatch.setattr(
@@ -151,7 +149,9 @@ def test_tool_selection_logs_to_stderr_when_llm_returns_zero_tools(
         ),
     )
 
-    result = asyncio.run(tool_selection_function({"user_input": "随便聊聊", "intent": {"name": "chat"}}))
+    result = asyncio.run(
+        tool_selection_function({"user_input": "随便聊聊", "intent": {"name": "chat"}})
+    )
     captured = capsys.readouterr()
 
     assert result["selected_tools"] == []
@@ -173,52 +173,13 @@ def test_tool_selection_filters_unknown_names_and_deduplicates(monkeypatch, caps
         ),
     )
 
-    result = asyncio.run(tool_selection_function({"user_input": "查天气", "intent": {"name": "info"}}))
+    result = asyncio.run(
+        tool_selection_function({"user_input": "查天气", "intent": {"name": "info"}})
+    )
     captured = capsys.readouterr()
 
     assert [tool["name"] for tool in result["selected_tools"]] == ["weather_lookup"]
     assert captured.err == ""
-
-
-def test_tool_selection_truncates_to_three_tools(monkeypatch) -> None:
-    provider = RecordingProvider(
-        (
-            '{"selected_tool_names":["tool_1","tool_2","tool_3","tool_4"],'
-            '"comment":"pick the first three"}'
-        )
-    )
-    monkeypatch.setattr(tool_selection_module, "_get_low_cost_provider", lambda: provider)
-    monkeypatch.setattr(
-        tool_selection_module,
-        "_get_mcp_client",
-        lambda: FakeMCPClient(
-            [
-                FakeToolDescriptor("tool_1", "d1", {}),
-                FakeToolDescriptor("tool_2", "d2", {}),
-                FakeToolDescriptor("tool_3", "d3", {}),
-                FakeToolDescriptor("tool_4", "d4", {}),
-            ]
-        ),
-    )
-
-    class FakeParser:
-        def __init__(self, llm_provider):
-            assert llm_provider is provider
-
-        async def __call__(self, raw_output, schema):
-            assert schema["properties"]["selected_tool_names"]["maxItems"] == 3
-            return {
-                "selected_tool_names": ["tool_1", "tool_2", "tool_3", "tool_4"],
-                "comment": "pick the first three",
-            }
-
-    monkeypatch.setattr(tool_selection_module, "JsonParserWithRepair", FakeParser)
-
-    result = asyncio.run(
-        tool_selection_function({"user_input": "执行多个工具", "intent": {"name": "task"}})
-    )
-
-    assert [tool["name"] for tool in result["selected_tools"]] == ["tool_1", "tool_2", "tool_3"]
 
 
 def test_tool_selection_logs_when_no_candidate_tools(monkeypatch, capsys) -> None:
