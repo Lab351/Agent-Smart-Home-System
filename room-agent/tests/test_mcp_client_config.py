@@ -8,7 +8,7 @@ from integrations.mcp_client import LangChainMCPClient, build_home_assistant_mcp
 
 
 def test_build_home_assistant_mcp_client_returns_none_when_disabled() -> None:
-    settings = HomeAssistantMCPSettings(enabled=False, url="http://ha.local:8123/mcp")
+    settings = HomeAssistantMCPSettings(enabled=False, base_url="http://ha.local:8123")
 
     client = build_home_assistant_mcp_client(settings)
 
@@ -20,7 +20,7 @@ def test_build_home_assistant_mcp_client_uses_streamable_http_and_bearer_token()
         enabled=True,
         server_name="home_assistant",
         transport="streamable_http",
-        url="http://ha.local:8123/mcp",
+        base_url="http://ha.local:8123",
         auth_token="secret-token",
     )
 
@@ -29,8 +29,23 @@ def test_build_home_assistant_mcp_client_uses_streamable_http_and_bearer_token()
     assert isinstance(client, LangChainMCPClient)
     connection = client._client.connections["home_assistant"]
     assert connection["transport"] == "streamable_http"
-    assert connection["url"] == "http://ha.local:8123/mcp"
+    assert connection["url"] == "http://ha.local:8123/api/mcp"
     assert connection["headers"] == {"Authorization": "Bearer secret-token"}
+
+
+def test_build_home_assistant_mcp_client_normalizes_trailing_slash() -> None:
+    settings = HomeAssistantMCPSettings(
+        enabled=True,
+        server_name="home_assistant",
+        transport="streamable_http",
+        base_url="http://ha.local:8123/",
+    )
+
+    client = build_home_assistant_mcp_client(settings)
+
+    assert isinstance(client, LangChainMCPClient)
+    connection = client._client.connections["home_assistant"]
+    assert connection["url"] == "http://ha.local:8123/api/mcp"
 
 
 def test_home_assistant_mcp_settings_reject_stdio_transport() -> None:
@@ -38,5 +53,5 @@ def test_home_assistant_mcp_settings_reject_stdio_transport() -> None:
         HomeAssistantMCPSettings(
             enabled=True,
             transport="stdio",
-            url="http://ha.local:8123/mcp",
+            base_url="http://ha.local:8123",
         )
