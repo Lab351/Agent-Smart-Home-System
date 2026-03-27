@@ -4,18 +4,9 @@
 
 ## 当前能力
 
-当前最小流程如下：
-
-- `intent_recognition`
-- `direct_response`
-- `tool_selection`（占位）
-
-其中：
-
-- `intent_recognition` 使用低成本模型判断是否需要工具调用
-- `direct_response` 在不需要工具时直接生成一条自然语言回复
-- `tool_selection` 当前还是占位节点
-- MCP 层当前只保留 client 接入与启动期健康检查，不再承载工具选择、参数构造或执行编排
+- A2A + LangChain 链路基本完整
+- Backend 注册未实现
+- 事件发送未实现
 
 ## 依赖安装
 
@@ -159,15 +150,3 @@ LLM 节点开发规范见：
 
 - LLM 只能通过服务启动时创建的全局单例 registry 获取
 - 结构化输出解析统一复用 `llm_json_parse.JsonParserWithRepair`
-
-## 现状说明
-
-当前仓库状态适合继续做以下开发：
-
-- 完善 `tool_selection`
-- 增加 tool call planning
-- 接入人审占位节点
-- 完善真实工具执行路径
-- 在 graph 节点里实现工具选择、参数构造和执行编排，而不是回填到 MCP service
-
-不建议再参考旧版 room-agent 的历史业务结构，新的 graph 方案已经作为后续实现基线。
