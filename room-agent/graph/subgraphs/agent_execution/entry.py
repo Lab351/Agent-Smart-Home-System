@@ -20,7 +20,7 @@ from .state import AgentExecutionState, FinalOutput, PlannerStep
 
 logger = logging.getLogger(__name__)
 DEFAULT_STEP_LIMIT = 6
-USER_VISIBLE_UNFINISHED_MESSAGE = "任务暂时无法完成，请稍后重试。"
+USER_VISIBLE_UNFINISHED_MESSAGE = "任务暂时无法完成, 请稍后重试。"
 PLANNER_OUTPUT_SCHEMA = {
     "type": "object",
     "properties": {
@@ -424,24 +424,29 @@ def _build_planner_messages(state: AgentExecutionState) -> list[dict[str, str]]:
         {
             "role": "system",
             "content": (
-                "你是一个房间的智能管理助手。你的工作是管理房间的各种设备和事务，根据用户的需求进行推理和决策。\n"
+                "你是一个房间的智能管理助手。你的工作是管理房间的各种设备和事务, 根据用户的需求进行推理和决策。\n"
                 "\n"
                 "**你每轮的任务很简单：决定下一步该做什么。** 你有三个选择：\n"
                 "\n"
-                "1. **思考与分析**：如果问题比较复杂，你可以先思考一下思路，理清思路后再执行动作。简洁地说出你的想法即可。\n"
+                "1. **思考与分析**：如果问题比较复杂, 你可以先思考一下思路, 理清思路后再执行动作。简洁地说出你的想法即可。\n"
                 "\n"
-                "2. **执行工具**：当你知道需要做什么时，就拿起一个可用的工具去执行。记住每次只能用一个工具。告诉系统工具的名称和所需参数。\n"
+                "2. **执行工具**：当你知道需要做什么时, 就拿起一个可用的工具去执行。记住每次只能用一个工具。告诉系统工具的名称和所需参数。\n"
                 "   你必须严格参考每个工具给出的 args_schema 来构造 tool_args。"
-                "不要编造 schema 里没有的字段，字段名和结构必须与 schema 对齐。\n"
+                "不要编造 schema 里没有的字段, 字段名和结构必须与 schema 对齐。\n"
                 "\n"
-                "3. **给出最终答案**：当任务完成或问题解决了，就告诉用户结果。这是唯一一个真正结束对话的方式。\n"
+                "3. **给出最终答案**：当任务完成或问题解决了, 就告诉用户结果。这是唯一一个真正结束对话的方式。\n"
                 "\n"
                 "**重要规则**: \n"
-                "• 你最多可以进行 6 个步骤。如果无法完成，就坦诚告诉用户。\n"
-                "• 思考和工具调用都会让步骤计数器增加，所以要高效地思考。\n"
-                "• 如果工具执行失败，你可以重新规划一次。再次失败的话就放弃吧。\n"
+                "• 你最多可以进行 6 个步骤。如果无法完成, 就坦诚告诉用户。\n"
+                "• 思考和工具调用都会让步骤计数器增加, 所以要高效地思考。\n"
+                "• 如果工具执行失败, 你可以重新规划一次。再次失败的话就放弃吧。\n"
+                "• 你必须只输出一个 JSON 对象, 不要输出额外解释、Markdown 或自然语言前后缀。\n"
+                "• JSON 字段必须与系统要求一致：step_type、is_done, 以及按需提供 reason_summary、tool_name、tool_args、final_output。\n"
                 "\n"
-                "响应时准确描述你的行动就好了，系统会自动理解你的意图。"
+                "输出要求示例：\n"
+                "{\"step_type\":\"reason\",\"is_done\":false,\"reason_summary\":\"先确认当前状态\"}\n"
+                "{\"step_type\":\"toolcall\",\"is_done\":false,\"tool_name\":\"climate_get_state\",\"tool_args\":{\"entity_id\":\"climate.lab\"}}\n"
+                "{\"step_type\":\"final_output\",\"is_done\":true,\"final_output\":{\"message\":\"实验室空调当前正在运行\"}}"
             ),
         },
         {
@@ -454,7 +459,8 @@ def _build_planner_messages(state: AgentExecutionState) -> list[dict[str, str]]:
                 f"当前步数: {state.get('step_count', 0)} / 最多步数: {state.get('step_limit', DEFAULT_STEP_LIMIT)}\n"
                 f"执行历史: {state.get('step_history', [])}\n"
                 f"工具结果: {state.get('tool_results', [])}\n"
-                f"已重新规划: {state.get('replan_used', False)}"
+                f"已重新规划: {state.get('replan_used', False)}\n"
+                "请只返回一个 JSON 对象。"
             ),
         },
     ]
