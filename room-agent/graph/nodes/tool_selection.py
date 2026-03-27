@@ -18,7 +18,6 @@ TOOL_SELECTION_OUTPUT_SCHEMA = {
         "selected_tool_names": {
             "type": "array",
             "items": {"type": "string", "minLength": 1},
-            "maxItems": 3,
         },
         "comment": {"type": "string"},
     },
@@ -106,7 +105,7 @@ def _build_messages(
             "role": "system",
             "content": (
                 "你是 Room Agent 的工具选择节点。"
-                "你的职责只有一个：从候选 MCP 工具中挑选最适合当前请求的 0 到 3 个工具。"
+                "你的职责只有一个：从候选 MCP 工具中挑选最适合当前请求的 0 到 3 个工具。如果用户提到了多个意图，你可以选择多个。按执行顺序或者相关程度排序。"
                 "如果没有任何合适工具，返回空数组。"
                 "只输出 JSON，不要输出额外解释。"
             ),
@@ -129,25 +128,30 @@ def _build_messages(
     ]
 
 
+def _normalize_tool_name(name: str) -> str:
+    return name.strip().lower().replace(" ", "_").replace("-", "_")
+
+
 def _select_tools(
     candidate_tools: list[dict[str, Any]],
     selected_tool_names: list[str],
 ) -> list[dict[str, Any]]:
-    tool_by_name = {tool["name"]: tool for tool in candidate_tools}
+    tool_by_name = {_normalize_tool_name(tool["name"]): tool for tool in candidate_tools}
     selected_tools: list[dict[str, Any]] = []
     seen_names: set[str] = set()
 
     for tool_name in selected_tool_names:
-        if tool_name in seen_names:
+        _normalized_selected_name = _normalize_tool_name(tool_name)
+
+        if _normalized_selected_name in seen_names:
             continue
-        tool = tool_by_name.get(tool_name)
+        tool = tool_by_name.get(_normalized_selected_name)
         if tool is None:
             continue
         selected_tools.append(tool)
-        seen_names.add(tool_name)
-        if len(selected_tools) == 3:
-            break
+        seen_names.add(_normalized_selected_name)
 
+    # 提示词防止模型发狂, 实际上我们不写死上限
     return selected_tools
 
 
@@ -193,7 +197,8 @@ def _extract_tool_schema(tool: BaseTool) -> dict[str, Any]:
         schema_model = get_input_schema()
         model_json_schema = getattr(schema_model, "model_json_schema", None)
         if callable(model_json_schema):
-            return model_json_schema() or {}
+            schema = model_json_schema()
+            return schema if isinstance(schema, dict) else {}
 
     args_schema = getattr(tool, "args", {}) or {}
     if args_schema:
