@@ -13,11 +13,13 @@ if __package__ in {None, ""}:
     sys.path.append(str(Path(__file__).resolve().parent))
     from nodes import direct_response, intent_recognition, tool_selection
     from nodes.intent_recognition import route_after_intent
+    from subgraphs.agent_execution import agent_execution
     from state import RoomAgentGraphState
 else:
     from .nodes import direct_response, intent_recognition, tool_selection
     from .nodes.intent_recognition import route_after_intent
     from .state import RoomAgentGraphState
+    from .subgraphs.agent_execution import agent_execution
 
 
 def initialize_request(state: RoomAgentGraphState) -> RoomAgentGraphState:
@@ -32,6 +34,7 @@ def initialize_request(state: RoomAgentGraphState) -> RoomAgentGraphState:
         "conversation_text": conversation_text,
         "candidate_tools": state.get("candidate_tools", []),
         "selected_tools": state.get("selected_tools", []),
+        "tool_call_history": state.get("tool_call_history", []),
         "artifacts": state.get("artifacts", {}),
         "metadata": metadata,
         "status": "initialized",
@@ -44,6 +47,7 @@ def build_graph() -> StateGraph:
     graph.add_node("initialize_request", initialize_request)
     graph.add_node("intent_recognition", intent_recognition)
     graph.add_node("direct_response", direct_response)
+    graph.add_node("agent_execution", agent_execution)
     graph.add_node("tool_selection", tool_selection)
     graph.add_edge(START, "initialize_request")
     graph.add_edge("initialize_request", "intent_recognition")
@@ -56,7 +60,8 @@ def build_graph() -> StateGraph:
         },
     )
     graph.add_edge("direct_response", END)
-    graph.add_edge("tool_selection", END)
+    graph.add_edge("tool_selection", "agent_execution")
+    graph.add_edge("agent_execution", END)
     return graph
 
 

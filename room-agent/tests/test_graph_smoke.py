@@ -63,6 +63,5 @@ def test_graph_routes_tool_request_to_tool_selection():
     final_state = _invoke_graph_or_skip("帮我打开卧室的灯")
 
     assert final_state["need_tool_call"] is True
-    assert final_state["next_action"] == "tool_selection"
-    assert final_state["execution_result"]["type"] == "tool_selection"
-    assert "comment" in final_state["execution_result"]
+    assert final_state["next_action"] == "agent_execution"
+    assert "message" in final_state["execution_result"]

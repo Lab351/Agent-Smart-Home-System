@@ -79,6 +79,38 @@ def test_invoke_roomagent_entrypoint_falls_back_when_graph_message_missing(
     assert '"type": "placeholder"' in logger.info.call_args.args[3]
 
 
+def test_invoke_roomagent_entrypoint_returns_sanitized_graph_message(monkeypatch) -> None:
+    executor = RoomAgentExecutor()
+
+    class FakeGraph:
+        async def ainvoke(self, payload):
+            assert payload["conversation_text"] == "user: 帮我开灯"
+            return {
+                "error": {
+                    "type": "tool_execution_error",
+                    "message": "PermissionError: 401 Unauthorized for home_assistant",
+                },
+                "execution_result": {
+                    "type": "agent_execution_unfinished",
+                    "message": "任务暂时无法完成，请稍后重试。",
+                    "unfinished": True,
+                },
+            }
+
+    monkeypatch.setattr("app.a2a_server._compile_graph", lambda: FakeGraph())
+
+    result = asyncio.run(
+        executor.invoke_roomagent_entrypoint(
+            user_input="帮我开灯",
+            context_id="ctx-1",
+            task_id="task-1",
+            conversation_text="user: 帮我开灯",
+        )
+    )
+
+    assert result == "任务暂时无法完成，请稍后重试。"
+
+
 def test_execute_enqueues_artifact_for_new_task(monkeypatch) -> None:
     executor = RoomAgentExecutor()
     request_message = _message("你好", role=Role.user)
