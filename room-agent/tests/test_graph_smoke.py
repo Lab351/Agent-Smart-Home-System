@@ -161,6 +161,16 @@ def build_light_control_tool(calls: list[str]) -> BaseTool:
     return light_control
 
 
+def build_failing_light_control_tool(calls: list[str]) -> BaseTool:
+    @tool
+    async def light_control(entity_id: str) -> str:
+        """Control the bedroom light."""
+        calls.append(entity_id)
+        raise RuntimeError("ha failed")
+
+    return light_control
+
+
 def _initialize_fake_runtime(
     *,
     need_tool_call: bool,
@@ -205,3 +215,22 @@ def test_graph_smoke_executes_tool_call_with_toolnode() -> None:
     assert tool_calls == ["light.bedroom"]
     assert final_state["tool_call_history"][0]["tool_name"] == "light_control"
     assert "light.bedroom" in final_state["tool_call_history"][0]["result_summary"]
+
+
+def test_graph_smoke_returns_structured_failure_when_tool_raises() -> None:
+    tool_calls: list[str] = []
+    light_tool = build_failing_light_control_tool(tool_calls)
+    _initialize_fake_runtime(need_tool_call=True, tools=[light_tool], final_message="不应到达")
+
+    final_state = asyncio.run(compile_graph().ainvoke({"user_input": "帮我打开卧室灯"}))
+
+    assert final_state["need_tool_call"] is True
+    assert final_state["next_action"] == "agent_execution"
+    assert final_state["status"] == "failed"
+    assert final_state["error"]["type"] == "tool_execution_error"
+    assert "RuntimeError: ha failed" in final_state["error"]["message"]
+    assert final_state["execution_result"]["type"] == "agent_execution_unfinished"
+    assert final_state["execution_result"]["unfinished"] is True
+    assert tool_calls == ["light.bedroom"]
+    assert final_state["tool_call_history"][0]["tool_name"] == "light_control"
+    assert "RuntimeError: ha failed" in final_state["tool_call_history"][0]["error_summary"]

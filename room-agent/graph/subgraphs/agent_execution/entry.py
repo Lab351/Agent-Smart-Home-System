@@ -129,6 +129,9 @@ async def agent_call_model(
     tool_instances: list[BaseTool],
 ) -> AgentExecutionState:
     """Call the powerful model with bound tools and append its AIMessage."""
+    if state.get("terminal_error"):
+        return {}
+
     if state.get("step_count", 0) >= state.get("step_limit", DEFAULT_STEP_LIMIT):
         return {
             "terminal_error": {
@@ -310,12 +313,28 @@ async def _awrap_tool_call(
     execute: Any,
 ) -> ToolMessage | Command:
     tool_name = request.tool_call.get("name", "未知工具").strip()
-    result = await execute(request)
+    tool_call_id = str(request.tool_call.get("id", "")).strip()
+    await _send_tool_status_update(f"正在执行 {tool_name}")
+
+    try:
+        result = await execute(request)
+    except Exception as exc:
+        await _send_tool_status_update(f"执行 {tool_name} 失败")
+        return _build_tool_error_command(
+            tool_name=tool_name,
+            tool_call_id=tool_call_id,
+            error_content=f"{type(exc).__name__}: {exc}",
+        )
 
     if isinstance(result, ToolMessage) and result.status == "error":
         await _send_tool_status_update(f"执行 {tool_name} 失败")
-    else:
-        await _send_tool_status_update(f"已执行 {tool_name}")
+        return _build_tool_error_command(
+            tool_name=tool_name,
+            tool_call_id=result.tool_call_id or tool_call_id,
+            error_content=result.content,
+        )
+
+    await _send_tool_status_update(f"已执行 {tool_name}")
 
     return result
 
@@ -363,6 +382,41 @@ async def _send_tool_status_update(text: str) -> None:
 
     message = updater.new_agent_message(parts=[create_text_part(text)])
     await updater.update_status(TaskState.working, message)
+
+
+def _build_tool_error_command(
+    *,
+    tool_name: str,
+    tool_call_id: str,
+    error_content: Any,
+) -> Command:
+    error_message = _normalize_tool_error_message(error_content)
+    return Command(
+        update={
+            "messages": [
+                ToolMessage(
+                    content=error_message,
+                    name=tool_name,
+                    tool_call_id=tool_call_id,
+                    status="error",
+                )
+            ],
+            "terminal_error": {
+                "type": "tool_execution_error",
+                "message": error_message,
+                "source_node": "tools",
+                "retryable": False,
+            },
+        }
+    )
+
+
+def _normalize_tool_error_message(error_content: Any) -> str:
+    if isinstance(error_content, str):
+        text = error_content.strip()
+    else:
+        text = _summarize_value(error_content, limit=500)
+    return text or "Tool execution failed."
 
 
 def _summarize_value(value: Any, *, limit: int = 180) -> str:
