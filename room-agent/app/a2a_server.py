@@ -66,15 +66,18 @@ class RoomAgentExecutor(AgentExecutor):
         user_input = context.get_user_input()
         logger.info("Received RoomAgent A2A request: %s", user_input)
 
-        await self.invoke_roomagent_entrypoint(
-            user_input=user_input,
-            context_id=task.context_id,
-            task_id=task.id,
-            conversation_text=_build_conversation_text(
-                task=task,
-                current_message=context.message,
-            ),
-        )
+        try:
+            await self.invoke_roomagent_entrypoint(
+                user_input=user_input,
+                context_id=task.context_id,
+                task_id=task.id,
+                conversation_text=_build_conversation_text(
+                    task=task,
+                    current_message=context.message,
+                ),
+            )
+        finally:
+            _CURRENT_UPDATER = None
 
     async def invoke_roomagent_entrypoint(
         self,

@@ -31,12 +31,8 @@ class RoomAgentGraphState(TypedDict, total=False):
     candidate_tools: list[dict[str, Any]]
     selected_tools: list[dict[str, Any]]
     tool_call_history: list[dict[str, Any]]
-    plan: dict[str, Any]
-    human_review: dict[str, Any]
-    execution_args: dict[str, Any]
     execution_result: dict[str, Any]
     error: ExecutionError
     metadata: dict[str, Any]
-    artifacts: dict[str, Any]
     status: Literal["initialized", "completed", "failed"]
     next_action: NotRequired[str]
