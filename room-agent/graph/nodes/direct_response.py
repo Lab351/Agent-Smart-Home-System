@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from config.settings import LLMRole
 from graph.state import RoomAgentGraphState
+from app.a2a_server import create_text_part, get_current_updater
 
 
 async def direct_response(state: RoomAgentGraphState) -> RoomAgentGraphState:
@@ -11,6 +12,10 @@ async def direct_response(state: RoomAgentGraphState) -> RoomAgentGraphState:
     provider = _get_low_cost_provider()
     prompt_input = _get_prompt_input(state)
     reply = await provider.complete_text(_build_messages(prompt_input), json_mode=False)
+
+    updater = get_current_updater()
+    message = updater.new_agent_message(parts=[create_text_part(reply)])
+    await updater.complete(message)
 
     return {
         "status": "completed",

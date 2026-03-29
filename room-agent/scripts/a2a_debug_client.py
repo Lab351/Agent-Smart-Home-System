@@ -101,7 +101,11 @@ async def run() -> int:
         )
 
         if args.command == "card":
-            print(json.dumps(agent_card.model_dump(mode="json", by_alias=True), ensure_ascii=False, indent=2))
+            print(
+                json.dumps(
+                    agent_card.model_dump(mode="json", by_alias=True), ensure_ascii=False, indent=2
+                )
+            )
             return 0
 
         client = await ClientFactory.connect(
@@ -173,5 +177,9 @@ async def _send_message(
     raise RuntimeError("A2A client returned no response event.")
 
 
-if __name__ == "__main__":
+def cli():
     raise SystemExit(asyncio.run(run()))
+
+
+if __name__ == "__main__":
+    cli()

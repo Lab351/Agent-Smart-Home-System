@@ -10,6 +10,8 @@ from typing import Any
 from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
 
+from app.a2a_server import create_text_part, get_current_updater
+from a2a.types import TaskState
 from app.server import get_llm_provider_registry, get_mcp_client
 from config.settings import LLMRole
 from graph.state import RoomAgentGraphState
@@ -72,6 +74,7 @@ def compile_agent_execution_subgraph() -> Any:
     graph.add_node("agent_execute_toolcall", agent_execute_toolcall)
     graph.add_node("agent_finalize_output", agent_finalize_output)
     graph.add_node("agent_handle_limit_or_error", agent_handle_limit_or_error)
+    graph.add_node("agent_submit_reply", agent_submit_reply)
     graph.add_node("subgraph_output_transform", subgraph_output_transform)
 
     graph.add_edge(START, "subgraph_input_transform")
@@ -103,8 +106,9 @@ def compile_agent_execution_subgraph() -> Any:
             "handle_error": "agent_handle_limit_or_error",
         },
     )
-    graph.add_edge("agent_finalize_output", "subgraph_output_transform")
-    graph.add_edge("agent_handle_limit_or_error", "subgraph_output_transform")
+    graph.add_edge("agent_finalize_output", "agent_submit_reply")
+    graph.add_edge("agent_handle_limit_or_error", "agent_submit_reply")
+    graph.add_edge("agent_submit_reply", "subgraph_output_transform")
     graph.add_edge("subgraph_output_transform", END)
     return graph.compile()
 
@@ -189,6 +193,19 @@ def agent_record_reason(state: AgentExecutionState) -> AgentExecutionState:
     """Record a reasoning-only step and continue the loop."""
     current_step = state.get("current_step", {})
     step_history = list(state.get("step_history", []))
+
+    updater = None
+    try:
+        updater = get_current_updater()
+    except RuntimeError:
+        logger.debug("No TaskUpdater available; skip reply submit from agent_execution subgraph.")
+
+    if updater and current_step.get("reason_summary"):
+        message = updater.new_agent_message(
+            parts=[create_text_part(current_step.get("reason_summary", "思考中...").strip())],
+        )
+        _ = updater.update_status(TaskState.working, message)
+
     step_history.append(
         {
             "step_index": state.get("step_count", 0),
@@ -218,6 +235,12 @@ async def agent_execute_toolcall(state: AgentExecutionState) -> AgentExecutionSt
             observation=observation,
         )
 
+    updater = None
+    try:
+        updater = get_current_updater()
+    except RuntimeError:
+        logger.debug("No TaskUpdater available; skip reply submit from agent_execution subgraph.")
+
     tool_instances = state.get("available_tool_instances", {})
     tool = tool_instances.get(tool_name)
     if tool is None:
@@ -239,6 +262,10 @@ async def agent_execute_toolcall(state: AgentExecutionState) -> AgentExecutionSt
             error_message=f"{type(exc).__name__}: {exc}",
             source_node="agent_execute_toolcall",
         )
+
+    if updater:
+        message = updater.new_agent_message(parts=[create_text_part(f"已执行 {tool_name}")])
+        await updater.update_status(TaskState.working, message)
 
     return _build_tool_success_state(
         state,
@@ -278,6 +305,23 @@ def agent_handle_limit_or_error(state: AgentExecutionState) -> AgentExecutionSta
             "retryable": False,
         }
     return {"terminal_error": terminal_error}
+
+
+async def agent_submit_reply(state: AgentExecutionState) -> AgentExecutionState:
+    """Submit a user-visible reply through the active A2A updater when available."""
+    reply = _resolve_terminal_reply_text(state)
+    if not reply:
+        return {}
+
+    try:
+        updater = get_current_updater()
+    except RuntimeError:
+        logger.debug("No TaskUpdater available; skip reply submit from agent_execution subgraph.")
+        return {}
+
+    message = updater.new_agent_message(parts=[create_text_part(reply)])
+    await updater.complete(message)
+    return {}
 
 
 def subgraph_output_transform(state: AgentExecutionState) -> AgentExecutionState:
@@ -328,6 +372,14 @@ def subgraph_output_transform(state: AgentExecutionState) -> AgentExecutionState
         "tool_call_history": tool_call_history,
     }
     return {"outer_state_patch": outer_patch}
+
+
+def _resolve_terminal_reply_text(state: AgentExecutionState) -> str:
+    final_output = _normalize_final_output(state.get("final_output"))
+    message = str(final_output.get("message", "")).strip()
+    if message and not state.get("terminal_error"):
+        return message
+    return USER_VISIBLE_UNFINISHED_MESSAGE
 
 
 def route_after_plan_step(state: AgentExecutionState) -> str:
@@ -444,9 +496,9 @@ def _build_planner_messages(state: AgentExecutionState) -> list[dict[str, str]]:
                 "• JSON 字段必须与系统要求一致：step_type、is_done, 以及按需提供 reason_summary、tool_name、tool_args、final_output。\n"
                 "\n"
                 "输出要求示例：\n"
-                "{\"step_type\":\"reason\",\"is_done\":false,\"reason_summary\":\"先确认当前状态\"}\n"
-                "{\"step_type\":\"toolcall\",\"is_done\":false,\"tool_name\":\"climate_get_state\",\"tool_args\":{\"entity_id\":\"climate.lab\"}}\n"
-                "{\"step_type\":\"final_output\",\"is_done\":true,\"final_output\":{\"message\":\"实验室空调当前正在运行\"}}"
+                '{"step_type":"reason","is_done":false,"reason_summary":"先确认当前状态"}\n'
+                '{"step_type":"toolcall","is_done":false,"tool_name":"climate_get_state","tool_args":{"entity_id":"climate.lab"}}\n'
+                '{"step_type":"final_output","is_done":true,"final_output":{"message":"实验室空调当前正在运行"}}'
             ),
         },
         {
