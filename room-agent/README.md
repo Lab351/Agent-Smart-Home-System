@@ -4,8 +4,8 @@
 
 ## 当前能力
 
-- A2A + LangChain 链路基本完整
-- Backend 注册未实现
+- A2A + LangGraph 链路基本完整
+- Backend Gateway 注册占位实现（等待协议对齐）
 - 事件发送未实现
 
 ## 依赖安装
@@ -144,7 +144,7 @@ uv run a2at --url http://127.0.0.1:10000 get-task <task_id>
 
 LLM 节点开发规范见：
 
-- `room-agent/graph/AGENT.md`
+- `room-agent/graph/AGENTS.md`
 
 其中最重要的约束有两条：
 
