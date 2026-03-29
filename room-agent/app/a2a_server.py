@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import Any
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.apps import A2AStarletteApplication
@@ -29,6 +30,21 @@ logger = logging.getLogger(__name__)
 SUPPORTED_CONTENT_TYPES = ["text", "text/plain"]
 A2A_FALLBACK_RESPONSE = "RoomAgent 已收到请求，当前返回仍为最简占位结果。"
 
+_CURRENT_UPDATER: TaskUpdater | None = None
+
+
+def get_current_updater() -> TaskUpdater:
+    """Get the current TaskUpdater for the executing task, if available."""
+    global _CURRENT_UPDATER
+    if _CURRENT_UPDATER is None:
+        raise RuntimeError("No current TaskUpdater available")
+    return _CURRENT_UPDATER
+
+
+def create_text_part(text: str) -> Part:
+    """Helper function to create a text Part."""
+    return Part(root=TextPart(text=text.strip()))
+
 
 class RoomAgentExecutor(AgentExecutor):
     """Minimal A2A executor skeleton for the RoomAgent service."""
@@ -44,10 +60,13 @@ class RoomAgentExecutor(AgentExecutor):
             await event_queue.enqueue_event(task)
 
         updater = TaskUpdater(event_queue, task.id, task.context_id)
+        global _CURRENT_UPDATER
+        _CURRENT_UPDATER = updater
+
         user_input = context.get_user_input()
         logger.info("Received RoomAgent A2A request: %s", user_input)
 
-        result = await self.invoke_roomagent_entrypoint(
+        await self.invoke_roomagent_entrypoint(
             user_input=user_input,
             context_id=task.context_id,
             task_id=task.id,
@@ -56,13 +75,6 @@ class RoomAgentExecutor(AgentExecutor):
                 current_message=context.message,
             ),
         )
-        result = result or A2A_FALLBACK_RESPONSE
-
-        await updater.add_artifact(
-            [Part(root=TextPart(text=result))],
-            name="room_agent_response",
-        )
-        await updater.complete()
 
     async def invoke_roomagent_entrypoint(
         self,
@@ -71,9 +83,13 @@ class RoomAgentExecutor(AgentExecutor):
         context_id: str,
         task_id: str,
         conversation_text: str | None = None,
-    ) -> str:
-        """Invoke the RoomAgent LangGraph entrypoint and return a minimal text result."""
+    ) -> dict[str, Any]:
+        """Invoke the RoomAgent LangGraph entrypoint and return execution_result."""
         app = _compile_graph()
+
+        updater = get_current_updater()
+        await updater.start_work()
+
         final_state = await app.ainvoke(
             {
                 "user_input": user_input,
@@ -85,6 +101,7 @@ class RoomAgentExecutor(AgentExecutor):
                 },
             }
         )
+
         logger.info(
             "RoomAgent graph final state task_id=%s context_id=%s state=%s",
             task_id,
@@ -92,10 +109,9 @@ class RoomAgentExecutor(AgentExecutor):
             json.dumps(final_state, ensure_ascii=False, default=str),
         )
         execution_result = final_state.get("execution_result", {})
-        message = execution_result.get("message")
-        if isinstance(message, str) and message.strip():
-            return message.strip()
-        return A2A_FALLBACK_RESPONSE
+        if isinstance(execution_result, dict):
+            return execution_result
+        return {}
 
     async def cancel(
         self,
@@ -112,9 +128,7 @@ def _build_conversation_text(
     current_message: Message | None,
 ) -> str:
     history = list(task.history or []) if task and task.history else []
-    if current_message and (
-        not history or history[-1].message_id != current_message.message_id
-    ):
+    if current_message and (not history or history[-1].message_id != current_message.message_id):
         history.append(current_message)
 
     transcript_lines: list[str] = []

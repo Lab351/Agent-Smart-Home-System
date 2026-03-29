@@ -12,22 +12,11 @@ from datetime import datetime, timezone
 
 import uvicorn
 
-if __package__ in {None, ""}:
-    import sys
-    from pathlib import Path
-
-    sys.path.append(str(Path(__file__).resolve().parent))
-    from a2a_server import build_a2a_application
-    from config.settings import HomeAssistantMCPSettings, LLMRole, Settings, load_settings
-    from gateway_client import GatewayClient
-    from integrations.mcp_client import MCPToolClient, build_home_assistant_mcp_client
-    from integrations.llm_provider import LLMProviderRegistry, create_llm_provider_registry
-else:
-    from .a2a_server import build_a2a_application
-    from config.settings import HomeAssistantMCPSettings, LLMRole, Settings, load_settings
-    from .gateway_client import GatewayClient
-    from integrations.mcp_client import MCPToolClient, build_home_assistant_mcp_client
-    from integrations.llm_provider import LLMProviderRegistry, create_llm_provider_registry
+from .a2a_server import build_a2a_application
+from config.settings import HomeAssistantMCPSettings, LLMRole, Settings, load_settings
+from .gateway_client import GatewayClient
+from integrations.mcp_client import MCPToolClient, build_home_assistant_mcp_client
+from integrations.llm_provider import LLMProviderRegistry, create_llm_provider_registry
 
 
 logger = logging.getLogger(__name__)

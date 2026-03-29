@@ -6,20 +6,12 @@ from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
-if __package__ in {None, ""}:
-    import sys
-    from pathlib import Path
-
-    sys.path.append(str(Path(__file__).resolve().parent))
-    from nodes import direct_response, intent_recognition, tool_selection
-    from nodes.intent_recognition import route_after_intent
-    from subgraphs.agent_execution import agent_execution
-    from state import RoomAgentGraphState
-else:
-    from .nodes import direct_response, intent_recognition, tool_selection
-    from .nodes.intent_recognition import route_after_intent
-    from .state import RoomAgentGraphState
-    from .subgraphs.agent_execution import agent_execution
+from .nodes.direct_response import direct_response
+from .nodes.intent_recognition import intent_recognition
+from .nodes.tool_selection import tool_selection
+from .nodes.intent_recognition import route_after_intent
+from .state import RoomAgentGraphState
+from .subgraphs.agent_execution import agent_execution
 
 
 def initialize_request(state: RoomAgentGraphState) -> RoomAgentGraphState:
@@ -44,6 +36,7 @@ def initialize_request(state: RoomAgentGraphState) -> RoomAgentGraphState:
 def build_graph() -> StateGraph:
     """Build the Room Agent graph skeleton."""
     graph = StateGraph(RoomAgentGraphState)
+
     graph.add_node("initialize_request", initialize_request)
     graph.add_node("intent_recognition", intent_recognition)
     graph.add_node("direct_response", direct_response)
