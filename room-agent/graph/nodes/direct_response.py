@@ -13,9 +13,14 @@ async def direct_response(state: RoomAgentGraphState) -> RoomAgentGraphState:
     prompt_input = _get_prompt_input(state)
     reply = await provider.complete_text(_build_messages(prompt_input), json_mode=False)
 
-    updater = get_current_updater()
-    message = updater.new_agent_message(parts=[create_text_part(reply)])
-    await updater.complete(message)
+    try:
+        updater = get_current_updater()
+    except RuntimeError:
+        updater = None
+
+    if updater is not None:
+        message = updater.new_agent_message(parts=[create_text_part(reply)])
+        await updater.complete(message)
 
     return {
         "status": "completed",

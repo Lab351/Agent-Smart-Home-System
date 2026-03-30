@@ -12,6 +12,16 @@ from datetime import datetime, timezone
 
 import uvicorn
 
+DIRECT_EXECUTION_ERROR = (
+    "Do not run room-agent/app/server.py directly. "
+    "Use the project script entry instead, for example: "
+    "`cd room-agent && uv run serve --config-path config/examples/room_agent.example.yaml "
+    "--llm-config-path tests/fixtures/llm.yaml`."
+)
+
+if __name__ == "__main__" and (__package__ is None or __package__ == ""):
+    raise SystemExit(DIRECT_EXECUTION_ERROR)
+
 from .a2a_server import build_a2a_application
 from config.settings import HomeAssistantMCPSettings, LLMRole, Settings, load_settings
 from .gateway_client import GatewayClient
@@ -20,12 +30,6 @@ from integrations.llm_provider import LLMProviderRegistry, create_llm_provider_r
 
 
 logger = logging.getLogger(__name__)
-DIRECT_EXECUTION_ERROR = (
-    "Do not run room-agent/app/server.py directly. "
-    "Use the project script entry instead, for example: "
-    "`cd room-agent && uv run serve --config-path config/examples/room_agent.example.yaml "
-    "--llm-config-path tests/fixtures/llm.yaml`."
-)
 _SETTINGS: Settings | None = None
 _LLM_PROVIDER_REGISTRY: LLMProviderRegistry | None = None
 _MCP_CLIENT: MCPToolClient | None = None

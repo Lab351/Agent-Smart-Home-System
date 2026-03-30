@@ -27,7 +27,6 @@ def initialize_request(state: RoomAgentGraphState) -> RoomAgentGraphState:
         "candidate_tools": state.get("candidate_tools", []),
         "selected_tools": state.get("selected_tools", []),
         "tool_call_history": state.get("tool_call_history", []),
-        "artifacts": state.get("artifacts", {}),
         "metadata": metadata,
         "status": "initialized",
     }
