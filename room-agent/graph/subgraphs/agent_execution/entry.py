@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import json
+import inspect
 import logging
 from functools import partial
 from typing import Any
 
 from a2a.types import TaskState
 from app.a2a_server import create_text_part, get_current_updater
-from app.server import get_llm_provider_registry, get_mcp_client
+from app.server import get_settings, get_llm_provider_registry, get_mcp_client
 from config.settings import LLMRole
+from graph.mcp_prompt_context import build_mcp_prompts_context
 from graph.state import RoomAgentGraphState
 from integrations.llm_provider import normalize_message_content
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
@@ -95,7 +97,7 @@ def compile_agent_execution_subgraph(
     return graph.compile()
 
 
-def subgraph_input_transform(
+async def subgraph_input_transform(
     state: AgentExecutionState,
     *,
     selected_tools: list[dict[str, Any]],
@@ -111,7 +113,7 @@ def subgraph_input_transform(
         "metadata": dict(state.get("metadata", {})),
         "messages": [
             SystemMessage(
-                content=_build_system_prompt(
+                content=await _build_system_prompt(
                     intent=state.get("intent", {}),
                     selected_tools=selected_tools,
                 )
@@ -272,7 +274,7 @@ def subgraph_output_transform(state: AgentExecutionState) -> AgentExecutionState
     }
 
 
-def _build_system_prompt(
+async def _build_system_prompt(
     *,
     intent: dict[str, Any],
     selected_tools: list[dict[str, Any]],
@@ -285,12 +287,27 @@ def _build_system_prompt(
     if not tool_names:
         tool_names = "(none)"
 
+    mcp_prompt = ""
+    try:
+        client = get_mcp_client()
+        if client is not None:
+            settings = get_settings()
+            mcp_settings = settings.agent.home_assistant_mcp
+            if mcp_settings is not None:
+                mcp_prompt = await build_mcp_prompts_context(
+                    client=client,
+                    server_name=mcp_settings.server_name,
+                )
+    except Exception as exc:
+        logger.info(f"Failed to retrieve MCP system prompt: {exc}")
+
     return (
         "你是一个房间智能体。基于用户请求决定是否调用绑定工具；"
         "如果需要工具，使用最合适的工具并在拿到结果后给出简洁中文答复；"
         "如果不需要工具，直接回答。"
         f"\n识别意图: {json.dumps(intent, ensure_ascii=False)}"
         f"\n候选工具: {tool_names}"
+        f"{mcp_prompt}"
     )
 
 

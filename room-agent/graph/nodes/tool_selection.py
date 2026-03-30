@@ -7,10 +7,13 @@ import sys
 from typing import Any
 
 from config.settings import LLMRole
+from graph.mcp_prompt_context import build_mcp_prompts_context
 from graph.state import RoomAgentGraphState
 from langchain_core.tools import BaseTool
 from llm_json_parse import JsonParserWithRepair
+import logging
 
+logger = logging.getLogger(__name__)
 
 TOOL_SELECTION_OUTPUT_SCHEMA = {
     "type": "object",
@@ -31,6 +34,7 @@ async def tool_selection(state: RoomAgentGraphState) -> RoomAgentGraphState:
     provider = _get_low_cost_provider()
     prompt_input = _get_prompt_input(state)
     candidate_tools = await _describe_tools()
+    mcp_prompt_context = await _build_mcp_prompt_context()
 
     if not candidate_tools:
         comment = "No MCP tools are available for this request."
@@ -42,6 +46,7 @@ async def tool_selection(state: RoomAgentGraphState) -> RoomAgentGraphState:
             prompt_input=prompt_input,
             intent=state.get("intent", {}),
             candidate_tools=candidate_tools,
+            mcp_prompt_context=mcp_prompt_context,
         ),
         temperature=0,
         json_mode=True,
@@ -94,11 +99,23 @@ async def _describe_tools() -> list[dict[str, Any]]:
     ]
 
 
+async def _build_mcp_prompt_context() -> str:
+    from app.server import get_settings
+
+    settings = get_settings()
+    mcp_settings = settings.agent.home_assistant_mcp
+    return await build_mcp_prompts_context(
+        client=_get_mcp_client(),
+        server_name=(mcp_settings.server_name if mcp_settings is not None else None),
+    )
+
+
 def _build_messages(
     *,
     prompt_input: str,
-    intent: dict[str, Any],
+    intent: Any,
     candidate_tools: list[dict[str, Any]],
+    mcp_prompt_context: str,
 ) -> list[dict[str, str]]:
     return [
         {
@@ -107,6 +124,7 @@ def _build_messages(
                 "你是 Room Agent 的工具选择节点。"
                 "你的职责只有一个：从候选 MCP 工具中挑选最适合当前请求的 0 到 3 个工具。如果用户提到了多个意图，你可以选择多个。按执行顺序或者相关程度排序。"
                 "如果没有任何合适工具，返回空数组。"
+                "优先参考 MCP Prompts 中的模板语义，避免误选工具。"
                 "只输出 JSON，不要输出额外解释。"
             ),
         },
@@ -120,6 +138,7 @@ def _build_messages(
                     ),
                     "user_input": prompt_input,
                     "intent": intent,
+                    "mcp_prompts": mcp_prompt_context,
                     "candidate_tools": candidate_tools,
                 },
                 ensure_ascii=False,
@@ -151,6 +170,10 @@ def _select_tools(
         selected_tools.append(tool)
         seen_names.add(_normalized_selected_name)
 
+    logger.info(
+        "Selected tools: %s",
+        [tool["name"] for tool in selected_tools],
+    )
     # 提示词防止模型发狂, 实际上我们不写死上限
     return selected_tools
 
@@ -175,7 +198,7 @@ def _build_result(
 
 def _log_zero_tool_selection(
     prompt_input: str,
-    intent: dict[str, Any],
+    intent: Any,
     comment: str,
 ) -> None:
     print(
