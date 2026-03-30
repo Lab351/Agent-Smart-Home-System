@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-from uuid import uuid4
+from typing import Any
 
 import httpx
 from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
@@ -17,6 +17,12 @@ from a2a.types import Message, MessageSendConfiguration, Task, TaskQueryParams
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Debug an A2A service by resolving its agent card and sending JSON-RPC requests.",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="json_output",
+        help="Print the full JSON response instead of simplified text output.",
     )
     parser.add_argument(
         "--url",
@@ -101,10 +107,9 @@ async def run() -> int:
         )
 
         if args.command == "card":
-            print(
-                json.dumps(
-                    agent_card.model_dump(mode="json", by_alias=True), ensure_ascii=False, indent=2
-                )
+            _print_output(
+                agent_card.model_dump(mode="json", by_alias=True, exclude_none=True),
+                json_output=args.json_output,
             )
             return 0
 
@@ -132,12 +137,9 @@ async def run() -> int:
                 message=message,
                 configuration=configuration,
             )
-            print(
-                json.dumps(
-                    response.model_dump(mode="json", by_alias=True, exclude_none=True),
-                    ensure_ascii=False,
-                    indent=2,
-                )
+            _print_output(
+                response.model_dump(mode="json", by_alias=True, exclude_none=True),
+                json_output=args.json_output,
             )
             return 0
 
@@ -148,12 +150,9 @@ async def run() -> int:
                     history_length=args.history_length,
                 )
             )
-            print(
-                json.dumps(
-                    response.model_dump(mode="json", by_alias=True, exclude_none=True),
-                    ensure_ascii=False,
-                    indent=2,
-                )
+            _print_output(
+                response.model_dump(mode="json", by_alias=True, exclude_none=True),
+                json_output=args.json_output,
             )
             return 0
 
@@ -175,6 +174,144 @@ async def _send_message(
             return task
         return event
     raise RuntimeError("A2A client returned no response event.")
+
+
+def _print_output(payload: dict[str, Any], *, json_output: bool) -> None:
+    if json_output:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    print(_format_payload(payload))
+
+
+def _format_payload(payload: dict[str, Any]) -> str:
+    if payload.get("kind") == "message":
+        return _format_message(payload)
+    if payload.get("kind") == "task":
+        return _format_task(payload)
+    return _format_agent_card(payload)
+
+
+def _format_agent_card(payload: dict[str, Any]) -> str:
+    lines: list[str] = []
+
+    name = payload.get("name")
+    if name:
+        lines.append(str(name))
+
+    description = payload.get("description")
+    if description:
+        lines.append(str(description))
+
+    url = payload.get("url")
+    if url:
+        lines.append(f"URL: {url}")
+
+    version = payload.get("version")
+    if version:
+        lines.append(f"Version: {version}")
+
+    preferred_transport = payload.get("preferredTransport")
+    if preferred_transport:
+        lines.append(f"Transport: {preferred_transport}")
+
+    skills = payload.get("skills")
+    if isinstance(skills, list):
+        skill_names = [
+            str(skill.get("name") or skill.get("id"))
+            for skill in skills
+            if isinstance(skill, dict) and (skill.get("name") or skill.get("id"))
+        ]
+        if skill_names:
+            lines.append(f"Skills: {', '.join(skill_names)}")
+
+    if lines:
+        return "\n".join(lines)
+
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def _format_task(payload: dict[str, Any]) -> str:
+    messages = list(_iter_task_messages(payload))
+    rendered_messages = _dedupe_rendered_messages(messages)
+    if rendered_messages:
+        return "\n\n".join(rendered_messages)
+
+    state = payload.get("status", {}).get("state")
+    if state:
+        return f"Task state: {state}"
+
+    return "(empty task response)"
+
+
+def _iter_task_messages(payload: dict[str, Any]):
+    history = payload.get("history")
+    if isinstance(history, list):
+        for item in history:
+            if isinstance(item, dict) and item.get("kind") == "message":
+                yield item
+
+    status = payload.get("status")
+    if isinstance(status, dict):
+        message = status.get("message")
+        if isinstance(message, dict) and message.get("kind") == "message":
+            yield message
+
+
+def _dedupe_rendered_messages(messages: list[dict[str, Any]]) -> list[str]:
+    rendered_messages: list[str] = []
+    seen_ids: set[str] = set()
+    seen_fallback_keys: set[tuple[str | None, str]] = set()
+
+    for message in messages:
+        rendered = _format_message(message)
+        if not rendered:
+            continue
+
+        message_id = message.get("messageId")
+        if isinstance(message_id, str) and message_id:
+            if message_id in seen_ids:
+                continue
+            seen_ids.add(message_id)
+        else:
+            fallback_key = (message.get("role"), rendered)
+            if fallback_key in seen_fallback_keys:
+                continue
+            seen_fallback_keys.add(fallback_key)
+
+        rendered_messages.append(rendered)
+
+    return rendered_messages
+
+
+def _format_message(payload: dict[str, Any]) -> str:
+    body = _format_message_parts(payload.get("parts"))
+    if not body:
+        return ""
+
+    role = payload.get("role")
+    if role and role != "agent":
+        return f"[{role}] {body}"
+    return body
+
+
+def _format_message_parts(parts: Any) -> str:
+    if not isinstance(parts, list):
+        return ""
+
+    rendered_parts: list[str] = []
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+
+        text = part.get("text")
+        if isinstance(text, str) and text.strip():
+            rendered_parts.append(text.strip())
+            continue
+
+        rendered_parts.append(json.dumps(part, ensure_ascii=False, indent=2))
+
+    return "\n\n".join(rendered_parts).strip()
 
 
 def cli():

@@ -25,6 +25,13 @@ MCPConnection: TypeAlias = (
 class MCPToolClient(Protocol):
     async def get_tools(self, *, server_name: str | None = None) -> list[BaseTool]: ...
     async def list_prompts(self, server_name: str) -> Any: ...
+    async def get_prompt(
+        self,
+        server_name: str,
+        prompt_name: str,
+        *,
+        arguments: dict[str, str] | None = None,
+    ) -> Any: ...
 
 
 class LangChainMCPClient:
@@ -39,6 +46,16 @@ class LangChainMCPClient:
     async def list_prompts(self, server_name: str) -> Any:
         async with self._client.session(server_name) as session:
             return await session.list_prompts()
+
+    async def get_prompt(
+        self,
+        server_name: str,
+        prompt_name: str,
+        *,
+        arguments: dict[str, str] | None = None,
+    ) -> Any:
+        async with self._client.session(server_name) as session:
+            return await session.get_prompt(prompt_name, arguments=arguments)
 
 
 def build_home_assistant_mcp_client(
