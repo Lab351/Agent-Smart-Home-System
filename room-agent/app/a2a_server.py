@@ -105,12 +105,12 @@ class RoomAgentExecutor(AgentExecutor):
             }
         )
 
-        logger.info(
-            "RoomAgent graph final state task_id=%s context_id=%s state=%s",
-            task_id,
-            context_id,
-            json.dumps(final_state, ensure_ascii=False, default=str),
-        )
+        # logger.info(
+        #     "RoomAgent graph final state task_id=%s context_id=%s state=%s",
+        #     task_id,
+        #     context_id,
+        #     json.dumps(final_state, ensure_ascii=False, default=str),
+        # )
         execution_result = final_state.get("execution_result", {})
         if isinstance(execution_result, dict):
             return execution_result
