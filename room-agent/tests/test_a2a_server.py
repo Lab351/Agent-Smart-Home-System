@@ -11,7 +11,7 @@ from a2a.types import Message, MessageSendParams, Part, Role, Task, TaskState, T
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.tools import BaseTool, tool
 
-from app.a2a_server import RoomAgentExecutor, _build_conversation_text
+from app.a2a_server import RoomAgentExecutor, _build_conversation_text, build_agent_card
 from app.server import initialize_runtime_dependencies
 from config.settings import LLMRole
 
@@ -199,6 +199,21 @@ def test_build_conversation_text_renders_history_and_current_input() -> None:
     assert "user: 你好" in conversation_text
     assert "assistant: 你好，我在。" in conversation_text
     assert "Current user input:\n帮我打开卧室灯" in conversation_text
+
+
+def test_build_agent_card_exposes_roomagent_business_capabilities() -> None:
+    agent_card = build_agent_card(host="127.0.0.1", port=10000)
+
+    assert "placeholder" not in agent_card.description.lower()
+    assert "skeleton" not in agent_card.description.lower()
+    assert "查询" in agent_card.description
+    assert "修改" in agent_card.description
+    assert "自动化规则" in agent_card.description
+    assert len(agent_card.skills) == 1
+    assert agent_card.skills[0].id == "home_device_control_and_automation"
+    assert "状态" in agent_card.skills[0].description
+    assert "自动化规则" in agent_card.skills[0].description
+    assert "placeholder" not in {tag.lower() for tag in agent_card.skills[0].tags}
 
 
 def test_a2a_smoke_completes_request_end_to_end() -> None:

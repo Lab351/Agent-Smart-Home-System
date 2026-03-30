@@ -204,10 +204,10 @@ def build_a2a_application(*, host: str, port: int) -> A2AStarletteApplication:
 
 
 def build_agent_card(*, host: str, port: int) -> AgentCard:
-    """Create a blank RoomAgent agent card placeholder."""
+    """Create the RoomAgent agent card for A2A discovery."""
     return AgentCard(
         name="RoomAgent",
-        description="Blank RoomAgent A2A service skeleton awaiting skill and executor wiring.",
+        description="负责查询和修改家居终端状态，并可安排房间级自动化规则的 RoomAgent A2A 服务。",
         url=f"http://{host}:{port}/",
         version="0.1.0",
         default_input_modes=SUPPORTED_CONTENT_TYPES,
@@ -215,10 +215,10 @@ def build_agent_card(*, host: str, port: int) -> AgentCard:
         capabilities=AgentCapabilities(streaming=False, push_notifications=False),
         skills=[
             AgentSkill(
-                id="room_agent_placeholder",
-                name="RoomAgent Placeholder",
-                description="Placeholder skill card to be completed later.",
-                tags=["placeholder"],
+                id="home_device_control_and_automation",
+                name="家居状态控制与自动化",
+                description="查询家居终端状态、执行状态修改，并安排房间级自动化规则。",
+                tags=["device_control", "state_query", "automation"],
                 input_modes=SUPPORTED_CONTENT_TYPES,
                 output_modes=SUPPORTED_CONTENT_TYPES,
             )
