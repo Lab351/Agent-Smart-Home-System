@@ -38,16 +38,20 @@ class HomeAssistantMCPSettings(BaseModel):
     enabled: bool = False
     server_name: str = "home_assistant"
     transport: Literal["streamable_http", "sse", "websocket"] = "streamable_http"
+    url: str = ""
     base_url: str = ""
     auth_token: str = ""
     health_check: MCPHealthCheckSettings = Field(default_factory=MCPHealthCheckSettings)
 
     @property
     def is_configured(self) -> bool:
-        return bool(self.base_url.strip())
+        return bool(self.base_url.strip() or self.url.strip()) 
 
     @property
     def mcp_url(self) -> str:
+        if self.url.strip():
+            return self.url.strip()
+
         base_url = self.base_url.strip().rstrip("/")
         if not base_url:
             return ""
@@ -131,8 +135,7 @@ def _load_llm_settings(config_path: Path) -> LLMSettings:
         for name, item in (raw.get("providers") or {}).items()
     }
     roles = {
-        name: LLMRoleConfig.model_validate(item)
-        for name, item in (raw.get("roles") or {}).items()
+        name: LLMRoleConfig.model_validate(item) for name, item in (raw.get("roles") or {}).items()
     }
 
     return LLMSettings(
@@ -183,8 +186,12 @@ def load_settings(
     resolved_config_path = config_path
     yaml_data = _load_yaml_config(resolved_config_path)
     agent_data = yaml_data.get("agent", {}) if isinstance(yaml_data.get("agent"), dict) else {}
-    gateway_data = yaml_data.get("gateway", {}) if isinstance(yaml_data.get("gateway"), dict) else {}
-    runtime_data = yaml_data.get("runtime", {}) if isinstance(yaml_data.get("runtime"), dict) else {}
+    gateway_data = (
+        yaml_data.get("gateway", {}) if isinstance(yaml_data.get("gateway"), dict) else {}
+    )
+    runtime_data = (
+        yaml_data.get("runtime", {}) if isinstance(yaml_data.get("runtime"), dict) else {}
+    )
     ha_mcp_data = (
         agent_data.get("home_assistant_mcp", {})
         if isinstance(agent_data.get("home_assistant_mcp"), dict)
@@ -204,7 +211,9 @@ def load_settings(
         llm=_load_llm_settings(Path(llm_config_path)),
         runtime=RuntimeSettings(
             room_agent_config_path=resolved_config_path,
-            log_level=runtime_data.get("log_level", RuntimeSettings.model_fields["log_level"].default),
+            log_level=runtime_data.get(
+                "log_level", RuntimeSettings.model_fields["log_level"].default
+            ),
         ),
     )
     return settings
