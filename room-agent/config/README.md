@@ -70,18 +70,22 @@ roles:
 
 #### CLI 用法
 
-默认读取内置示例配置：
+使用测试 CLI 单次执行：
 
 ```bash
-uv run python -m app.main "你好"
+cd room-agent
+.venv/bin/python app/test_cli.py "你好" \
+  --config config/examples/room_agent.example.yaml \
+  --llm-config tests/fixtures/llm.yaml
 ```
 
-显式指定 Room Agent 配置和 LLM 配置：
+或启动正式服务：
 
 ```bash
-uv run python -m app.main "你好" \
-  --config config/room_agent.yaml \
-  --llm-config config/llm.example.yaml
+cd room-agent
+uv run serve \
+  --config-path config/examples/room_agent.example.yaml \
+  --llm-config-path tests/fixtures/llm.yaml
 ```
 
 ### 关于房间配置
