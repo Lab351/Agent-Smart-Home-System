@@ -96,7 +96,7 @@ uv run serve \
 说明：
 
 - 服务启动时会初始化全局单例 `Settings`
-- 服务启动时会初始化全局单例 `LLMProviderRegistry`
+- 服务启动时会初始化全局单例 `LLMProviderRegistry`，registry 直接提供按角色配置好的 `ChatOpenAI`
 - 服务启动时会初始化全局单例 `MCP client`，并执行一次 Home Assistant MCP 健康检查
 - 当前业务 loop 仍然是占位实现
 - A2A HTTP 服务入口已保留
@@ -148,5 +148,5 @@ LLM 节点开发规范见：
 
 其中最重要的约束有两条：
 
-- LLM 只能通过服务启动时创建的全局单例 registry 获取
-- 结构化输出解析统一复用 `llm_json_parse.JsonParserWithRepair`
+- LLM 只能通过服务启动时创建的全局单例 registry 获取 `ChatOpenAI`
+- 结构化输出优先使用 `json_schema` 解码约束，失败时再走 `llm_json_parse.JsonParserWithRepair` 的本地修复

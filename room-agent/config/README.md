@@ -13,7 +13,7 @@ LLM 配置采用两层结构：
 
 `llm_provider` 不负责自动帮业务选择模型。它只提供：
 
-- 单模型 Provider
+- 单模型 `ChatOpenAI`
 - 一个可手工选择的 registry
 
 业务层自己决定当前请求应该拿 `powerful` 还是 `low_cost`。
@@ -60,12 +60,12 @@ roles:
 - `settings.llm.powerful`
 - `settings.llm.low_cost`
 
-如果 YAML 里只配置了一个角色，解析器会自动回退，让两个入口都指向同一个配置，避免业务侧因为缺一项直接拿不到 provider。
+如果 YAML 里只配置了一个角色，解析器会自动回退，让两个入口都指向同一个配置，避免业务侧因为缺一项直接拿不到模型实例。
 
 #### 代码边界
 
 - `room-agent/config/settings.py`：负责解析 `llm.example.yaml` 或外部指定路径。
-- `room-agent/integrations/llm_provider.py`：负责把单个模型配置实例化成 provider，并提供 registry。
+- `room-agent/integrations/llm_provider.py`：负责把单个模型配置实例化成 `ChatOpenAI`，并提供 registry。
 - `room-agent/app/main.py`：CLI 默认从 registry 中取 `low_cost`。
 
 #### CLI 用法

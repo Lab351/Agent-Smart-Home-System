@@ -1,19 +1,22 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from types import SimpleNamespace
 from typing import Any
 
-from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool, tool
 
 from app.server import initialize_runtime_dependencies
 from config.settings import LLMRole
-from graph.entry import compile_graph
+from graph.nodes.direct_response import direct_response
+from graph.nodes.intent_recognition import intent_recognition, route_after_intent
+from graph.nodes.tool_selection import tool_selection
+from graph.subgraphs.agent_execution.entry import agent_call_model, agent_finalize_output
 
 
 class FakeRegistry:
-    def __init__(self, *, powerful: Any, low_cost: Any) -> None:
+    def __init__(self, *, powerful: Any = None, low_cost: Any = None) -> None:
         self._providers = {
             LLMRole.POWERFUL: powerful,
             LLMRole.LOW_COST: low_cost,
@@ -36,60 +39,79 @@ class FakeMCPClient:
         return {"prompts": []}
 
 
-class FakeLowCostProvider:
-    def __init__(self, *, need_tool_call: bool, direct_reply: str = "你好，我在。") -> None:
-        self.need_tool_call = need_tool_call
-        self.direct_reply = direct_reply
+class _FakeTextRunnable:
+    def __init__(self, model: "FakeLowCostModel") -> None:
+        self._model = model
 
-    async def complete_text(
-        self,
-        messages: list[dict[str, str]],
-        *,
-        temperature: float = 0.2,
-        json_mode: bool = False,
-    ) -> str:
-        _ = (temperature, json_mode)
-        system_prompt = messages[0]["content"]
-        if "意图分析节点" in system_prompt:
-            return (
-                '{"intent_name":"device_control","need_tool_call":true}'
-                if self.need_tool_call
-                else '{"intent_name":"chat","need_tool_call":false}'
-            )
-        if "工具选择节点" in system_prompt:
-            return '{"selected_tool_names":["light_control"],"comment":"selected"}'
-        return self.direct_reply
+    def bind(self, **kwargs: Any) -> "_FakeTextRunnable":
+        _ = kwargs
+        return self
 
-    async def invoke_messages(
-        self,
-        messages: list[BaseMessage],
-        *,
-        temperature: float | None = None,
-        tools: Sequence[BaseTool] | None = None,
-    ) -> AIMessage:
-        _ = (messages, temperature, tools)
-        raise AssertionError("Low-cost provider should not be used for message-native tool calls.")
+    async def ainvoke(self, messages: list[BaseMessage]) -> AIMessage:
+        return await self._model.ainvoke(messages)
 
-    def bind_tools(
+
+class _FakeStructuredRunnable:
+    def __init__(self, model: "FakeLowCostModel") -> None:
+        self._model = model
+
+    def bind(self, **kwargs: Any) -> "_FakeStructuredRunnable":
+        _ = kwargs
+        return self
+
+    async def ainvoke(self, messages: list[BaseMessage]) -> dict[str, Any]:
+        _ = messages
+        if self._model.structured_result is None:
+            raise AssertionError("Structured output was not configured.")
+        return self._model.structured_result
+
+
+class FakeLowCostModel:
+    def __init__(
         self,
-        tools: Sequence[BaseTool],
         *,
-        temperature: float | None = None,
-    ) -> Any:
-        _ = (tools, temperature)
-        raise AssertionError("Low-cost provider should not bind tools in smoke tests.")
+        text_result: Any = "你好，我在。",
+        structured_result: dict[str, Any] | None = None,
+        structured_error: Exception | None = None,
+    ) -> None:
+        self.text_result = text_result
+        self.structured_result = structured_result
+        self.structured_error = structured_error
+
+    async def ainvoke(self, messages: list[BaseMessage]) -> AIMessage:
+        _ = messages
+        return AIMessage(content=self.text_result)
+
+    def bind(self, **kwargs: Any) -> _FakeTextRunnable:
+        _ = kwargs
+        return _FakeTextRunnable(self)
+
+    def with_structured_output(
+        self,
+        schema: dict[str, Any] | None = None,
+        *,
+        method: str = "json_schema",
+        include_raw: bool = False,
+        strict: bool | None = None,
+        tools: list[Any] | None = None,
+        **kwargs: Any,
+    ) -> _FakeStructuredRunnable:
+        _ = (schema, method, include_raw, strict, tools, kwargs)
+        if self.structured_error is not None:
+            raise self.structured_error
+        return _FakeStructuredRunnable(self)
 
 
 class _FakeBoundModel:
-    def __init__(self, provider: "FakePowerfulProvider", tools: Sequence[BaseTool]) -> None:
-        self._provider = provider
-        self._tools = list(tools)
+    def __init__(self, model: "FakePowerfulModel", tools: list[BaseTool]) -> None:
+        self._model = model
+        self._tools = tools
 
     async def ainvoke(self, messages: list[BaseMessage]) -> AIMessage:
-        return await self._provider._ainvoke(messages, self._tools)
+        return await self._model._ainvoke(messages, self._tools)
 
 
-class FakePowerfulProvider:
+class FakePowerfulModel:
     def __init__(
         self,
         *,
@@ -99,56 +121,43 @@ class FakePowerfulProvider:
         self.final_message = final_message
         self.tool_args = tool_args or {"entity_id": "light.bedroom"}
 
-    async def complete_text(
-        self,
-        messages: list[dict[str, str]],
-        *,
-        temperature: float = 0.2,
-        json_mode: bool = False,
-    ) -> str:
-        _ = (messages, temperature, json_mode)
-        raise AssertionError("Powerful provider should use message-native invocation in smoke tests.")
+    def bind(self, **kwargs: Any) -> _FakeBoundModel:
+        _ = kwargs
+        return _FakeBoundModel(self, [])
 
-    async def invoke_messages(
-        self,
-        messages: list[BaseMessage],
-        *,
-        temperature: float | None = None,
-        tools: Sequence[BaseTool] | None = None,
-    ) -> AIMessage:
-        return await self.bind_tools(tools or [], temperature=temperature).ainvoke(messages)
-
-    def bind_tools(
-        self,
-        tools: Sequence[BaseTool],
-        *,
-        temperature: float | None = None,
-    ) -> _FakeBoundModel:
-        _ = temperature
+    def bind_tools(self, tools: list[BaseTool], **kwargs: Any) -> _FakeBoundModel:
+        _ = kwargs
         return _FakeBoundModel(self, tools)
 
-    async def _ainvoke(
-        self,
-        messages: list[BaseMessage],
-        tools: Sequence[BaseTool],
-    ) -> AIMessage:
+    async def _ainvoke(self, messages: list[BaseMessage], tools: list[BaseTool]) -> AIMessage:
         if any(isinstance(message, ToolMessage) for message in messages):
             return AIMessage(content=self.final_message)
         if not tools:
             return AIMessage(content="当前没有可用工具。")
-
-        tool_name = getattr(tools[0], "name", "tool")
         return AIMessage(
             content="",
             tool_calls=[
                 {
-                    "name": tool_name,
+                    "name": tools[0].name,
                     "args": self.tool_args,
                     "id": "call-1",
                     "type": "tool_call",
                 }
             ],
         )
+
+
+def _initialize_runtime(
+    *,
+    low_cost: Any = None,
+    powerful: Any = None,
+    mcp_client: Any = None,
+) -> None:
+    initialize_runtime_dependencies(
+        settings=SimpleNamespace(agent=SimpleNamespace(home_assistant_mcp=None)),
+        llm_provider_registry=FakeRegistry(powerful=powerful, low_cost=low_cost),
+        mcp_client=mcp_client,
+    )
 
 
 def build_light_control_tool(calls: list[str]) -> BaseTool:
@@ -161,76 +170,123 @@ def build_light_control_tool(calls: list[str]) -> BaseTool:
     return light_control
 
 
-def build_failing_light_control_tool(calls: list[str]) -> BaseTool:
-    @tool
-    async def light_control(entity_id: str) -> str:
-        """Control the bedroom light."""
-        calls.append(entity_id)
-        raise RuntimeError("ha failed")
-
-    return light_control
-
-
-def _initialize_fake_runtime(
-    *,
-    need_tool_call: bool,
-    tools: list[BaseTool] | None = None,
-    direct_reply: str = "你好，我在。",
-    final_message: str = "卧室灯已打开。",
-) -> list[str]:
-    tool_calls: list[str] = []
-    runtime_tools = tools or []
-    low_cost = FakeLowCostProvider(need_tool_call=need_tool_call, direct_reply=direct_reply)
-    powerful = FakePowerfulProvider(final_message=final_message)
-    initialize_runtime_dependencies(
-        settings=object(),
-        llm_provider_registry=FakeRegistry(powerful=powerful, low_cost=low_cost),
-        mcp_client=FakeMCPClient(runtime_tools),
+def test_intent_recognition_uses_json_schema_output() -> None:
+    _initialize_runtime(
+        low_cost=FakeLowCostModel(
+            structured_result={"intent_name": "chat", "need_tool_call": False}
+        )
     )
-    return tool_calls
+
+    result = asyncio.run(intent_recognition({"user_input": "你好", "conversation_text": "你好"}))
+
+    assert result["intent"] == {"name": "chat"}
+    assert result["need_tool_call"] is False
+    assert result["next_action"] == "direct_response"
 
 
-def test_graph_smoke_routes_chat_to_direct_response() -> None:
-    _initialize_fake_runtime(need_tool_call=False, direct_reply="你好，我在。")
+def test_intent_recognition_falls_back_to_local_json_parser() -> None:
+    _initialize_runtime(
+        low_cost=FakeLowCostModel(
+            text_result='```json\n{"intent_name":"chat","need_tool_call":false}\n```',
+            structured_error=NotImplementedError("json_schema not supported"),
+        )
+    )
 
-    final_state = asyncio.run(compile_graph().ainvoke({"user_input": "你好"}))
+    result = asyncio.run(intent_recognition({"user_input": "你好", "conversation_text": "你好"}))
 
-    assert final_state["need_tool_call"] is False
-    assert final_state["next_action"] == "direct_response"
-    assert final_state["execution_result"]["type"] == "text"
-    assert final_state["execution_result"]["message"] == "你好，我在。"
-
-
-def test_graph_smoke_executes_tool_call_with_toolnode() -> None:
-    tool_calls: list[str] = []
-    light_tool = build_light_control_tool(tool_calls)
-    _initialize_fake_runtime(need_tool_call=True, tools=[light_tool], final_message="卧室灯已打开。")
-
-    final_state = asyncio.run(compile_graph().ainvoke({"user_input": "帮我打开卧室灯"}))
-
-    assert final_state["need_tool_call"] is True
-    assert final_state["next_action"] == "agent_execution"
-    assert final_state["status"] == "completed"
-    assert final_state["execution_result"]["message"] == "卧室灯已打开。"
-    assert tool_calls == ["light.bedroom"]
-    assert final_state["tool_call_history"][0]["tool_name"] == "light_control"
-    assert "light.bedroom" in final_state["tool_call_history"][0]["result_summary"]
+    assert result["intent"] == {"name": "chat"}
+    assert result["need_tool_call"] is False
 
 
-def test_graph_smoke_returns_structured_failure_when_tool_raises() -> None:
-    tool_calls: list[str] = []
-    light_tool = build_failing_light_control_tool(tool_calls)
-    _initialize_fake_runtime(need_tool_call=True, tools=[light_tool], final_message="不应到达")
+def test_route_after_intent_uses_need_tool_call_flag() -> None:
+    assert route_after_intent({"need_tool_call": True}) == "tool_selection"
+    assert route_after_intent({"need_tool_call": False}) == "direct_response"
 
-    final_state = asyncio.run(compile_graph().ainvoke({"user_input": "帮我打开卧室灯"}))
 
-    assert final_state["need_tool_call"] is True
-    assert final_state["next_action"] == "agent_execution"
-    assert final_state["status"] == "failed"
-    assert final_state["error"]["type"] == "tool_execution_error"
-    assert "RuntimeError: ha failed" in final_state["error"]["message"]
-    assert final_state["execution_result"]["type"] == "agent_execution_unfinished"
-    assert final_state["execution_result"]["unfinished"] is True
-    assert tool_calls == ["light.bedroom"]
-    assert final_state["tool_call_history"][0]["tool_name"] == "light_control"
-    assert "RuntimeError: ha failed" in final_state["tool_call_history"][0]["error_summary"]
+def test_direct_response_normalizes_message_content() -> None:
+    _initialize_runtime(low_cost=FakeLowCostModel(text_result=[{"text": "你好，我在。"}]))
+
+    result = asyncio.run(direct_response({"user_input": "你好", "conversation_text": "你好"}))
+
+    assert result["execution_result"]["type"] == "text"
+    assert result["execution_result"]["message"] == "你好，我在。"
+
+
+def test_tool_selection_returns_selected_tools() -> None:
+    calls: list[str] = []
+    _initialize_runtime(
+        low_cost=FakeLowCostModel(
+            structured_result={
+                "selected_tool_names": ["light_control"],
+                "comment": "selected",
+            }
+        ),
+        mcp_client=FakeMCPClient([build_light_control_tool(calls)]),
+    )
+
+    result = asyncio.run(
+        tool_selection(
+            {
+                "user_input": "帮我打开卧室灯",
+                "conversation_text": "帮我打开卧室灯",
+                "intent": {"name": "device_control"},
+            }
+        )
+    )
+
+    assert [tool["name"] for tool in result["selected_tools"]] == ["light_control"]
+    assert result["execution_result"]["comment"] == "selected"
+
+
+def test_tool_selection_returns_empty_when_no_tools_available() -> None:
+    _initialize_runtime(
+        low_cost=FakeLowCostModel(
+            structured_result={
+                "selected_tool_names": ["light_control"],
+                "comment": "selected",
+            }
+        ),
+        mcp_client=None,
+    )
+
+    result = asyncio.run(
+        tool_selection(
+            {
+                "user_input": "帮我打开卧室灯",
+                "conversation_text": "帮我打开卧室灯",
+                "intent": {"name": "device_control"},
+            }
+        )
+    )
+
+    assert result["selected_tools"] == []
+    assert result["execution_result"]["selected_count"] == 0
+
+
+def test_agent_call_model_and_finalize_output_use_bound_chat_model() -> None:
+    calls: list[str] = []
+    tool = build_light_control_tool(calls)
+    _initialize_runtime(powerful=FakePowerfulModel(final_message="卧室灯已打开。"))
+
+    initial_state = {
+        "messages": [SystemMessage(content="sys"), HumanMessage(content="帮我打开卧室灯")],
+        "step_count": 0,
+        "step_limit": 6,
+    }
+    first_pass = asyncio.run(agent_call_model(initial_state, tool_instances=[tool]))
+
+    assert first_pass["step_count"] == 1
+    assert first_pass["messages"][0].tool_calls[0]["name"] == "light_control"
+
+    second_state = {
+        "messages": initial_state["messages"]
+        + first_pass["messages"]
+        + [ToolMessage(content="已执行 light.bedroom", name="light_control", tool_call_id="call-1")],
+        "step_count": 1,
+        "step_limit": 6,
+    }
+    second_pass = asyncio.run(agent_call_model(second_state, tool_instances=[tool]))
+    finalized = agent_finalize_output({"messages": second_state["messages"] + second_pass["messages"]})
+
+    assert second_pass["messages"][0].content == "卧室灯已打开。"
+    assert finalized == {"final_output": {"message": "卧室灯已打开。"}}

@@ -8,9 +8,10 @@ from typing import Any
 
 from config.settings import LLMRole
 from graph.mcp_prompt_context import build_mcp_prompts_context
+from graph.nodes.utils.structured_output import invoke_structured_output
 from graph.state import RoomAgentGraphState
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool
-from llm_json_parse import JsonParserWithRepair
 import logging
 
 logger = logging.getLogger(__name__)
@@ -31,7 +32,7 @@ TOOL_SELECTION_OUTPUT_SCHEMA = {
 
 async def tool_selection(state: RoomAgentGraphState) -> RoomAgentGraphState:
     """Select up to three MCP tools for the current request."""
-    provider = _get_low_cost_provider()
+    model = _get_low_cost_model()
     prompt_input = _get_prompt_input(state)
     candidate_tools = await _describe_tools()
     mcp_prompt_context = await _build_mcp_prompt_context()
@@ -41,19 +42,16 @@ async def tool_selection(state: RoomAgentGraphState) -> RoomAgentGraphState:
         _log_zero_tool_selection(prompt_input, state.get("intent", {}), comment)
         return _build_result(candidate_tools, [], comment)
 
-    raw_output = await provider.complete_text(
+    parsed = await invoke_structured_output(
+        model,
         _build_messages(
             prompt_input=prompt_input,
             intent=state.get("intent", {}),
             candidate_tools=candidate_tools,
             mcp_prompt_context=mcp_prompt_context,
         ),
-        temperature=0,
-        json_mode=True,
-    )
-    parsed = await JsonParserWithRepair(llm_provider=provider)(
-        raw_output,
         schema=TOOL_SELECTION_OUTPUT_SCHEMA,
+        temperature=0,
     )
 
     selected_tools = _select_tools(
@@ -68,13 +66,13 @@ async def tool_selection(state: RoomAgentGraphState) -> RoomAgentGraphState:
     return _build_result(candidate_tools, selected_tools, comment)
 
 
-def _get_low_cost_provider() -> Any:
+def _get_low_cost_model() -> Any:
     from app.server import get_llm_provider_registry
 
-    provider = get_llm_provider_registry().get(LLMRole.LOW_COST)
-    if provider is None:
+    model = get_llm_provider_registry().get(LLMRole.LOW_COST)
+    if model is None:
         raise RuntimeError(f"LLM provider is unavailable for role={LLMRole.LOW_COST.value}")
-    return provider
+    return model
 
 
 def _get_mcp_client():
@@ -116,21 +114,19 @@ def _build_messages(
     intent: Any,
     candidate_tools: list[dict[str, Any]],
     mcp_prompt_context: str,
-) -> list[dict[str, str]]:
+) -> list[BaseMessage]:
     return [
-        {
-            "role": "system",
-            "content": (
+        SystemMessage(
+            content=(
                 "你是 Room Agent 的工具选择节点。"
                 "你的职责只有一个：从候选 MCP 工具中挑选最适合当前请求的 0 到 3 个工具。如果用户提到了多个意图，你可以选择多个。按执行顺序或者相关程度排序。"
                 "如果没有任何合适工具，返回空数组。"
                 "优先参考 MCP Prompts 中的模板语义，避免误选工具。"
                 "只输出 JSON，不要输出额外解释。"
-            ),
-        },
-        {
-            "role": "user",
-            "content": json.dumps(
+            )
+        ),
+        HumanMessage(
+            content=json.dumps(
                 {
                     "task": (
                         "请基于用户输入、已识别意图和候选工具，选择最合适的 0 到 3 个工具。"
@@ -142,8 +138,8 @@ def _build_messages(
                     "candidate_tools": candidate_tools,
                 },
                 ensure_ascii=False,
-            ),
-        },
+            )
+        ),
     ]
 
 

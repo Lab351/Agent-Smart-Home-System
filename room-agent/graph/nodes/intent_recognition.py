@@ -6,7 +6,9 @@ from typing import Any
 
 from config.settings import LLMRole
 from graph.state import RoomAgentGraphState
-from llm_json_parse import JsonParserWithRepair
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+
+from graph.nodes.utils.structured_output import invoke_structured_output
 
 
 INTENT_OUTPUT_SCHEMA = {
@@ -22,15 +24,12 @@ INTENT_OUTPUT_SCHEMA = {
 
 async def intent_recognition(state: RoomAgentGraphState) -> RoomAgentGraphState:
     """Classify whether the request needs tool execution."""
-    provider = _get_low_cost_provider()
+    model = _get_low_cost_model()
     prompt_input = _get_prompt_input(state)
 
-    raw_output = await provider.complete_text(
+    parsed = await invoke_structured_output(
+        model,
         _build_messages(prompt_input),
-        json_mode=True,
-    )
-    parsed = await JsonParserWithRepair(llm_provider=provider)(
-        raw_output,
         schema=INTENT_OUTPUT_SCHEMA,
     )
 
@@ -48,30 +47,28 @@ def route_after_intent(state: RoomAgentGraphState) -> str:
     return "tool_selection" if state.get("need_tool_call") else "direct_response"
 
 
-def _get_low_cost_provider() -> Any:
+def _get_low_cost_model() -> Any:
     from app.server import get_llm_provider_registry
 
-    provider = get_llm_provider_registry().get(LLMRole.LOW_COST)
-    if provider is None:
+    model = get_llm_provider_registry().get(LLMRole.LOW_COST)
+    if model is None:
         raise RuntimeError(f"LLM provider is unavailable for role={LLMRole.LOW_COST.value}")
-    return provider
+    return model
 
 
-def _build_messages(user_input: str) -> list[dict[str, str]]:
+def _build_messages(user_input: str) -> list[BaseMessage]:
     return [
-        {
-            "role": "system",
-            "content": (
+        SystemMessage(
+            content=(
                 "你是 Room Agent 的意图分析节点。"
                 "你的任务只有一个：判断当前用户请求是否需要后续工具调用或执行能力。"
                 "如果只是闲聊、问候、纯解释、普通文本问答，则 need_tool_call=false。"
                 "如果请求需要外部工具、设备控制、查询系统或后续执行流程，则 need_tool_call=true。"
                 "请仅输出 JSON，不要输出额外解释。"
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
+            )
+        ),
+        HumanMessage(
+            content=(
                 "请分析下面的用户输入，并输出 JSON。\n"
                 "字段要求：intent_name(string), need_tool_call(boolean).\n"
                 "下面是示例：\n"
@@ -92,8 +89,8 @@ def _build_messages(user_input: str) -> list[dict[str, str]]:
                 "输出：{\"intent_name\":\"explanation\",\"need_tool_call\":false}\n"
                 "现在请只针对下面这个输入输出 JSON，不要附加解释。\n"
                 f"用户输入：{user_input}"
-            ),
-        },
+            )
+        ),
     ]
 
 

@@ -31,13 +31,13 @@ START
 
 ## 核心组件
 
-### LLM Provider
+### LLM Registry
 
 - 全局单例 `LLMProviderRegistry`（`integrations/llm_provider.py`）
 - 两种角色：
   - `powerful` - 复杂推理（agent planning）
   - `low_cost` - 轻量任务（意图识别、直接回复）
-- 基于 `langchain-openai` 的 `ChatOpenAI`
+- registry 直接返回基于 `langchain-openai` 初始化好的 `ChatOpenAI`
 - 支持角色间 fallback
 
 ### MCP 集成
@@ -48,7 +48,8 @@ START
 
 ### 结构化输出
 
-- 统一使用 `llm-json-parse` 的 `JsonParserWithRepair`
+- 优先使用 `ChatOpenAI.with_structured_output(..., method="json_schema")`
+- 失败时回退到 `llm-json-parse` 的 `JsonParserWithRepair` 本地修复
 - 所有 LLM 节点定义 JSON schema 进行校验
 
 ### A2A 服务
@@ -79,7 +80,7 @@ START
 详见 `graph/AGENTS.md`：
 
 - LLM 只能通过全局单例 registry 获取
-- 结构化输出统一使用 `JsonParserWithRepair`
+- 结构化输出优先走 `json_schema`，本地修复只做兜底
 - 每个节点定义独立的 prompt 模板和 schema
 - 错误必须显式上抛或写入结构化对象
 

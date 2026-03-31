@@ -147,12 +147,13 @@ async def agent_call_model(
             }
         }
 
-    provider = _get_powerful_provider()
-    response = await provider.invoke_messages(
-        state.get("messages", []),
-        temperature=0,
-        tools=tool_instances,
+    model = _get_powerful_model()
+    runnable = (
+        model.bind_tools(tool_instances, temperature=0)
+        if tool_instances
+        else model.bind(temperature=0)
     )
+    response = await runnable.ainvoke(state.get("messages", []))
     return {
         "messages": [response],
         "step_count": state.get("step_count", 0) + 1,
@@ -450,11 +451,11 @@ def _summarize_value(value: Any, *, limit: int = 180) -> str:
     return text[: limit - 3] + "..."
 
 
-def _get_powerful_provider() -> Any:
-    provider = get_llm_provider_registry().get(LLMRole.POWERFUL)
-    if provider is None:
+def _get_powerful_model() -> Any:
+    model = get_llm_provider_registry().get(LLMRole.POWERFUL)
+    if model is None:
         raise RuntimeError(f"LLM provider is unavailable for role={LLMRole.POWERFUL.value}")
-    return provider
+    return model
 
 
 async def _load_selected_tools(
