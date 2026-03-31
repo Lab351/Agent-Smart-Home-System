@@ -16,7 +16,7 @@ DIRECT_EXECUTION_ERROR = (
     "Do not run room-agent/app/server.py directly. "
     "Use the project script entry instead, for example: "
     "`cd room-agent && uv run serve --config-path config/examples/room_agent.example.yaml "
-    "--llm-config-path tests/fixtures/llm.yaml`."
+    "--llm-config-path /path/to/private-llm.yaml`."
 )
 
 if __name__ == "__main__" and (__package__ is None or __package__ == ""):

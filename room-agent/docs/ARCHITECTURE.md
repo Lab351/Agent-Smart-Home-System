@@ -94,7 +94,7 @@ START
 cd room-agent
 uv run serve \
   --config-path config/examples/room_agent.example.yaml \
-  --llm-config-path tests/fixtures/llm.yaml
+  --llm-config-path /path/to/private-llm.yaml
 ```
 
 ## 技术栈
