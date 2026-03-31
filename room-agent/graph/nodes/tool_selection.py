@@ -102,11 +102,23 @@ async def _describe_tools() -> list[dict[str, Any]]:
 async def _build_mcp_prompt_context() -> str:
     from app.server import get_settings
 
-    settings = get_settings()
-    mcp_settings = settings.agent.home_assistant_mcp
+    client = _get_mcp_client()
+    if client is None:
+        return ""
+
+    server_name: str | None = None
+    try:
+        settings = get_settings()
+    except Exception as exc:
+        logger.info("Failed to load settings for MCP prompt context: %s", exc)
+    else:
+        agent_settings = getattr(settings, "agent", None)
+        mcp_settings = getattr(agent_settings, "home_assistant_mcp", None)
+        server_name = getattr(mcp_settings, "server_name", None)
+
     return await build_mcp_prompts_context(
-        client=_get_mcp_client(),
-        server_name=(mcp_settings.server_name if mcp_settings is not None else None),
+        client=client,
+        server_name=server_name,
     )
 
 
