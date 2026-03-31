@@ -12,6 +12,8 @@ from config.settings import LLMRole, load_settings
 from graph.entry import compile_graph
 from integrations.llm_provider import create_llm_provider_registry
 
+from time import time
+
 
 async def run_once(
     user_input: str,
@@ -43,7 +45,10 @@ async def run_once(
     )
     graph = compile_graph()
 
+    start_time = time()
     final_state = await graph.ainvoke({"user_input": user_input})
+    end_time = time()
+    print(f"Graph execution completed in {end_time - start_time:.2f} seconds.")
     return final_state
 
 
@@ -66,7 +71,7 @@ def main() -> None:
             llm_config_path=args.llm_config_path,
         )
     )
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print(json.dumps(result.get("execution_result", {}), ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
