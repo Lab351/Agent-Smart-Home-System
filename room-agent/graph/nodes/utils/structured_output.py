@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from langchain_core.messages import BaseMessage
@@ -24,13 +25,17 @@ async def invoke_structured_output(
             runnable = runnable.bind(temperature=temperature)
         result = await runnable.ainvoke(messages)
         return _normalize_structured_result(result)
-    except Exception:
+    except BaseException as exc:
+        if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt, SystemExit)):
+            raise
         runnable = model.bind(temperature=temperature) if temperature is not None else model
         response = await runnable.ainvoke(messages)
         raw_output = normalize_message_content(response)
         parsed = await JsonParserWithRepair()(raw_output, schema=schema)
         if not isinstance(parsed, dict):
             raise TypeError(f"Expected structured output dict, got {type(parsed).__name__}.")
+        if not parsed:
+            raise ValueError("Structured output fallback produced empty result.")
         return parsed
 
 

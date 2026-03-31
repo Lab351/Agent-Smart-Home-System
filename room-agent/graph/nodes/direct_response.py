@@ -32,7 +32,7 @@ async def direct_response(state: RoomAgentGraphState) -> RoomAgentGraphState:
         "next_action": "direct_response",
         "execution_result": {
             "type": "text",
-            "message": reply.strip(),
+            "message": reply,
             "intent": state.get("intent", {}),
         },
     }
