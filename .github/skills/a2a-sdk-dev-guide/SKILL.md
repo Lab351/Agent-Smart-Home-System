@@ -55,9 +55,9 @@ Langgraph 示例值得你重点关注，这是我们项目用到的技术栈.
 
 结合本仓库，优先复用已有“单次执行”入口，再把它接到 A2A 服务层，而不是重写业务逻辑：
 
-1. `room-agent/app/main.py` 中的 `run_once(...)` 代表当前最明显的图执行入口。
+1. `room-agent/app/test_cli.py` 提供单次图执行测试入口，`room-agent/app/server.py` 提供正式服务入口。
 2. 若要服务化 `room-agent`，先检查 graph runner 或 agent facade 是否可直接 `to_a2a`。
-3. 若无现成 facade，再新增薄包装层，把 `run_once(...)` 接到 SDK 提供的 A2A service/app，而不是直接手写协议细节。
+3. 若无现成 facade，再新增薄包装层，把图执行逻辑接到 SDK 提供的 A2A service/app，而不是直接手写协议细节。
 
 ### 6) Implementation rules
 

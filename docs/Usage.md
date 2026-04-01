@@ -53,7 +53,7 @@ cp src/config/agent.config.example.js src/config/agent.config.js
 
 | 模块 | 主要配置 |
 |---|---|
-| `room-agent` | `room-agent/config/room_agent.yaml` |
+| `room-agent` | `room-agent/config/examples/room_agent.example.yaml`, `room-agent/config/examples/llm.example.yaml` |
 | `home-agent` | `home-agent/config/default_config.yaml` |
 | `qwen-backend` | `qwen-backend/.env` |
 | `personal-agent` | `personal-agent/src/config/agent.config.js` |
@@ -83,10 +83,10 @@ npm run start:dev
 
 ```bash
 cd room-agent
-uv run python app/main.py "打开卧室主灯" --config config/room_agent.yaml
+uv run serve --config-path config/examples/room_agent.example.yaml --llm-config-path tests/fixtures/llm.yaml
 ```
 
-该入口当前是最小 CLI 运行方式，便于验证 LangGraph 重构后的主流程。
+该入口是正式服务入口，会启动 A2A HTTP 服务。如需单次测试，可使用 `test_cli.py`。
 
 ### 4.3 启动 Home Agent
 
@@ -205,7 +205,7 @@ curl -X POST http://127.0.0.1:4040/a2a/jsonrpc \
 |---|---|
 | Beacon / Agent 发现异常 | `qwen-backend` 的 `/api/beacon/*`、`/api/registry/*` |
 | Personal Agent 控制链路 | `personal-agent/src/services/ControlService.js`、`transports/*` |
-| Room Agent 图执行异常 | `room-agent/app/main.py` 与 `room-agent/tests/graph/*` |
+| Room Agent 图执行异常 | `room-agent/app/test_cli.py` 与 `room-agent/tests/graph/*` |
 | A2A mock 协议验证 | `tests/demo/mock_a2a_server.py` |
 | Personal Agent transport 回归 | `tests/node/*.mjs` |
 
