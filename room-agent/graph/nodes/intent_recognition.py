@@ -51,7 +51,8 @@ def route_after_intent(state: RoomAgentGraphState) -> str:
 def _get_low_cost_provider() -> Any:
     from app.server import get_llm_provider_registry
 
-    provider = get_llm_provider_registry().get(LLMRole.LOW_COST)
+    reg = get_llm_provider_registry()
+    provider = reg.get(LLMRole.LOW_COST)
     if provider is None:
         raise RuntimeError(f"LLM provider is unavailable for role={LLMRole.LOW_COST.value}")
     return provider
@@ -77,19 +78,19 @@ def _build_messages(user_input: str) -> list[dict[str, str]]:
                 "下面是示例：\n"
                 "示例1\n"
                 "输入：你好\n"
-                "输出：{\"intent_name\":\"chat\",\"need_tool_call\":false}\n"
+                '输出：{"intent_name":"chat","need_tool_call":false}\n'
                 "示例2\n"
                 "输入：你是谁\n"
-                "输出：{\"intent_name\":\"chat\",\"need_tool_call\":false}\n"
+                '输出：{"intent_name":"chat","need_tool_call":false}\n'
                 "示例3\n"
                 "输入：帮我打开卧室的灯\n"
-                "输出：{\"intent_name\":\"device_control\",\"need_tool_call\":true}\n"
+                '输出：{"intent_name":"device_control","need_tool_call":true}\n'
                 "示例4\n"
                 "输入：查一下今天上海天气\n"
-                "输出：{\"intent_name\":\"information_query\",\"need_tool_call\":true}\n"
+                '输出：{"intent_name":"information_query","need_tool_call":true}\n'
                 "示例5\n"
                 "输入：解释一下为什么晚上开空调会口干\n"
-                "输出：{\"intent_name\":\"explanation\",\"need_tool_call\":false}\n"
+                '输出：{"intent_name":"explanation","need_tool_call":false}\n'
                 "现在请只针对下面这个输入输出 JSON，不要附加解释。\n"
                 f"用户输入：{user_input}"
             ),

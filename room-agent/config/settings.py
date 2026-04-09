@@ -88,10 +88,6 @@ class LLMModelSettings(BaseModel):
     base_url: str
     temperature: float = 0.2
 
-    @property
-    def has_credentials(self) -> bool:
-        return bool(self.api_key)
-
 
 class LLMSettings(BaseModel):
     powerful: LLMModelSettings

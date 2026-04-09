@@ -84,9 +84,7 @@ class OpenAICompatibleProvider:
         bound_model = self.bind_tools(tools or [], temperature=temperature)
         response = await bound_model.ainvoke(messages)
         if not isinstance(response, AIMessage):
-            raise ProviderError(
-                "OpenAI-compatible provider returned a non-AIMessage response."
-            )
+            raise ProviderError("OpenAI-compatible provider returned a non-AIMessage response.")
         return response
 
     def bind_tools(
@@ -121,10 +119,8 @@ class LLMProviderRegistry:
 
 
 def create_llm_provider(settings: LLMModelSettings) -> ChatProvider | None:
-    if not settings.has_credentials:
-        return None
-
     return OpenAICompatibleProvider(settings)
+
 
 def create_llm_provider_registry(settings: LLMSettings) -> LLMProviderRegistry:
     return LLMProviderRegistry(
