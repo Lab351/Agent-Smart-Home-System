@@ -4,6 +4,11 @@
 
 这份配置只负责大模型集成信息，不再放在 `room-agent/config.py` 里。
 
+安全说明：
+
+- `room-agent/tests/fixtures/*.yaml` 仅保留脱敏模板，不应提交真实 `api_key` / `auth_token`
+- 做真实 smoke / 联调时，请复制模板到你自己的私有配置路径，再通过 CLI 参数传入
+
 #### TLDR
 
 LLM 配置采用两层结构：
@@ -70,18 +75,22 @@ roles:
 
 #### CLI 用法
 
-默认读取内置示例配置：
+使用测试 CLI 单次执行：
 
 ```bash
-uv run python -m app.main "你好"
+cd room-agent
+.venv/bin/python app/test_cli.py "你好" \
+  --config config/examples/room_agent.example.yaml \
+  --llm-config /path/to/private-llm.yaml
 ```
 
-显式指定 Room Agent 配置和 LLM 配置：
+或启动正式服务：
 
 ```bash
-uv run python -m app.main "你好" \
-  --config config/room_agent.yaml \
-  --llm-config config/llm.example.yaml
+cd room-agent
+uv run serve \
+  --config-path config/examples/room_agent.example.yaml \
+  --llm-config-path /path/to/private-llm.yaml
 ```
 
 ### 关于房间配置

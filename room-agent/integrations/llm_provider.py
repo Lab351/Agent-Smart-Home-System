@@ -29,9 +29,6 @@ class LLMProviderRegistry:
 
 
 def create_llm_provider(settings: LLMModelSettings) -> ChatOpenAI | None:
-    if not settings.has_credentials:
-        return None
-
     return ChatOpenAI(
         model=settings.model,
         api_key=SecretStr(settings.api_key),
@@ -39,6 +36,7 @@ def create_llm_provider(settings: LLMModelSettings) -> ChatOpenAI | None:
         temperature=settings.temperature,
         extra_body={"enable_thinking": False},
     )
+
 
 
 def create_llm_provider_registry(settings: LLMSettings) -> LLMProviderRegistry:
