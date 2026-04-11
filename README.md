@@ -28,7 +28,7 @@
 # room-agent
 cd room-agent
 uv sync
-uv run python app/main.py "打开卧室主灯" --config config/room_agent.yaml
+uv run serve --config-path config/examples/room_agent.example.yaml --llm-config-path tests/fixtures/llm.yaml
 
 # home-agent
 cd home-agent

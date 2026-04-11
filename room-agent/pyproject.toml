@@ -1,6 +1,6 @@
 [project]
 name = "room-agent"
-version = "0.4.2"
+version = "0.4.3"
 description = "房间智能体, 支持 Google A2A 服务协议."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -21,6 +21,7 @@ dependencies = [
 [project.scripts]
 serve = "app.server:cli"
 a2at = "scripts.a2a_debug_client:cli"
+cli = "app.test_cli:main"
 
 [tool.setuptools]
 py-modules = []

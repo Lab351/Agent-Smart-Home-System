@@ -117,7 +117,7 @@ beacon_config.major = room_id;
 
 ## Room Agent 端配置
 
-### 1. 配置文件更新（`config/room_agent.yaml`）
+### 1. 配置文件更新（`config/examples/room_agent.example.yaml`）
 
 ```yaml
 # Room Agent配置

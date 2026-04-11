@@ -42,6 +42,7 @@ env UV_CACHE_DIR=/tmp/uv-cache ...
 
 - `llm.example.yaml` 里的 `api_key` 默认是空的
 - 如果 `low_cost` 角色没有可用凭证，graph 无法运行
+- `tests/fixtures/*.yaml` 现在只保留脱敏模板；做真实联调前请先在你自己的私有配置文件里填入真实 `api_key` / `auth_token`
 - `room_agent.example.yaml` 支持在 `agent.home_assistant_mcp` 下配置 Home Assistant `base_url`，MCP client 会自动拼成 `{base_url}/api/mcp`
 - Home Assistant MCP 默认按 `streamable_http` transport 配置，启动时会做一次 prompts 探活；失败只记录状态，不会中断服务
 
@@ -53,7 +54,7 @@ env UV_CACHE_DIR=/tmp/uv-cache ...
 cd room-agent
 .venv/bin/python app/test_cli.py "你好" \
   --config config/examples/room_agent.example.yaml \
-  --llm-config tests/fixtures/llm.yaml
+  --llm-config /path/to/private-llm.yaml
 ```
 
 成功时会输出 graph 最终 state 的 JSON。
@@ -64,7 +65,7 @@ cd room-agent
 cd room-agent
 env UV_CACHE_DIR=/tmp/uv-cache uv run python app/test_cli.py "你好" \
   --config config/examples/room_agent.example.yaml \
-  --llm-config tests/fixtures/llm.yaml
+  --llm-config /path/to/private-llm.yaml
 ```
 
 如果 `low_cost` 模型不可用，会直接报错：
@@ -90,13 +91,13 @@ ValueError: Low-cost LLM provider is unavailable.
 cd room-agent
 uv run serve \
   --config-path config/examples/room_agent.example.yaml \
-  --llm-config-path tests/fixtures/llm.yaml
+  --llm-config-path /path/to/private-llm.yaml
 ```
 
 说明：
 
 - 服务启动时会初始化全局单例 `Settings`
-- 服务启动时会初始化全局单例 `LLMProviderRegistry`
+- 服务启动时会初始化全局单例 `LLMProviderRegistry`，registry 直接提供按角色配置好的 `ChatOpenAI`
 - 服务启动时会初始化全局单例 `MCP client`，并执行一次 Home Assistant MCP 健康检查
 - 当前业务 loop 仍然是占位实现
 - A2A HTTP 服务入口已保留
@@ -148,5 +149,5 @@ LLM 节点开发规范见：
 
 其中最重要的约束有两条：
 
-- LLM 只能通过服务启动时创建的全局单例 registry 获取
-- 结构化输出解析统一复用 `llm_json_parse.JsonParserWithRepair`
+- LLM 只能通过服务启动时创建的全局单例 registry 获取 `ChatOpenAI`
+- 结构化输出优先使用 `json_schema` 解码约束，失败时再走 `llm_json_parse.JsonParserWithRepair` 的本地修复

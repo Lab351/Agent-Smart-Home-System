@@ -4,6 +4,11 @@
 
 这份配置只负责大模型集成信息，不再放在 `room-agent/config.py` 里。
 
+安全说明：
+
+- `room-agent/tests/fixtures/*.yaml` 仅保留脱敏模板，不应提交真实 `api_key` / `auth_token`
+- 做真实 smoke / 联调时，请复制模板到你自己的私有配置路径，再通过 CLI 参数传入
+
 #### TLDR
 
 LLM 配置采用两层结构：
@@ -13,7 +18,7 @@ LLM 配置采用两层结构：
 
 `llm_provider` 不负责自动帮业务选择模型。它只提供：
 
-- 单模型 Provider
+- 单模型 `ChatOpenAI`
 - 一个可手工选择的 registry
 
 业务层自己决定当前请求应该拿 `powerful` 还是 `low_cost`。
@@ -60,28 +65,32 @@ roles:
 - `settings.llm.powerful`
 - `settings.llm.low_cost`
 
-如果 YAML 里只配置了一个角色，解析器会自动回退，让两个入口都指向同一个配置，避免业务侧因为缺一项直接拿不到 provider。
+如果 YAML 里只配置了一个角色，解析器会自动回退，让两个入口都指向同一个配置，避免业务侧因为缺一项直接拿不到模型实例。
 
 #### 代码边界
 
 - `room-agent/config/settings.py`：负责解析 `llm.example.yaml` 或外部指定路径。
-- `room-agent/integrations/llm_provider.py`：负责把单个模型配置实例化成 provider，并提供 registry。
+- `room-agent/integrations/llm_provider.py`：负责把单个模型配置实例化成 `ChatOpenAI`，并提供 registry。
 - `room-agent/app/main.py`：CLI 默认从 registry 中取 `low_cost`。
 
 #### CLI 用法
 
-默认读取内置示例配置：
+使用测试 CLI 单次执行：
 
 ```bash
-uv run python -m app.main "你好"
+cd room-agent
+.venv/bin/python app/test_cli.py "你好" \
+  --config config/examples/room_agent.example.yaml \
+  --llm-config /path/to/private-llm.yaml
 ```
 
-显式指定 Room Agent 配置和 LLM 配置：
+或启动正式服务：
 
 ```bash
-uv run python -m app.main "你好" \
-  --config config/room_agent.yaml \
-  --llm-config config/llm.example.yaml
+cd room-agent
+uv run serve \
+  --config-path config/examples/room_agent.example.yaml \
+  --llm-config-path /path/to/private-llm.yaml
 ```
 
 ### 关于房间配置

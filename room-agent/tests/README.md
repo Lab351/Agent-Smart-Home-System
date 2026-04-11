@@ -10,9 +10,9 @@ uv run --project room-agent --with pytest pytest room-agent/tests/test_graph_smo
 
 Fixture 配置说明：
 
-- `room-agent/tests/fixtures/llm.yaml` 不纳入版本控制
-- 你需要在本地自行创建这份文件
-- 它的结构应与示例 LLM 配置一致，并为 `low_cost` / `powerful` 角色填入可用模型配置和真实 `api_key`
+- `room-agent/tests/fixtures/llm.yaml` 当前只保留脱敏模板，不能直接当作真实凭证文件使用
+- 做真实 smoke test 时，请复制它或 `room-agent/config/examples/llm.example.yaml` 到你自己的私有路径
+- 私有配置应为 `low_cost` / `powerful` 角色填入可用模型配置和真实 `api_key`
 
 可参考：
 
