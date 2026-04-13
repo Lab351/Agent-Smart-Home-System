@@ -1,12 +1,33 @@
-import type { AgentDiscoveryResult } from '@/types/domain';
+import type {
+  AgentDiscoveryResult,
+  ControlTaskAction,
+  ControlTaskState,
+  ControlTaskStateUpdate,
+} from '@/types/domain';
 
 export interface ControlCommand {
   roomId: string;
   roomAgentId: string;
+  utterance: string;
   targetDevice: string;
   action: string;
   parameters?: Record<string, unknown>;
+  taskId?: string | null;
+  contextId?: string | null;
+  metadata?: Record<string, unknown>;
   sourceAgent: string;
+}
+
+export interface ControlDispatchResult {
+  success: boolean;
+  taskId: string | null;
+  contextId: string | null;
+  state: ControlTaskState;
+  isTerminal: boolean;
+  isInterrupted: boolean;
+  detail: string;
+  action: ControlTaskAction | null;
+  raw: unknown;
 }
 
 export interface IControlTransport {
@@ -18,7 +39,8 @@ export interface IControlTransport {
   }): Promise<boolean>;
   disconnect(): void | Promise<void>;
   isConnected(): boolean;
-  sendControl(command: ControlCommand): Promise<boolean>;
+  getLastError(): string | null;
+  sendControl(command: ControlCommand): Promise<ControlDispatchResult>;
   queryCapabilities(options: {
     roomId: string;
     roomAgentId: string;
@@ -27,7 +49,7 @@ export interface IControlTransport {
   }): Promise<unknown>;
   subscribeToState(
     roomId: string,
-    callback: (state: unknown) => void,
+    callback: (state: ControlTaskStateUpdate) => void,
     options?: { roomAgentId?: string }
   ): Promise<boolean>;
   subscribeToDescription(

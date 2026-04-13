@@ -4,6 +4,7 @@ import type {
   RoomBinding,
   VoiceCommandExecutionResult,
 } from '@/types';
+import { buildRoomTaskDispatchPresentation } from '@/features/voice-control/task-state';
 
 import { A2AHttpControlTransport } from './transports/a2a-http-control-transport';
 import { ControlService } from './control-service';
@@ -126,10 +127,13 @@ export class VoiceCommandOrchestrator {
       this.controlService.setRoomAgent(agentInfo.roomId, agentInfo.agentId);
       const connected = await this.controlService.connect(agentInfo, agentInfo.roomId);
       if (!connected) {
+        const connectionError = this.controlService.getLastError();
         return this.createResult(intent, {
           success: false,
           status: '控制通道连接失败',
-          detail: '已经发现目标 room-agent，但 A2A 控制通道未连通。',
+          detail: connectionError
+            ? `已经发现目标 room-agent，但 A2A 控制通道未连通。${connectionError}`
+            : '已经发现目标 room-agent，但 A2A 控制通道未连通。',
           route: 'room-agent',
           roomId: agentInfo.roomId,
           roomName: agentInfo.roomName,
@@ -137,23 +141,31 @@ export class VoiceCommandOrchestrator {
         });
       }
 
-      const success = await this.controlService.sendControl(
+      const dispatch = await this.controlService.sendControl(
         agentInfo.roomId,
+        text,
         intent.device,
         intent.action,
         intent.parameters
       );
 
       return this.createResult(intent, {
-        success,
-        status: success ? '命令已发送到 Room-Agent' : 'Room-Agent 执行失败',
-        detail: success
-          ? `已向 ${agentInfo.roomName} 的 ${intent.device} 下发 ${intent.action}。`
-          : '命令发送失败，请检查 room-agent A2A 服务和 discovery 数据。',
+        success: dispatch.success,
+        ...buildRoomTaskDispatchPresentation(dispatch, {
+          roomName: agentInfo.roomName,
+          targetDevice: intent.device,
+          action: intent.action,
+        }),
         route: 'room-agent',
         roomId: agentInfo.roomId,
         roomName: agentInfo.roomName,
         agentId: agentInfo.agentId,
+        taskId: dispatch.taskId,
+        taskContextId: dispatch.contextId,
+        taskState: dispatch.state,
+        taskTerminal: dispatch.isTerminal,
+        taskInterrupted: dispatch.isInterrupted,
+        taskAction: dispatch.action,
       });
     } catch (error) {
       console.warn('[VoiceCommandOrchestrator] Command execution failed', error);
@@ -181,9 +193,10 @@ export class VoiceCommandOrchestrator {
 
   private createResult(
     intent: ParsedIntent,
-    payload: Omit<VoiceCommandExecutionResult, 'input' | 'intent'>
+    payload: Omit<VoiceCommandExecutionResult, 'executedAt' | 'input' | 'intent'>
   ): VoiceCommandExecutionResult {
     return {
+      executedAt: Date.now(),
       input: intent.text,
       intent,
       ...payload,

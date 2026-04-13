@@ -1,5 +1,10 @@
 import { UnavailableControlTransport } from '@/services/transports/unavailable-control-transport';
-import type { AgentDiscoveryResult, IControlTransport } from '@/types';
+import type {
+  AgentDiscoveryResult,
+  ControlDispatchResult,
+  ControlTaskStateUpdate,
+  IControlTransport,
+} from '@/types';
 
 export class ControlService {
   private readonly roomAgents = new Map<string, string>();
@@ -37,21 +42,41 @@ export class ControlService {
 
   async sendControl(
     roomId: string,
+    utterance: string,
     targetDevice: string,
     action: string,
-    parameters: Record<string, unknown> = {}
-  ): Promise<boolean> {
+    parameters: Record<string, unknown> = {},
+    options?: {
+      taskId?: string | null;
+      contextId?: string | null;
+      metadata?: Record<string, unknown>;
+    }
+  ): Promise<ControlDispatchResult> {
     const roomAgentId = this.getAgentIdForRoom(roomId);
     if (!roomAgentId || !this.transport.isConnected()) {
-      return false;
+      return {
+        success: false,
+        taskId: null,
+        contextId: null,
+        state: 'unknown',
+        isTerminal: true,
+        isInterrupted: false,
+        detail: '控制通道尚未建立',
+        action: null,
+        raw: null,
+      };
     }
 
     return this.transport.sendControl({
       roomId,
       roomAgentId,
+      utterance,
       targetDevice,
       action,
       parameters,
+      taskId: options?.taskId,
+      contextId: options?.contextId,
+      metadata: options?.metadata,
       sourceAgent: this.personalAgentId,
     });
   }
@@ -70,7 +95,10 @@ export class ControlService {
     });
   }
 
-  async subscribeToState(roomId: string, callback: (state: unknown) => void): Promise<boolean> {
+  async subscribeToState(
+    roomId: string,
+    callback: (state: ControlTaskStateUpdate) => void
+  ): Promise<boolean> {
     return this.transport.subscribeToState(roomId, callback, {
       roomAgentId: this.getAgentIdForRoom(roomId) ?? undefined,
     });
@@ -95,6 +123,10 @@ export class ControlService {
 
   isConnected(): boolean {
     return this.transport.isConnected();
+  }
+
+  getLastError(): string | null {
+    return this.transport.getLastError();
   }
 
   async destroy(): Promise<void> {
