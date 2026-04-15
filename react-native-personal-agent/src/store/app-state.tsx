@@ -10,6 +10,7 @@ import {
   useState,
   type PropsWithChildren,
 } from 'react';
+import * as Linking from 'expo-linking';
 
 import {
   AsrService,
@@ -33,6 +34,8 @@ import {
 import type {
   AudioRecordingResult,
   AudioRecorderSnapshot,
+  BeaconScanDiagnostic,
+  BeaconScanIssue,
   BeaconScanResult,
   ConnectionStatus,
   ControlTaskStateUpdate,
@@ -51,6 +54,7 @@ import { buildRoomAgentSnapshot } from '@/features/voice-control/room-agent-snap
 import {
   buildTaskContinuationMetadata,
   describeTaskActionCallback,
+  resolveTaskActionCallbackFromUrl,
 } from '@/features/voice-control/task-action-callback';
 import {
   buildRoomTaskDispatchPresentation,
@@ -62,11 +66,15 @@ import {
   TASK_TRACKING_UNAVAILABLE_DETAIL,
   TASK_TRACKING_UNAVAILABLE_STATUS,
 } from '@/features/voice-control/task-state';
+import { buildBeaconScanIssue } from '@/features/room-binding/scan-feedback';
 
 type AppStateValue = {
   currentRoomBinding: RoomBinding | null;
   discoveredBeacons: BeaconScanResult[];
+  beaconDiagnostics: BeaconScanDiagnostic[];
+  beaconScanIssue: BeaconScanIssue | null;
   isScanningBeacon: boolean;
+  isStartingBeaconScan: boolean;
   mqttStatus: ConnectionStatus;
   controlStatus: ConnectionStatus;
   microphonePermission: PermissionSnapshot | null;
@@ -121,6 +129,24 @@ function mergeBeaconResult(
     .slice(0, 8);
 }
 
+function mergeBeaconDiagnostic(
+  previousDiagnostics: BeaconScanDiagnostic[],
+  nextDiagnostic: BeaconScanDiagnostic
+): BeaconScanDiagnostic[] {
+  const deduped = previousDiagnostics.filter(
+    item =>
+      !(
+        item.deviceId === nextDiagnostic.deviceId &&
+        item.reason === nextDiagnostic.reason &&
+        item.major === nextDiagnostic.major
+      )
+  );
+
+  return [nextDiagnostic, ...deduped]
+    .sort((left, right) => right.updatedAt - left.updatedAt)
+    .slice(0, 3);
+}
+
 function buildTaskFollowUpDraft(result: VoiceCommandExecutionResult | null): string {
   if (result?.taskState === 'auth-required') {
     return '我已完成鉴权，请继续执行。';
@@ -155,6 +181,9 @@ export function AppStateProvider({ children }: PropsWithChildren) {
   const [currentRoomBinding, setCurrentRoomBinding] = useState<RoomBinding | null>(null);
   const [discoveredBeacons, setDiscoveredBeacons] = useState<BeaconScanResult[]>([]);
   const [isScanningBeacon, setIsScanningBeacon] = useState(false);
+  const [beaconDiagnostics, setBeaconDiagnostics] = useState<BeaconScanDiagnostic[]>([]);
+  const [beaconScanIssue, setBeaconScanIssue] = useState<BeaconScanIssue | null>(null);
+  const [isStartingBeaconScan, setIsStartingBeaconScan] = useState(false);
   const [mqttStatus] = useState<ConnectionStatus>('disconnected');
   const [controlStatus, setControlStatus] = useState<ConnectionStatus>('disconnected');
   const [microphonePermission, setMicrophonePermission] = useState<PermissionSnapshot | null>(null);
@@ -183,6 +212,8 @@ export function AppStateProvider({ children }: PropsWithChildren) {
     useState<TaskActionCallbackResult | null>(null);
   const activeRoomTaskIdRef = useRef<string | null>(null);
   const recoveryHydratedRef = useRef(false);
+  const initialTaskActionCallbackCheckedRef = useRef(false);
+  const handledTaskActionCallbackUrlRef = useRef<string | null>(null);
   const activeRoomSnapshotRef = useRef<{ roomId: string | null; roomName: string | null }>({
     roomId: null,
     roomName: null,
@@ -191,6 +222,12 @@ export function AppStateProvider({ children }: PropsWithChildren) {
   const handleScanResult = useEffectEvent((result: BeaconScanResult) => {
     startTransition(() => {
       setDiscoveredBeacons(previous => mergeBeaconResult(previous, result));
+    });
+  });
+
+  const handleScanDiagnostic = useEffectEvent((diagnostic: BeaconScanDiagnostic) => {
+    startTransition(() => {
+      setBeaconDiagnostics(previous => mergeBeaconDiagnostic(previous, diagnostic));
     });
   });
 
@@ -280,9 +317,41 @@ export function AppStateProvider({ children }: PropsWithChildren) {
     if (update.isTerminal) {
       setTaskFollowUpDraft('');
       setLatestTaskActionCallback(null);
+      handledTaskActionCallbackUrlRef.current = null;
       setIsRecoveredInterruptedTask(false);
       setRecoveredInterruptedTaskAt(null);
     }
+  });
+
+  const handleTaskActionCallbackUrl = useEffectEvent((
+    url: string,
+    source: 'initial' | 'event'
+  ) => {
+    if (!canContinueInterruptedRoomTask(lastCommandExecution)) {
+      return;
+    }
+
+    const callback = resolveTaskActionCallbackFromUrl({
+      url,
+      expectedCallbackUrl: lastCommandExecution.taskAction?.callbackUrl ?? null,
+    });
+    if (!callback || handledTaskActionCallbackUrlRef.current === callback.rawUrl) {
+      return;
+    }
+
+    handledTaskActionCallbackUrlRef.current = callback.rawUrl;
+    setLatestTaskActionCallback(callback);
+    setControlStatus('connected');
+    setVoiceStatusText('已收到页面回跳，可以继续当前任务');
+    setResponsePreview(
+      lastCommandExecution.taskAction?.kind === 'auth'
+        ? `${describeTaskActionCallback(callback)} ${
+            source === 'initial' ? '应用启动时已恢复回跳信息，' : ''
+          }请确认状态后点击“继续任务”。`
+        : `${describeTaskActionCallback(callback)} ${
+            source === 'initial' ? '应用启动时已恢复回跳信息，' : ''
+          }请确认内容后点击“继续任务”。`
+    );
   });
 
   const ensureConnectedForInterruptedTask = useEffectEvent(
@@ -351,6 +420,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
     setIsRecoveredInterruptedTask(false);
     setRecoveredInterruptedTaskAt(null);
     activeRoomTaskIdRef.current = null;
+    handledTaskActionCallbackUrlRef.current = null;
     setLatestTaskActionCallback(null);
     setControlStatus('connecting');
     setVoiceStatusText(
@@ -522,6 +592,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
 
       if (result.taskTerminal) {
         setLatestTaskActionCallback(null);
+        handledTaskActionCallbackUrlRef.current = null;
         setIsRecoveredInterruptedTask(false);
         setRecoveredInterruptedTaskAt(null);
       }
@@ -592,6 +663,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       const launch = await taskActionLauncherService.open(lastCommandExecution.taskAction);
 
       if (launch.callback) {
+        handledTaskActionCallbackUrlRef.current = launch.callback.rawUrl;
         setLatestTaskActionCallback(launch.callback);
         setControlStatus('connected');
         setVoiceStatusText('已收到页面回跳，可以继续当前任务');
@@ -740,11 +812,14 @@ export function AppStateProvider({ children }: PropsWithChildren) {
     void hydrateInitialState();
 
     const unsubscribeScan = bleBeaconService.subscribe(handleScanResult);
+    const unsubscribeDiagnostic = bleBeaconService.subscribeToDiagnostics(handleScanDiagnostic);
     const unsubscribeBinding = beaconBindingCoordinator.subscribe(handleBindingUpdate);
 
     return () => {
       disposed = true;
+      console.debug('[AppState] Cleaning up app state provider');
       unsubscribeScan();
+      unsubscribeDiagnostic();
       unsubscribeBinding();
       void beaconBindingCoordinator.destroy();
       void voiceCommandOrchestrator.destroy();
@@ -753,13 +828,53 @@ export function AppStateProvider({ children }: PropsWithChildren) {
     audioRecordService,
     beaconBindingCoordinator,
     bleBeaconService,
-    handleBindingUpdate,
-    handleScanResult,
     executionHistoryService,
     preferenceService,
     interruptedTaskRecoveryService,
     voiceCommandOrchestrator,
   ]);
+
+  useEffect(() => {
+    const subscription = Linking.addEventListener('url', event => {
+      handleTaskActionCallbackUrl(event.url, 'event');
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [handleTaskActionCallbackUrl]);
+
+  useEffect(() => {
+    if (initialTaskActionCallbackCheckedRef.current || !recoveryHydratedRef.current) {
+      return;
+    }
+
+    if (!isRecoveredInterruptedTask || !canContinueInterruptedRoomTask(lastCommandExecution)) {
+      return;
+    }
+
+    initialTaskActionCallbackCheckedRef.current = true;
+    let disposed = false;
+
+    async function restoreInitialTaskActionCallback() {
+      try {
+        const initialUrl = await Linking.getInitialURL();
+        if (disposed || !initialUrl) {
+          return;
+        }
+
+        handleTaskActionCallbackUrl(initialUrl, 'initial');
+      } catch (error) {
+        console.warn('[AppState] Failed to restore initial task action callback', error);
+      }
+    }
+
+    void restoreInitialTaskActionCallback();
+
+    return () => {
+      disposed = true;
+    };
+  }, [handleTaskActionCallbackUrl, isRecoveredInterruptedTask, lastCommandExecution]);
 
   useEffect(() => {
     if (!recoveryHydratedRef.current) {
@@ -794,7 +909,10 @@ export function AppStateProvider({ children }: PropsWithChildren) {
     () => ({
       currentRoomBinding,
       discoveredBeacons,
+      beaconDiagnostics,
+      beaconScanIssue,
       isScanningBeacon,
+      isStartingBeaconScan,
       mqttStatus,
       controlStatus,
       microphonePermission,
@@ -817,11 +935,24 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       roomAgentSnapshot,
       latestTaskActionCallback,
       toggleBeaconScanning: async () => {
-        if (isScanningBeacon) {
-          await beaconBindingCoordinator.stop();
-          setIsScanningBeacon(false);
+        if (isStartingBeaconScan) {
+          console.debug('[AppState] Beacon scan is already starting, please wait');
           return;
         }
+
+        if (isScanningBeacon) {
+          console.debug('[AppState] Stopping beacon scan from toggle action');
+          await beaconBindingCoordinator.stop('user-toggle');
+          setIsScanningBeacon(false);
+          setBeaconScanIssue(null);
+          return;
+        }
+
+        setDiscoveredBeacons([]);
+        setBeaconDiagnostics([]);
+        setBeaconScanIssue(null);
+        setIsStartingBeaconScan(true);
+        console.debug('[AppState] Starting beacon scan...');
 
         try {
           await beaconBindingCoordinator.start();
@@ -829,21 +960,39 @@ export function AppStateProvider({ children }: PropsWithChildren) {
           setIsScanningBeacon(true);
         } catch (error) {
           console.warn('[AppState] Failed to start beacon scanning', error);
-          setBluetoothPermission(await bleBeaconService.getPermissionStatus());
+          const permission = await bleBeaconService.getPermissionStatus();
+          setBluetoothPermission(permission);
+          setBeaconScanIssue(buildBeaconScanIssue({ error, permission }));
+        } finally {
+          setIsStartingBeaconScan(false);
         }
       },
       unbindRoom: async () => {
+        if (isStartingBeaconScan) {
+          return;
+        }
+
         const preserveInterruptedTask = canContinueInterruptedRoomTask(lastCommandExecution);
+        if (isScanningBeacon) {
+          console.debug('[AppState] Stopping beacon scan before unbinding room');
+          await beaconBindingCoordinator.stop('unbind-room');
+          setIsScanningBeacon(false);
+          setDiscoveredBeacons([]);
+          setBeaconDiagnostics([]);
+        }
+
         await beaconBindingCoordinator.unbind();
         activeRoomTaskIdRef.current = null;
         activeRoomSnapshotRef.current = {
           roomId: null,
           roomName: null,
         };
+        setBeaconScanIssue(null);
         setControlStatus('disconnected');
         setIsAwaitingCommandResult(false);
         setRoomAgentSnapshot(null);
         setLatestTaskActionCallback(null);
+        handledTaskActionCallbackUrlRef.current = null;
         if (preserveInterruptedTask) {
           setVoiceStatusText('房间已解绑，待继续任务已保留');
           setResponsePreview('继续任务前会重新发现并连接目标 Room-Agent。');
@@ -919,6 +1068,8 @@ export function AppStateProvider({ children }: PropsWithChildren) {
     [
       audioRecordService,
       beaconBindingCoordinator,
+      beaconDiagnostics,
+      beaconScanIssue,
       bleBeaconService,
       bluetoothPermission,
       commandDraft,
@@ -927,6 +1078,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       currentRoomBinding,
       discoveredBeacons,
       executeVoiceCommand,
+      isStartingBeaconScan,
       openCurrentTaskAction,
       isScanningBeacon,
       isExecutingCommand,

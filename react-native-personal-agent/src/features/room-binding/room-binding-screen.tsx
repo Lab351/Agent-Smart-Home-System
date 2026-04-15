@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ScreenShell } from '@/features/shared/screen-shell';
 import { SectionCard } from '@/features/shared/section-card';
+import type { BeaconScanIssue } from '@/types';
 
 type BeaconPreview = {
   roomName: string;
@@ -10,10 +11,20 @@ type BeaconPreview = {
   distance: number | null;
 };
 
+type BeaconDiagnosticPreview = {
+  key: string;
+  summary: string;
+  detail: string;
+};
+
 type RoomBindingScreenProps = {
   currentRoomName: string | null;
   scanning: boolean;
+  scanBusy?: boolean;
+  scanStatusText: string;
+  scanIssue?: BeaconScanIssue | null;
   discoveredBeacons: BeaconPreview[];
+  diagnostics: BeaconDiagnosticPreview[];
   onToggleScan?: () => void;
   onUnbind?: () => void;
 };
@@ -21,7 +32,11 @@ type RoomBindingScreenProps = {
 export function RoomBindingScreen({
   currentRoomName,
   scanning,
+  scanBusy = false,
+  scanStatusText,
+  scanIssue,
   discoveredBeacons,
+  diagnostics,
   onToggleScan,
   onUnbind,
 }: RoomBindingScreenProps) {
@@ -36,22 +51,43 @@ export function RoomBindingScreen({
           <ThemedText style={styles.summaryValue}>
             {currentRoomName ?? (scanning ? '扫描附近 Beacon...' : '尚未绑定')}
           </ThemedText>
+          <ThemedText style={styles.summaryHint}>{scanStatusText}</ThemedText>
         </View>
 
         <View style={styles.buttonRow}>
-          <Pressable onPress={onToggleScan} style={styles.primaryButton}>
+          <Pressable
+            disabled={scanBusy}
+            onPress={onToggleScan}
+            style={[styles.primaryButton, scanBusy ? styles.disabledButton : null]}>
             <ThemedText style={styles.primaryButtonText}>
-              {scanning ? '停止扫描' : '开始扫描'}
+              {scanBusy ? '启动中...' : scanning ? '停止扫描' : scanIssue ? '重试扫描' : '开始扫描'}
             </ThemedText>
           </Pressable>
-          <Pressable onPress={onUnbind} style={styles.secondaryButton}>
-            <ThemedText style={styles.secondaryButtonText}>解绑房间</ThemedText>
+          <Pressable
+            disabled={scanBusy}
+            onPress={onUnbind}
+            style={[styles.secondaryButton, scanBusy ? styles.disabledButton : null]}>
+            <ThemedText style={styles.secondaryButtonText}>
+              {scanning ? '停止并解绑' : '解绑房间'}
+            </ThemedText>
           </Pressable>
         </View>
+
+        {scanIssue ? (
+          <View style={styles.issueCard}>
+            <ThemedText style={styles.issueTitle}>{scanIssue.summary}</ThemedText>
+            <ThemedText style={styles.issueDetail}>{scanIssue.detail}</ThemedText>
+          </View>
+        ) : null}
       </SectionCard>
 
       <SectionCard title="附近 Beacon" description="首版先保留扫描结果展示与房间决策所需的信号信息。">
         <View style={styles.beaconList}>
+          {!discoveredBeacons.length ? (
+            <View style={styles.emptyState}>
+              <ThemedText style={styles.emptyStateText}>{scanStatusText}</ThemedText>
+            </View>
+          ) : null}
           {discoveredBeacons.map(beacon => (
             <View key={`${beacon.roomName}-${beacon.rssi}`} style={styles.beaconItem}>
               <View style={styles.beaconHeader}>
@@ -61,6 +97,24 @@ export function RoomBindingScreen({
               <ThemedText style={styles.beaconMeta}>
                 {beacon.distance ? `估算距离 ${beacon.distance.toFixed(1)} m` : '距离待估算'}
               </ThemedText>
+            </View>
+          ))}
+        </View>
+      </SectionCard>
+
+      <SectionCard title="扫描诊断" description="最近几条被忽略的广播会显示在这里，方便确认卡在哪一层。">
+        <View style={styles.diagnosticList}>
+          {!diagnostics.length ? (
+            <View style={styles.emptyState}>
+              <ThemedText style={styles.emptyStateText}>
+                {scanning ? '当前还没有诊断信息。' : '开始扫描后会在这里显示最近的诊断结果。'}
+              </ThemedText>
+            </View>
+          ) : null}
+          {diagnostics.map(diagnostic => (
+            <View key={diagnostic.key} style={styles.diagnosticItem}>
+              <ThemedText style={styles.diagnosticSummary}>{diagnostic.summary}</ThemedText>
+              <ThemedText style={styles.diagnosticDetail}>{diagnostic.detail}</ThemedText>
             </View>
           ))}
         </View>
@@ -86,6 +140,10 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '700',
   },
+  summaryHint: {
+    color: '#687A76',
+    lineHeight: 20,
+  },
   buttonRow: {
     flexDirection: 'row',
     gap: 10,
@@ -97,6 +155,9 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderCurve: 'continuous',
     alignItems: 'center',
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
   primaryButtonText: {
     color: '#F7F1E9',
@@ -114,8 +175,33 @@ const styles = StyleSheet.create({
     color: '#29403C',
     fontWeight: '700',
   },
+  issueCard: {
+    padding: 14,
+    gap: 6,
+    backgroundColor: '#F7E3D2',
+    borderRadius: 18,
+    borderCurve: 'continuous',
+  },
+  issueTitle: {
+    color: '#7A2F18',
+    fontWeight: '700',
+  },
+  issueDetail: {
+    color: '#7A4A36',
+    lineHeight: 20,
+  },
   beaconList: {
     gap: 10,
+  },
+  emptyState: {
+    padding: 14,
+    backgroundColor: '#F4F0EA',
+    borderRadius: 18,
+    borderCurve: 'continuous',
+  },
+  emptyStateText: {
+    color: '#687A76',
+    lineHeight: 20,
   },
   beaconItem: {
     padding: 14,
@@ -140,5 +226,23 @@ const styles = StyleSheet.create({
   },
   beaconMeta: {
     color: '#687A76',
+  },
+  diagnosticList: {
+    gap: 10,
+  },
+  diagnosticItem: {
+    padding: 14,
+    gap: 6,
+    backgroundColor: '#EEF4EF',
+    borderRadius: 18,
+    borderCurve: 'continuous',
+  },
+  diagnosticSummary: {
+    color: '#17342E',
+    fontWeight: '700',
+  },
+  diagnosticDetail: {
+    color: '#60706A',
+    lineHeight: 20,
   },
 });

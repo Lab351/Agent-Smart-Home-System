@@ -1,6 +1,6 @@
 import { BleBeaconService } from '@/platform/ble/ble-beacon-service';
 import { AsyncStorageService } from '@/platform/storage/async-storage-service';
-import type { IBleBeaconService, IStorageService, RoomBinding } from '@/types';
+import type { BeaconScanStopReason, IBleBeaconService, IStorageService, RoomBinding } from '@/types';
 
 const STORAGE_KEY = 'bound-room';
 
@@ -20,7 +20,12 @@ export class BeaconBindingCoordinator {
   }
 
   async start(): Promise<void> {
+    console.debug('[BeaconBindingCoordinator] Start requested', {
+      hasBindingSubscription: Boolean(this.unsubscribeFromBeacon),
+    });
+
     if (this.unsubscribeFromBeacon) {
+      console.debug('[BeaconBindingCoordinator] Start skipped because coordinator is already subscribed');
       return;
     }
 
@@ -41,10 +46,14 @@ export class BeaconBindingCoordinator {
     await this.bleBeaconService.startScanning();
   }
 
-  async stop(): Promise<void> {
+  async stop(reason: BeaconScanStopReason = 'coordinator-stop'): Promise<void> {
+    console.debug('[BeaconBindingCoordinator] Stop requested', {
+      reason,
+      hasBindingSubscription: Boolean(this.unsubscribeFromBeacon),
+    });
     this.unsubscribeFromBeacon?.();
     this.unsubscribeFromBeacon = null;
-    await this.bleBeaconService.stopScanning();
+    await this.bleBeaconService.stopScanning(reason);
   }
 
   subscribe(listener: (binding: RoomBinding | null) => void): () => void {
@@ -72,7 +81,8 @@ export class BeaconBindingCoordinator {
   }
 
   async destroy(): Promise<void> {
-    await this.stop();
+    console.debug('[BeaconBindingCoordinator] Destroy requested');
+    await this.stop('coordinator-destroy');
     this.listeners.clear();
     await this.bleBeaconService.destroy();
   }
