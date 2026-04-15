@@ -34,6 +34,7 @@ gateway:
 
 beacon:
   enabled: true
+  beacon_id: "esp32-beacon-bedroom-01"
   uuid: "01234567-89AB-CDEF-0123456789ABCDEF"
   major: 2
   minor: 0
@@ -59,6 +60,12 @@ runtime:
     assert settings.agent.gateway.register_on_startup is True
     assert settings.agent.gateway.heartbeat_interval == 45
     assert settings.agent.gateway.agent_host == "http://room-agent.local"
+    assert settings.beacon is not None
+    assert settings.beacon.enabled is True
+    assert settings.beacon.beacon_id == "esp32-beacon-bedroom-01"
+    assert settings.beacon.uuid == "01234567-89AB-CDEF-0123456789ABCDEF"
+    assert settings.beacon.major == 2
+    assert settings.beacon.minor == 0
     assert settings.agent.home_assistant_mcp is not None
     assert settings.agent.home_assistant_mcp.enabled is True
     assert settings.agent.home_assistant_mcp.server_name == "home_assistant"

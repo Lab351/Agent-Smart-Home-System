@@ -164,6 +164,7 @@ class ServiceRuntime:
     host: str = os.getenv("ROOM_AGENT_HOST", "127.0.0.1")
     port: int = int(os.getenv("ROOM_AGENT_PORT", "10000"))
     business_poll_interval_seconds: float = 30.0
+    gateway_registration_startup_delay_seconds: float = 0.1
     gateway_client: GatewayClient | None = None
 
     async def run(self) -> None:
@@ -207,19 +208,19 @@ class ServiceRuntime:
             _MCP_HEALTH_STATUS.error,
         )
 
-        if (
-            settings.agent.gateway
-            and settings.agent.gateway.register_on_startup
-            and gateway_client is not None
-        ):
-            await gateway_client.register_agent(settings.agent)
-
         stop_event = asyncio.Event()
         tasks = [
             asyncio.create_task(self.run_a2a_http_server(stop_event), name="roomagent-a2a-http"),
             asyncio.create_task(self.run_business_loop(stop_event), name="roomagent-business-loop"),
         ]
-        if settings.agent.gateway and gateway_client is not None:
+
+        if (
+            settings.agent.gateway
+            and settings.agent.gateway.register_on_startup
+            and gateway_client is not None
+        ):
+            await asyncio.sleep(self.gateway_registration_startup_delay_seconds)
+            await gateway_client.register_agent(settings)
             tasks.append(
                 asyncio.create_task(
                     self.run_gateway_heartbeat_loop(stop_event),
@@ -298,15 +299,17 @@ class ServiceRuntime:
             gateway.heartbeat_interval,
         )
         while not stop_event.is_set():
-            if self.gateway_client is not None:
-                await self.gateway_client.send_heartbeat(settings.agent)
             try:
                 await asyncio.wait_for(
                     stop_event.wait(),
                     timeout=gateway.heartbeat_interval,
                 )
             except TimeoutError:
-                continue
+                pass
+            if stop_event.is_set():
+                break
+            if self.gateway_client is not None:
+                await self.gateway_client.send_heartbeat(settings)
         logger.info("Gateway heartbeat loop stopped.")
 
     async def tick_business_jobs(self) -> None:

@@ -5,7 +5,6 @@
 协议基线：
 
 - 主协议：`Beacon API + Registry API + A2A SDK`
-- 兼容协议：`MQTT`
 
 本文档版本：`v1`
 
@@ -17,13 +16,11 @@
 
 - `qwen-backend` 负责注册、发现、保活
 - Agent 间业务交互优先使用 `a2a-sdk`
-- MQTT 只能视为兼容层，不再作为主协议标准
 
 尤其需要明确：
 
 - 当前 A2A 路径已经覆盖控制请求和能力发现
 - 当前 A2A 路径**尚未**形成标准化的“设备状态持续订阅协议”
-- 因此，不能把历史 MQTT `state` topic 直接写成 A2A 主协议的一部分
 
 ## 2. 适用范围
 
@@ -55,14 +52,6 @@
 - `message/send`：发送业务请求
 - `tasks/get`：查询任务状态和执行结果
 
-### 3.3 兼容面
-
-MQTT 仅作为兼容面保留：
-
-- 可承载旧版状态广播
-- 可承载旧版房间控制 topic
-- 不作为当前 A2A 主协议的标准定义来源
-
 ## 4. 核心对象
 
 ### 4.1 Beacon 注册对象
@@ -74,8 +63,6 @@ MQTT 仅作为兼容面保留：
   "beacon_id": "esp32-beacon-bedroom-01",
   "room_id": "bedroom",
   "agent_id": "room-agent-bedroom",
-  "mqtt_broker": "192.168.1.10",
-  "mqtt_ws_port": 9001,
   "capabilities": ["device_control", "scene_activation"],
   "devices": [
     {
@@ -94,15 +81,8 @@ MQTT 仅作为兼容面保留：
 | `beacon_id` | 是 | Beacon 唯一标识 |
 | `room_id` | 是 | 房间标识 |
 | `agent_id` | 是 | 负责该房间的 Room Agent 标识 |
-| `mqtt_broker` | 当前实现是 | 兼容 MQTT 客户端使用的 Broker 地址 |
-| `mqtt_ws_port` | 否 | 兼容 MQTT WebSocket 端口 |
 | `capabilities` | 否 | 房间能力摘要 |
 | `devices` | 否 | 设备能力摘要 |
-
-说明：
-
-- `mqtt_broker` / `mqtt_ws_port` 目前仍存在于后端 DTO 中，因此当前实现仍要求保留
-- 但它们属于兼容字段，不应被视为 A2A 主协议的核心字段
 
 ### 4.2 Agent 注册对象
 
@@ -207,8 +187,6 @@ MQTT 仅作为兼容面保留：
     "beacon_id": "esp32-beacon-bedroom-01",
     "room_id": "bedroom",
     "agent_id": "room-agent-bedroom",
-    "mqtt_broker": "192.168.1.10",
-    "mqtt_ws_port": 9001,
     "registered_at": "2026-03-24T10:00:00.000Z",
     "last_heartbeat": "2026-03-24T10:00:00.000Z"
   }
@@ -227,7 +205,6 @@ MQTT 仅作为兼容面保留：
 用途：
 
 - Personal Agent 根据 Beacon 获取 `room_id` 和 `agent_id`
-- 如客户端仍在走兼容模式，也可顺带拿到 MQTT 连接信息
 
 说明：
 
@@ -640,7 +617,7 @@ POST /api/registry/room-agent-bedroom/heartbeat
 - 查询设备摘要
 - 获取 Agent 基本描述
 
-当前实现中，`personal-agent` 与 `react-native-personal-agent` 都是通过 Agent Card 做能力查询，而不是通过 MQTT `description` topic。
+当前实现中，`personal-agent` 与 `react-native-personal-agent` 都是通过 Agent Card 做能力查询。
 
 ### 6.2 发送控制请求
 
@@ -703,13 +680,11 @@ POST /api/registry/room-agent-bedroom/heartbeat
 
 ### 6.6 后续建议
 
-如果后续要把“设备状态监听”正式纳入 A2A 主协议，建议新增一套明确的 A2A 语义，而不是直接照搬 MQTT topic。可选方向：
+如果后续要把“设备状态监听”正式纳入 A2A 主协议，建议新增一套明确的 A2A 语义。可选方向：
 
 1. 基于 A2A streaming 定义 `state_stream`
 2. 基于 A2A task/result 定义 `get_room_state`
 3. 由 Room Agent 提供专门的状态查询 HTTP 接口，再由 Agent Card 暴露
-
-在这些能力落地前，文档中不得把 MQTT `state` topic 写成 A2A 标准的一部分。
 
 ## 7. 心跳与在线状态标准
 
@@ -733,18 +708,6 @@ A2A 请求成功不等于注册中心保活成功。
 - 仍然需要独立调用 Registry heartbeat
 - 仍然需要独立调用 Beacon heartbeat
 
-### 7.3 MQTT 心跳的定位
-
-如果某些客户端仍启用 MQTT 兼容链路，则 MQTT heartbeat 只能视为：
-
-- 运行时监控信号
-- 兼容模式下的在线感知
-
-它不替代：
-
-- Beacon heartbeat
-- Agent heartbeat
-
 ## 8. 接入时序
 
 ### 8.1 Room Agent 启动
@@ -754,7 +717,6 @@ A2A 请求成功不等于注册中心保活成功。
 3. 调用 `POST /api/registry/register` 注册 AgentCard 和 A2A 地址
 4. 周期性调用 `POST /api/beacon/:beacon_id/heartbeat`
 5. 周期性调用 `POST /api/registry/:agent_id/heartbeat`
-6. 如启用兼容模式，可额外发布 MQTT 状态或心跳
 
 ### 8.2 Personal Agent 发现与调用
 
@@ -771,34 +733,7 @@ A2A 请求成功不等于注册中心保活成功。
 
 当前主协议下，没有标准化的 A2A 状态订阅步骤。
 
-如果产品阶段必须实时看房间状态，只能二选一：
-
-1. 继续使用旧 MQTT 兼容链路
-2. 单独补一套新的 A2A/HTTP 状态查询协议
-
-## 9. MQTT 兼容附录
-
-本节仅用于兼容旧实现，不属于当前主协议。
-
-### 9.1 兼容 Topic
-
-| Topic | 用途 |
-|---|---|
-| `room/{room_id}/agent/{agent_id}/control` | 旧版控制请求 |
-| `room/{room_id}/agent/{agent_id}/state` | 旧版状态广播 |
-| `room/{room_id}/agent/{agent_id}/describe` | 旧版能力查询 |
-| `room/{room_id}/agent/{agent_id}/description` | 旧版能力描述 |
-| `room/{room_id}/agent/{agent_id}/heartbeat` | 旧版运行时心跳 |
-| `home/state` | 旧版全局状态 |
-| `home/policy` | 旧版策略广播 |
-| `home/arbitration` | 旧版仲裁请求 |
-| `home/arbitration/response/{request_id}` | 旧版仲裁响应 |
-
-### 9.2 兼容原则
-
-- 新增功能优先接入 A2A
-- 不再为 MQTT topic 增加新的规范性语义
-- 仅在旧客户端尚未迁移时保留 MQTT 字段与 topic
+如果产品阶段必须实时看房间状态，应单独补一套新的 A2A/HTTP 状态查询或订阅协议。
 
 ## 10. 错误处理约定
 
@@ -836,10 +771,6 @@ A2A 请求成功不等于注册中心保活成功。
 - `room-agent/app/a2a_server.py`
 - `personal-agent/src/services/transports/A2AControlTransport.js`
 - `react-native-personal-agent/src/services/transports/a2a-http-control-transport.ts`
-- `shared/mqtt/topics.py`
-- `shared/mqtt/topic_manager.py`
-- `shared/models/mqtt_messages.py`
-
 ## 13. 后续扩展建议
 
 如果后续需要把“状态监听”纳入主协议，建议明确拆成独立能力，而不是混在注册协议里。推荐新增其中一种：

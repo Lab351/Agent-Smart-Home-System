@@ -24,6 +24,7 @@ gateway:
 # Beacon 绑定配置，仅用于空间绑定声明和 ESP32 固件生成
 beacon:
   enabled: true
+  beacon_id: "esp32-beacon-bedroom-01"
   uuid: "01234567-89AB-CDEF-0123456789ABCDEF"
   major: 2
   minor: 0

@@ -50,6 +50,38 @@ export class BeaconController {
     }
   }
 
+  @Get('list')
+  getAllBeacons() {
+    try {
+      this.logger.log('Listing all beacons');
+
+      const beacons = this.beaconService.getAllBeacons();
+
+      return {
+        success: true,
+        data: beacons,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to list beacons: ${error.message}`);
+      throw error;
+    }
+  }
+
+  @Get('stats')
+  getStats() {
+    try {
+      const stats = this.beaconService.getStats();
+
+      return {
+        success: true,
+        data: stats,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to get stats: ${error.message}`);
+      throw error;
+    }
+  }
+
   @Get(':beacon_id')
   async getBeaconInfo(@Param('beacon_id') beaconId: string) {
     try {
@@ -70,23 +102,6 @@ export class BeaconController {
       };
     } catch (error) {
       this.logger.error(`Failed to get beacon info: ${error.message}`);
-      throw error;
-    }
-  }
-
-  @Get('list')
-  getAllBeacons() {
-    try {
-      this.logger.log('Listing all beacons');
-
-      const beacons = this.beaconService.getAllBeacons();
-
-      return {
-        success: true,
-        data: beacons,
-      };
-    } catch (error) {
-      this.logger.error(`Failed to list beacons: ${error.message}`);
       throw error;
     }
   }
@@ -122,21 +137,6 @@ export class BeaconController {
       };
     } catch (error) {
       this.logger.error(`Failed to remove beacon: ${error.message}`);
-      throw error;
-    }
-  }
-
-  @Get('stats')
-  getStats() {
-    try {
-      const stats = this.beaconService.getStats();
-
-      return {
-        success: true,
-        data: stats,
-      };
-    } catch (error) {
-      this.logger.error(`Failed to get stats: ${error.message}`);
       throw error;
     }
   }
