@@ -1,4 +1,9 @@
-import type { AgentDiscoveryResult, ControlCommand, IControlTransport } from '@/types';
+import type {
+  AgentDiscoveryResult,
+  ControlCommand,
+  ControlDispatchResult,
+  IControlTransport,
+} from '@/types';
 
 export class UnavailableControlTransport implements IControlTransport {
   async connect(_options: {
@@ -16,8 +21,22 @@ export class UnavailableControlTransport implements IControlTransport {
     return false;
   }
 
-  async sendControl(_command: ControlCommand): Promise<boolean> {
-    return false;
+  getLastError(): string | null {
+    return '控制通道未接入';
+  }
+
+  async sendControl(_command: ControlCommand): Promise<ControlDispatchResult> {
+    return {
+      success: false,
+      taskId: null,
+      contextId: null,
+      state: 'unknown',
+      isTerminal: true,
+      isInterrupted: false,
+      detail: '控制通道未接入',
+      action: null,
+      raw: null,
+    };
   }
 
   async queryCapabilities(): Promise<unknown> {

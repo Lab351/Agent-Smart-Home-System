@@ -9,12 +9,23 @@ export default function VoiceControlRoute() {
     transcript,
     responsePreview,
     voiceStatusText,
+    isRecognizingSpeech,
     commandDraft,
+    taskFollowUpDraft,
     isExecutingCommand,
+    isAwaitingCommandResult,
     lastCommandExecution,
+    isRecoveredInterruptedTask,
+    recoveredInterruptedTaskAt,
+    commandExecutionHistory,
+    roomAgentSnapshot,
+    latestTaskActionCallback,
     toggleRecording,
     updateCommandDraft,
+    updateTaskFollowUpDraft,
     submitCommandDraft,
+    submitTaskFollowUp,
+    openCurrentTaskAction,
   } = useAppState();
 
   return (
@@ -25,11 +36,22 @@ export default function VoiceControlRoute() {
       statusText={voiceStatusText}
       transcript={transcript}
       responsePreview={responsePreview}
+      isRecognizingSpeech={isRecognizingSpeech}
       commandDraft={commandDraft}
-      isSubmittingCommand={isExecutingCommand}
+      taskFollowUpDraft={taskFollowUpDraft}
+      isExecutingCommand={isExecutingCommand}
+      isAwaitingCommandResult={isAwaitingCommandResult}
       lastCommandExecution={lastCommandExecution}
+      isRecoveredInterruptedTask={isRecoveredInterruptedTask}
+      recoveredInterruptedTaskAt={recoveredInterruptedTaskAt}
+      commandExecutionHistory={commandExecutionHistory}
+      roomAgentSnapshot={roomAgentSnapshot}
+      latestTaskActionCallback={latestTaskActionCallback}
       onChangeCommandDraft={updateCommandDraft}
+      onChangeTaskFollowUpDraft={updateTaskFollowUpDraft}
       onSubmitCommandDraft={submitCommandDraft}
+      onSubmitTaskFollowUp={submitTaskFollowUp}
+      onOpenTaskAction={openCurrentTaskAction}
       onToggleRecording={toggleRecording}
     />
   );

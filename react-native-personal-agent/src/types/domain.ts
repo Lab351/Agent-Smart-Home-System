@@ -52,6 +52,42 @@ export interface BeaconScanResult {
   rawManufacturerData: string;
 }
 
+export type BeaconScanDiagnosticReason =
+  | 'missing-rssi'
+  | 'missing-manufacturer-data'
+  | 'invalid-base64'
+  | 'payload-too-short'
+  | 'unexpected-company-id'
+  | 'unexpected-beacon-type'
+  | 'unmapped-major'
+  | 'rssi-below-threshold';
+
+export interface BeaconScanDiagnostic {
+  deviceId: string | null;
+  localName: string | null;
+  reason: BeaconScanDiagnosticReason;
+  summary: string;
+  detail: string;
+  rssi: number | null;
+  major: number | null;
+  manufacturerDataPreview: string | null;
+  updatedAt: number;
+}
+
+export type BeaconScanIssueCode =
+  | 'permission-denied'
+  | 'emulator-unsupported'
+  | 'bluetooth-powered-off'
+  | 'bluetooth-unavailable'
+  | 'unknown';
+
+export interface BeaconScanIssue {
+  code: BeaconScanIssueCode;
+  summary: string;
+  detail: string;
+  updatedAt: number;
+}
+
 export interface AgentDeviceDescriptor {
   id: string;
   name?: string;
@@ -95,7 +131,79 @@ export interface VoiceRecognitionResult {
   raw?: unknown;
 }
 
+export type ControlTaskState =
+  | 'submitted'
+  | 'working'
+  | 'input-required'
+  | 'auth-required'
+  | 'completed'
+  | 'failed'
+  | 'canceled'
+  | 'rejected'
+  | 'unknown';
+
+export interface ControlTaskAction {
+  kind: 'auth' | 'input';
+  label: string | null;
+  description: string | null;
+  url: string | null;
+  callbackUrl: string | null;
+}
+
+export type TaskActionCallbackQueryValue = string | string[];
+
+export interface TaskActionCallbackResult {
+  rawUrl: string;
+  hostname: string | null;
+  path: string | null;
+  queryParams: Record<string, TaskActionCallbackQueryValue>;
+  receivedAt: number;
+}
+
+export interface ControlTaskStateUpdate {
+  taskId: string | null;
+  contextId: string | null;
+  roomId: string | null;
+  state: ControlTaskState;
+  success: boolean;
+  isTerminal: boolean;
+  isInterrupted: boolean;
+  detail: string;
+  action: ControlTaskAction | null;
+  raw: unknown;
+}
+
+export interface RoomAgentSnapshotDevice {
+  id: string;
+  name: string;
+  type: string | null;
+}
+
+export interface RoomAgentSnapshotSkill {
+  id: string;
+  name: string;
+  description: string | null;
+  tags: string[];
+}
+
+export interface RoomAgentSnapshot {
+  roomId: string | null;
+  roomName: string | null;
+  agentId: string | null;
+  agentName: string | null;
+  agentType: string | null;
+  agentDescription: string | null;
+  agentVersion: string | null;
+  devices: RoomAgentSnapshotDevice[];
+  capabilities: string[];
+  skills: RoomAgentSnapshotSkill[];
+  note: string;
+  updatedAt: number;
+  raw: unknown;
+}
+
 export interface VoiceCommandExecutionResult {
+  executedAt: number;
   success: boolean;
   input: string;
   status: string;
@@ -105,4 +213,10 @@ export interface VoiceCommandExecutionResult {
   roomId: string | null;
   roomName: string | null;
   agentId?: string | null;
+  taskId?: string | null;
+  taskContextId?: string | null;
+  taskState?: ControlTaskState | null;
+  taskTerminal?: boolean;
+  taskInterrupted?: boolean;
+  taskAction?: ControlTaskAction | null;
 }
