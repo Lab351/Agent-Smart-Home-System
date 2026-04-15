@@ -52,6 +52,42 @@ export interface BeaconScanResult {
   rawManufacturerData: string;
 }
 
+export type BeaconScanDiagnosticReason =
+  | 'missing-rssi'
+  | 'missing-manufacturer-data'
+  | 'invalid-base64'
+  | 'payload-too-short'
+  | 'unexpected-company-id'
+  | 'unexpected-beacon-type'
+  | 'unmapped-major'
+  | 'rssi-below-threshold';
+
+export interface BeaconScanDiagnostic {
+  deviceId: string | null;
+  localName: string | null;
+  reason: BeaconScanDiagnosticReason;
+  summary: string;
+  detail: string;
+  rssi: number | null;
+  major: number | null;
+  manufacturerDataPreview: string | null;
+  updatedAt: number;
+}
+
+export type BeaconScanIssueCode =
+  | 'permission-denied'
+  | 'emulator-unsupported'
+  | 'bluetooth-powered-off'
+  | 'bluetooth-unavailable'
+  | 'unknown';
+
+export interface BeaconScanIssue {
+  code: BeaconScanIssueCode;
+  summary: string;
+  detail: string;
+  updatedAt: number;
+}
+
 export interface AgentDeviceDescriptor {
   id: string;
   name?: string;

@@ -7,6 +7,11 @@ const mockState = jest.fn(async () => 'PoweredOn');
 const mockOnStateChange = jest.fn(() => ({
   remove: jest.fn(),
 }));
+let mockScannedDevice: Record<string, unknown> | null = null;
+
+jest.mock('expo-device', () => ({
+  isDevice: true,
+}));
 
 jest.mock('react-native-ble-plx', () => ({
   BleManager: jest.fn().mockImplementation(() => ({
@@ -47,18 +52,19 @@ describe('BleBeaconService', () => {
   });
 
   beforeEach(() => {
-    mockStartDeviceScan.mockImplementation(async (_uuids, _options, listener) => {
-      const payload = Buffer.from(
+    mockScannedDevice = {
+      id: 'beacon-1',
+      name: 'ESP32 Living Room',
+      localName: 'ESP32 Living Room',
+      rssi: -62,
+      manufacturerData: Buffer.from(
         Uint8Array.from([0xff, 0xff, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x03])
-      ).toString('base64');
-
-      listener(null, {
-        id: 'beacon-1',
-        name: 'ESP32 Living Room',
-        localName: 'ESP32 Living Room',
-        rssi: -62,
-        manufacturerData: payload,
-      });
+      ).toString('base64'),
+    };
+    mockStartDeviceScan.mockImplementation(async (_uuids, _options, listener) => {
+      if (mockScannedDevice) {
+        listener(null, mockScannedDevice);
+      }
     });
   });
 
@@ -85,5 +91,69 @@ describe('BleBeaconService', () => {
     expect(mockStartDeviceScan).toHaveBeenCalled();
     expect(scanResults).toEqual(['livingroom']);
     expect(roomBindings).toEqual(['livingroom']);
+  });
+
+  it('emits diagnostics when manufacturer data is missing', async () => {
+    mockScannedDevice = {
+      id: 'beacon-missing-md',
+      localName: 'Unknown Beacon',
+      rssi: -60,
+      manufacturerData: null,
+    };
+
+    const service = new BleBeaconService();
+    const diagnostics: string[] = [];
+
+    service.subscribeToDiagnostics(diagnostic => {
+      diagnostics.push(diagnostic.reason);
+    });
+
+    await service.startScanning();
+
+    expect(diagnostics).toEqual(['missing-manufacturer-data']);
+  });
+
+  it('emits diagnostics when major is not mapped', async () => {
+    mockScannedDevice = {
+      id: 'beacon-unmapped-major',
+      localName: 'ESP32 Guest Room',
+      rssi: -60,
+      manufacturerData: Buffer.from(
+        Uint8Array.from([0xff, 0xff, 0x01, 0x00, 0x09, 0x00, 0x00, 0x00, 0x02, 0x03])
+      ).toString('base64'),
+    };
+
+    const service = new BleBeaconService();
+    const diagnostics: string[] = [];
+
+    service.subscribeToDiagnostics(diagnostic => {
+      diagnostics.push(diagnostic.reason);
+    });
+
+    await service.startScanning();
+
+    expect(diagnostics).toEqual(['unmapped-major']);
+  });
+
+  it('emits diagnostics when company id does not match the custom protocol', async () => {
+    mockScannedDevice = {
+      id: 'beacon-other-company',
+      localName: 'Other Beacon',
+      rssi: -60,
+      manufacturerData: Buffer.from(
+        Uint8Array.from([0x34, 0x12, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x03])
+      ).toString('base64'),
+    };
+
+    const service = new BleBeaconService();
+    const diagnostics: string[] = [];
+
+    service.subscribeToDiagnostics(diagnostic => {
+      diagnostics.push(diagnostic.reason);
+    });
+
+    await service.startScanning();
+
+    expect(diagnostics).toEqual(['unexpected-company-id']);
   });
 });

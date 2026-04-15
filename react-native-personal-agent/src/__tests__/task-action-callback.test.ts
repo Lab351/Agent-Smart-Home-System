@@ -1,7 +1,9 @@
 import {
+  buildTaskActionCallbackResult,
   buildTaskContinuationMetadata,
   describeTaskActionCallback,
   formatTaskActionCallbackQueryValue,
+  resolveTaskActionCallbackFromUrl,
 } from '@/features/voice-control/task-action-callback';
 
 describe('task-action-callback helpers', () => {
@@ -63,5 +65,58 @@ describe('task-action-callback helpers', () => {
 
   it('formats multi-value query params for display', () => {
     expect(formatTaskActionCallbackQueryValue(['scope:a', 'scope:b'])).toBe('scope:a, scope:b');
+  });
+
+  it('normalizes callback payloads into a reusable result shape', () => {
+    expect(
+      buildTaskActionCallbackResult({
+        rawUrl: 'personalagent://voice-control/resume?code=abc',
+        hostname: 'voice-control',
+        path: 'resume',
+        queryParams: {
+          code: 'abc',
+          empty: '',
+          scope: ['read', '', 'write'],
+        },
+        receivedAt: 123,
+      })
+    ).toEqual({
+      rawUrl: 'personalagent://voice-control/resume?code=abc',
+      hostname: 'voice-control',
+      path: 'resume',
+      queryParams: {
+        code: 'abc',
+        scope: ['read', 'write'],
+      },
+      receivedAt: 123,
+    });
+  });
+
+  it('accepts cold-start callback urls that match the expected scheme and host', () => {
+    expect(
+      resolveTaskActionCallbackFromUrl({
+        url: 'personalagent://voice-control/resume?code=abc&state=xyz',
+        expectedCallbackUrl: 'personalagent://voice-control',
+        receivedAt: 456,
+      })
+    ).toEqual({
+      rawUrl: 'personalagent://voice-control/resume?code=abc&state=xyz',
+      hostname: 'voice-control',
+      path: 'resume',
+      queryParams: {
+        code: 'abc',
+        state: 'xyz',
+      },
+      receivedAt: 456,
+    });
+  });
+
+  it('ignores urls that do not match the expected callback target', () => {
+    expect(
+      resolveTaskActionCallbackFromUrl({
+        url: 'otherapp://voice-control/resume?code=abc',
+        expectedCallbackUrl: 'personalagent://voice-control/resume',
+      })
+    ).toBeNull();
   });
 });

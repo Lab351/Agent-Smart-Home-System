@@ -1,6 +1,7 @@
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 
+import { buildTaskActionCallbackResult } from '@/features/voice-control/task-action-callback';
 import type { ControlTaskAction, TaskActionCallbackResult } from '@/types';
 
 type LinkingModule = {
@@ -96,47 +97,9 @@ export class TaskActionLauncherService {
   }
 
   private parseCallbackResult(url: string): TaskActionCallbackResult {
-    const parsed = this.linking.parse(url);
-
-    return {
+    return buildTaskActionCallbackResult({
       rawUrl: url,
-      hostname: typeof parsed.hostname === 'string' ? parsed.hostname : null,
-      path: typeof parsed.path === 'string' ? parsed.path : null,
-      queryParams: this.normalizeQueryParams(parsed.queryParams),
-      receivedAt: Date.now(),
-    };
-  }
-
-  private normalizeQueryParams(queryParams: Record<string, unknown> | null | undefined) {
-    if (!queryParams) {
-      return {};
-    }
-
-    const normalized: TaskActionCallbackResult['queryParams'] = {};
-
-    for (const [key, value] of Object.entries(queryParams)) {
-      const normalizedValue = this.normalizeQueryParamValue(value);
-      if (normalizedValue) {
-        normalized[key] = normalizedValue;
-      }
-    }
-
-    return normalized;
-  }
-
-  private normalizeQueryParamValue(value: unknown): string | string[] | null {
-    if (typeof value === 'string' && value.length > 0) {
-      return value;
-    }
-
-    if (Array.isArray(value)) {
-      const normalizedValues = value
-        .map(item => (typeof item === 'string' && item.length > 0 ? item : null))
-        .filter((item): item is string => Boolean(item));
-
-      return normalizedValues.length ? normalizedValues : null;
-    }
-
-    return null;
+      ...this.linking.parse(url),
+    });
   }
 }
