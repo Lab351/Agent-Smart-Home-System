@@ -2,6 +2,7 @@ services:
   qwen-backend:
     build: .
     container_name: qwen-backend
+    image: registry.cn-guangzhou.aliyuncs.com/weishuokun/qwen-backend:latest
     restart: unless-stopped
     ports:
       - "3088:3000"
