@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from typing import Any
 
@@ -30,8 +31,19 @@ TOOL_SELECTION_OUTPUT_SCHEMA = {
 }
 
 
+async def __abalation_test_tool_selection(state: RoomAgentGraphState) -> RoomAgentGraphState:
+    """Always select all tools"""
+    candidate_tools = state.get("candidate_tools", [])
+    selected_tools = candidate_tools
+    comment = "Abalation test: selected all candidate tools."
+    return _build_result(candidate_tools, selected_tools, comment)
+
+
 async def tool_selection(state: RoomAgentGraphState) -> RoomAgentGraphState:
     """Select up to three MCP tools for the current request."""
+    if os.getenv("__RA_ABALATION_TEST"):
+        return await __abalation_test_tool_selection(state)
+
     model = _get_low_cost_model()
     prompt_input = _get_prompt_input(state)
     candidate_tools = await _describe_tools()

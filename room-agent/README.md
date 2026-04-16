@@ -26,6 +26,8 @@ uv sync --project room-agent
 env UV_CACHE_DIR=/tmp/uv-cache ...
 ```
 
+环境变量总览见 [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)。
+
 ## 配置文件
 
 当前运行需要两份配置：
@@ -93,6 +95,12 @@ uv run serve \
   --config-path config/examples/room_agent.example.yaml \
   --llm-config-path /path/to/private-llm.yaml
 ```
+
+环境变量：
+
+- 服务进程直接读取 `ROOM_AGENT_HOST` 和 `ROOM_AGENT_PORT`
+- `server.sh` 还会读取 `ROOM_AGENT_CONFIG_PATH` 和 `ROOM_AGENT_LLM_CONFIG_PATH`
+- 这些变量的默认值和用途都汇总在 [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)
 
 说明：
 

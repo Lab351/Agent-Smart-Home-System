@@ -35,6 +35,8 @@ _LLM_PROVIDER_REGISTRY: LLMProviderRegistry | None = None
 _MCP_CLIENT: MCPToolClient | None = None
 _CONFIG_PATH: str | None = None
 _LLM_CONFIG_PATH: str | None = None
+ROOM_AGENT_HOST_ENV = "ROOM_AGENT_HOST"
+ROOM_AGENT_PORT_ENV = "ROOM_AGENT_PORT"
 
 
 @dataclass(slots=True)
@@ -161,8 +163,8 @@ async def probe_home_assistant_mcp(
 class ServiceRuntime:
     """Coordinates the long-lived tasks hosted by the RoomAgent process."""
 
-    host: str = os.getenv("ROOM_AGENT_HOST", "127.0.0.1")
-    port: int = int(os.getenv("ROOM_AGENT_PORT", "10000"))
+    host: str = os.getenv(ROOM_AGENT_HOST_ENV, "127.0.0.1")
+    port: int = int(os.getenv(ROOM_AGENT_PORT_ENV, "10000"))
     business_poll_interval_seconds: float = 30.0
     gateway_registration_startup_delay_seconds: float = 0.1
     gateway_client: GatewayClient | None = None
