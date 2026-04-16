@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from config.settings import LLMRole
@@ -22,8 +23,22 @@ INTENT_OUTPUT_SCHEMA = {
 }
 
 
+async def __abalation_test_intent_recognition(state: RoomAgentGraphState) -> RoomAgentGraphState:
+    """Always return need_tool_call=true for testing the tool calling branch."""
+    return {
+        "intent": {
+            "name": "test_intent",
+        },
+        "need_tool_call": True,
+        "next_action": "tool_selection",
+    }
+
+
 async def intent_recognition(state: RoomAgentGraphState) -> RoomAgentGraphState:
     """Classify whether the request needs tool execution."""
+    if os.getenv("__RA_ABALATION_TEST"):
+        return await __abalation_test_intent_recognition(state)
+
     model = _get_low_cost_model()
     prompt_input = _get_prompt_input(state)
 

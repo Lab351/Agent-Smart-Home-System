@@ -18,6 +18,8 @@ Fixture 配置说明：
 
 - `room-agent/config/examples/llm.example.yaml`
 
+如果你想确认 room-agent 启动时会读取哪些环境变量，请看 [docs/ENVIRONMENT.md](../docs/ENVIRONMENT.md)。
+
 ## Tool Selection 人工验证
 
 如果你要验证 `tool_selection` 在真实 LLM 配置下是否能把常见请求映射到正确工具，推荐保留一份真实 MCP `tools/list` 返回作为样本，例如 `/tmp/listresult.json`。

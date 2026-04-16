@@ -156,6 +156,8 @@ gateway:
 
 如果和外面根目录的 docs 有冲突，以本文档为准。
 
+如果你需要查看 room-agent 当前涉及的环境变量，请参考 [docs/ENVIRONMENT.md](../docs/ENVIRONMENT.md)。
+
 ---
 
 ** 以下内容仅供参考，不是开发规范 **
