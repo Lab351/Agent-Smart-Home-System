@@ -12,7 +12,11 @@ from config.settings import LLMRole
 from graph.nodes.direct_response import direct_response
 from graph.nodes.intent_recognition import intent_recognition, route_after_intent
 from graph.nodes.tool_selection import tool_selection
-from graph.subgraphs.agent_execution.entry import agent_call_model, agent_finalize_output
+from graph.subgraphs.agent_execution.entry import (
+    agent_call_model,
+    agent_finalize_output,
+    compile_agent_execution_subgraph,
+)
 
 
 class FakeRegistry:
@@ -290,3 +294,78 @@ def test_agent_call_model_and_finalize_output_use_bound_chat_model() -> None:
 
     assert second_pass["messages"][0].content == "卧室灯已打开。"
     assert finalized == {"final_output": {"message": "卧室灯已打开。"}}
+
+
+def test_agent_execution_retries_after_tool_error_until_final_output() -> None:
+    class RetryAfterToolErrorModel:
+        def bind(self, **kwargs: Any) -> _FakeBoundModel:
+            _ = kwargs
+            return _FakeBoundModel(self, [])
+
+        def bind_tools(self, tools: list[BaseTool], **kwargs: Any) -> _FakeBoundModel:
+            _ = kwargs
+            return _FakeBoundModel(self, tools)
+
+        async def _ainvoke(self, messages: list[BaseMessage], tools: list[BaseTool]) -> AIMessage:
+            tool_messages = [msg for msg in messages if isinstance(msg, ToolMessage)]
+            if not tool_messages:
+                return AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": tools[0].name,
+                            "args": {"entity_id": "light.bedroom"},
+                            "id": "call-1",
+                            "type": "tool_call",
+                        }
+                    ],
+                )
+
+            if tool_messages[-1].status == "error":
+                return AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": tools[0].name,
+                            "args": {"entity_id": "light.bedroom"},
+                            "id": "call-2",
+                            "type": "tool_call",
+                        }
+                    ],
+                )
+
+            return AIMessage(content="卧室灯已打开。")
+
+    call_counter = {"count": 0}
+
+    @tool
+    async def flaky_light_control(entity_id: str) -> str:
+        """Fail once and then succeed."""
+        call_counter["count"] += 1
+        if call_counter["count"] == 1:
+            raise RuntimeError("temporary network error")
+        return f"已执行 {entity_id}"
+
+    _initialize_runtime(powerful=RetryAfterToolErrorModel())
+
+    app = compile_agent_execution_subgraph(
+        selected_tools=[{"name": "flaky_light_control", "description": "", "args_schema": {}}],
+        tool_instances=[flaky_light_control],
+    )
+
+    result = asyncio.run(
+        app.ainvoke(
+            {
+                "user_input": "帮我打开卧室灯",
+                "conversation_text": "帮我打开卧室灯",
+                "intent": {"name": "device_control"},
+                "metadata": {},
+            }
+        )
+    )
+
+    patch = result["outer_state_patch"]
+    assert call_counter["count"] == 2
+    assert patch["status"] == "completed"
+    assert patch["execution_result"]["type"] == "agent_final_output"
+    assert patch["execution_result"]["message"] == "卧室灯已打开。"
