@@ -38,7 +38,6 @@ def create_llm_provider(settings: LLMModelSettings) -> ChatOpenAI | None:
     )
 
 
-
 def create_llm_provider_registry(settings: LLMSettings) -> LLMProviderRegistry:
     return LLMProviderRegistry(
         powerful=create_llm_provider(settings.for_role(LLMRole.POWERFUL)),

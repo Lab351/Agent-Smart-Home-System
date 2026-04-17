@@ -7,6 +7,7 @@ from typing import Any
 
 from config.settings import LLMRole
 from graph.state import RoomAgentGraphState
+from graph.utils.prompt_patch import maybe_apply_qwen_nothink
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
 from graph.nodes.utils.structured_output import invoke_structured_output
@@ -103,7 +104,7 @@ def _build_messages(user_input: str) -> list[BaseMessage]:
                 "输入：解释一下为什么晚上开空调会口干\n"
                 '输出：{"intent_name":"explanation","need_tool_call":false}\n'
                 "现在请只针对下面这个输入输出 JSON，不要附加解释。\n"
-                f"用户输入：{user_input}"
+                f"用户输入：{maybe_apply_qwen_nothink(user_input)}"
             )
         ),
     ]

@@ -11,6 +11,7 @@ from config.settings import LLMRole
 from graph.mcp_prompt_context import build_mcp_prompts_context
 from graph.nodes.utils.structured_output import invoke_structured_output
 from graph.state import RoomAgentGraphState
+from graph.utils.prompt_patch import maybe_apply_qwen_nothink
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool
 import logging
@@ -150,18 +151,20 @@ def _build_messages(
             )
         ),
         HumanMessage(
-            content=json.dumps(
-                {
-                    "task": (
-                        "请基于用户输入、已识别意图和候选工具，选择最合适的 0 到 3 个工具。"
-                        "输出 JSON，字段为 selected_tool_names(string[]) 和 comment(string)。"
-                    ),
-                    "user_input": prompt_input,
-                    "intent": intent,
-                    "mcp_prompts": mcp_prompt_context,
-                    "candidate_tools": candidate_tools,
-                },
-                ensure_ascii=False,
+            content=maybe_apply_qwen_nothink(
+                json.dumps(
+                    {
+                        "task": (
+                            "请基于用户输入、已识别意图和候选工具，选择最合适的 0 到 3 个工具。"
+                            "输出 JSON，字段为 selected_tool_names(string[]) 和 comment(string)。"
+                        ),
+                        "user_input": prompt_input,
+                        "intent": intent,
+                        "mcp_prompts": mcp_prompt_context,
+                        "candidate_tools": candidate_tools,
+                    },
+                    ensure_ascii=False,
+                )
             )
         ),
     ]
