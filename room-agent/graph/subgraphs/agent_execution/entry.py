@@ -401,12 +401,6 @@ def _build_tool_error_command(
                     status="error",
                 )
             ],
-            "terminal_error": {
-                "type": "tool_execution_error",
-                "message": error_message,
-                "source_node": "tools",
-                "retryable": False,
-            },
         }
     )
 
