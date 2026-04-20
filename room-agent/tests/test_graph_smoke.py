@@ -12,6 +12,7 @@ from config.settings import LLMRole
 from graph.nodes.direct_response import direct_response
 from graph.nodes.intent_recognition import intent_recognition, route_after_intent
 from graph.nodes.tool_selection import tool_selection
+from graph.nodes.tool_selection.node import TOOL_CATALOG_TOKEN_THRESHOLD
 from graph.subgraphs.agent_execution.entry import (
     agent_call_model,
     agent_finalize_output,
@@ -174,6 +175,15 @@ def build_light_control_tool(calls: list[str]) -> BaseTool:
     return light_control
 
 
+def build_weather_query_tool(calls: list[str], *, description: str = "Query the weather.") -> BaseTool:
+    @tool(description=description)
+    async def weather_query(city: str) -> str:
+        calls.append(city)
+        return f"{city} 晴"
+
+    return weather_query
+
+
 def test_intent_recognition_uses_json_schema_output() -> None:
     _initialize_runtime(
         low_cost=FakeLowCostModel(
@@ -216,15 +226,9 @@ def test_direct_response_normalizes_message_content() -> None:
     assert result["execution_result"]["message"] == "你好，我在。"
 
 
-def test_tool_selection_returns_selected_tools() -> None:
+def test_tool_selection_passes_through_all_tools_when_catalog_is_within_budget() -> None:
     calls: list[str] = []
     _initialize_runtime(
-        low_cost=FakeLowCostModel(
-            structured_result={
-                "selected_tool_names": ["light_control"],
-                "comment": "selected",
-            }
-        ),
         mcp_client=FakeMCPClient([build_light_control_tool(calls)]),
     )
 
@@ -239,7 +243,42 @@ def test_tool_selection_returns_selected_tools() -> None:
     )
 
     assert [tool["name"] for tool in result["selected_tools"]] == ["light_control"]
-    assert result["execution_result"]["comment"] == "selected"
+    assert result["execution_result"]["mode"] == "passthrough"
+    assert result["execution_result"]["selected_count"] == 1
+
+
+def test_tool_selection_actively_excludes_tools_when_catalog_exceeds_budget() -> None:
+    calls: list[str] = []
+    oversized_description = "天气查询。" * (TOOL_CATALOG_TOKEN_THRESHOLD + 100)
+    _initialize_runtime(
+        powerful=FakeLowCostModel(
+            structured_result={
+                "excluded_tool_names": ["weather_query"],
+                "comment": "排除了明显无关的天气工具。",
+            }
+        ),
+        mcp_client=FakeMCPClient(
+            [
+                build_light_control_tool(calls),
+                build_weather_query_tool(calls, description=oversized_description),
+            ]
+        ),
+    )
+
+    result = asyncio.run(
+        tool_selection(
+            {
+                "user_input": "帮我打开卧室灯",
+                "conversation_text": "帮我打开卧室灯",
+                "intent": {"name": "device_control"},
+            }
+        )
+    )
+
+    assert [tool["name"] for tool in result["selected_tools"]] == ["light_control"]
+    assert result["execution_result"]["mode"] == "active_exclusion"
+    assert result["execution_result"]["comment"] == "排除了明显无关的天气工具。"
+    assert result["execution_result"]["rendered_tool_tokens"] > TOOL_CATALOG_TOKEN_THRESHOLD
 
 
 def test_tool_selection_returns_empty_when_no_tools_available() -> None:

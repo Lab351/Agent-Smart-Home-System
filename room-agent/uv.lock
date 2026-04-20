@@ -1266,10 +1266,12 @@ dependencies = [
     { name = "langchain-openai" },
     { name = "langgraph" },
     { name = "llm-json-parse" },
+    { name = "openai" },
     { name = "paho-mqtt" },
     { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
+    { name = "tiktoken" },
 ]
 
 [package.dev-dependencies]
@@ -1287,10 +1289,12 @@ requires-dist = [
     { name = "langchain-openai", specifier = ">=1.0.0" },
     { name = "langgraph", specifier = ">=1.0.0" },
     { name = "llm-json-parse", specifier = ">=0.1.0" },
+    { name = "openai", specifier = ">=2.29.0" },
     { name = "paho-mqtt", specifier = ">=2.1.0" },
     { name = "pydantic", specifier = ">=2.5.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "pyyaml", specifier = ">=6.0.0" },
+    { name = "tiktoken", specifier = ">=0.12.0" },
 ]
 
 [package.metadata.requires-dev]
