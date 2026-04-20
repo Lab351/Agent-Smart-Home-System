@@ -301,11 +301,15 @@ async def _build_system_prompt(
         logger.info(f"Failed to retrieve MCP system prompt: {exc}")
 
     return (
-        "你是一个房间智能体。基于用户请求决定是否调用绑定工具；"
-        "如果需要工具，使用最合适的工具并在拿到结果后给出简洁中文答复；"
-        "如果不需要工具，直接回答。"
+        """
+        你是管理智能家居的助手, 负责理解用户传入的指令, 并根据指令调用不同工具进行工作. 在必要的时候, 你应当调用工具来获取信息或者执行操作. 当然, 如果用户的指令不涉及设备交互, 只是闲聊, 你可以直接回复用户。
+
+        无论如何, 在工作结束时必须产出一个自然语言回复给用户.
+
+        如果调用工具失败, 你可以重试. 重试一次后如果仍然失败，就向用户承认问题。严禁编造工具调用的结果。
+"""
         f"\n候选工具: {tool_names}"
-        f"{mcp_prompt}"
+        f"下面是厂商的提示词供你参考 {mcp_prompt}"
     )
 
 
@@ -442,8 +446,11 @@ def _summarize_value(value: Any, *, limit: int = 180) -> str:
     return text[: limit - 3] + "..."
 
 
-def _get_powerful_model() -> Any:
-    model = get_llm_provider_registry().get(LLMRole.POWERFUL)
+def _get_powerful_model(*, enable_thinking: bool = False) -> Any:
+    model = get_llm_provider_registry().get(
+        LLMRole.POWERFUL,
+        enable_thinking=enable_thinking,
+    )
     if model is None:
         raise RuntimeError(f"LLM provider is unavailable for role={LLMRole.POWERFUL.value}")
     return model

@@ -16,10 +16,10 @@ from langchain_core.tools import BaseTool
 logger = logging.getLogger(__name__)
 
 
-def get_model(role: LLMRole) -> Any:
+def get_model(role: LLMRole, *, enable_thinking: bool = False) -> Any:
     from app.server import get_llm_provider_registry
 
-    model = get_llm_provider_registry().get(role)
+    model = get_llm_provider_registry().get(role, enable_thinking=enable_thinking)
     if model is None:
         raise RuntimeError(f"LLM provider is unavailable for role={role.value}")
     return model

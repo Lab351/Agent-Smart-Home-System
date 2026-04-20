@@ -25,7 +25,8 @@ class FakeRegistry:
             LLMRole.LOW_COST: low_cost,
         }
 
-    def get(self, role: LLMRole) -> Any:
+    def get(self, role: LLMRole, *, enable_thinking: bool = False) -> Any:
+        _ = enable_thinking
         return self._providers.get(role)
 
 

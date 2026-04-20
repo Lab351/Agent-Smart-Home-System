@@ -36,10 +36,13 @@ def build_graph() -> StateGraph:
     graph.add_node("initialize_request", initialize_request)
     graph.add_node("agent_execution", agent_execution)
     graph.add_node("tool_selection", tool_selection)
+
+    # Edges.
     graph.add_edge(START, "initialize_request")
     graph.add_edge("initialize_request", "tool_selection")
     graph.add_edge("tool_selection", "agent_execution")
     graph.add_edge("agent_execution", END)
+    
     return graph
 
 
