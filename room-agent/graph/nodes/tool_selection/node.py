@@ -63,7 +63,7 @@ async def tool_selection(state: RoomAgentGraphState) -> RoomAgentGraphState:
 
     if not candidate_tools:
         comment = "No MCP tools are available for this request."
-        log_zero_tool_selection(prompt_input, state.get("intent", {}), comment)
+        log_zero_tool_selection(prompt_input, comment)
         return build_result(
             candidate_tools,
             [],
@@ -94,7 +94,6 @@ async def tool_selection(state: RoomAgentGraphState) -> RoomAgentGraphState:
         powerful_model,
         _build_active_exclusion_messages(
             prompt_input=prompt_input,
-            intent=state.get("intent", {}),
             candidate_tools=candidate_tools,
             mcp_prompt_context=mcp_prompt_context,
             rendered_tool_tokens=rendered_tool_tokens,
@@ -134,7 +133,6 @@ async def tool_selection(state: RoomAgentGraphState) -> RoomAgentGraphState:
 def _build_active_exclusion_messages(
     *,
     prompt_input: str,
-    intent: Any,
     candidate_tools: list[dict[str, Any]],
     mcp_prompt_context: str,
     rendered_tool_tokens: int,
@@ -155,11 +153,10 @@ def _build_active_exclusion_messages(
                 json.dumps(
                     {
                         "task": (
-                            "请基于用户输入、已识别意图和候选工具，排除明显无关的工具。"
+                            "请基于用户输入和候选工具，排除明显无关的工具。"
                             "输出 JSON，字段为 excluded_tool_names(string[]) 和 comment(string)。"
                         ),
                         "user_input": prompt_input,
-                        "intent": intent,
                         "mcp_prompts": mcp_prompt_context,
                         "rendered_tool_tokens": rendered_tool_tokens,
                         "token_threshold": TOOL_CATALOG_TOKEN_THRESHOLD,

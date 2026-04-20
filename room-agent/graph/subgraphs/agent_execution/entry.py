@@ -6,7 +6,7 @@ import json
 import inspect
 import logging
 from functools import partial
-from typing import Any
+from typing import Any, cast
 
 from a2a.types import TaskState
 from app.a2a_server import create_text_part, get_current_updater
@@ -41,7 +41,6 @@ async def agent_execution(state: RoomAgentGraphState) -> RoomAgentGraphState:
         {
             "user_input": state.get("user_input", ""),
             "conversation_text": state.get("conversation_text", ""),
-            "intent": dict(state.get("intent", {})),
             "metadata": dict(state.get("metadata", {})),
         }
     )
@@ -111,12 +110,10 @@ async def subgraph_input_transform(
     return {
         "user_input": user_input,
         "conversation_text": conversation_text,
-        "intent": dict(state.get("intent", {})),
         "metadata": dict(state.get("metadata", {})),
         "messages": [
             SystemMessage(
                 content=await _build_system_prompt(
-                    intent=state.get("intent", {}),
                     selected_tools=selected_tools,
                 )
             ),
@@ -166,7 +163,7 @@ def route_after_model_call(state: AgentExecutionState) -> str:
     """Route based on the model output and terminal state."""
     if state.get("terminal_error"):
         return "handle_error"
-    if tools_condition(state, messages_key="messages") == "tools":
+    if tools_condition(cast(dict[str, Any], state), messages_key="messages") == "tools":
         return "tools"
     return "finalize"
 
@@ -279,7 +276,6 @@ def subgraph_output_transform(state: AgentExecutionState) -> AgentExecutionState
 
 async def _build_system_prompt(
     *,
-    intent: dict[str, Any],
     selected_tools: list[dict[str, Any]],
 ) -> str:
     tool_names = ", ".join(
@@ -308,7 +304,6 @@ async def _build_system_prompt(
         "你是一个房间智能体。基于用户请求决定是否调用绑定工具；"
         "如果需要工具，使用最合适的工具并在拿到结果后给出简洁中文答复；"
         "如果不需要工具，直接回答。"
-        f"\n识别意图: {json.dumps(intent, ensure_ascii=False)}"
         f"\n候选工具: {tool_names}"
         f"{mcp_prompt}"
     )

@@ -9,8 +9,6 @@ from langchain_core.tools import BaseTool, tool
 
 from app.server import initialize_runtime_dependencies
 from config.settings import LLMRole
-from graph.nodes.direct_response import direct_response
-from graph.nodes.intent_recognition import intent_recognition, route_after_intent
 from graph.nodes.tool_selection import tool_selection
 from graph.nodes.tool_selection.node import TOOL_CATALOG_TOKEN_THRESHOLD
 from graph.subgraphs.agent_execution.entry import (
@@ -184,48 +182,6 @@ def build_weather_query_tool(calls: list[str], *, description: str = "Query the 
     return weather_query
 
 
-def test_intent_recognition_uses_json_schema_output() -> None:
-    _initialize_runtime(
-        low_cost=FakeLowCostModel(
-            structured_result={"intent_name": "chat", "need_tool_call": False}
-        )
-    )
-
-    result = asyncio.run(intent_recognition({"user_input": "你好", "conversation_text": "你好"}))
-
-    assert result["intent"] == {"name": "chat"}
-    assert result["need_tool_call"] is False
-    assert result["next_action"] == "direct_response"
-
-
-def test_intent_recognition_falls_back_to_local_json_parser() -> None:
-    _initialize_runtime(
-        low_cost=FakeLowCostModel(
-            text_result='```json\n{"intent_name":"chat","need_tool_call":false}\n```',
-            structured_error=NotImplementedError("json_schema not supported"),
-        )
-    )
-
-    result = asyncio.run(intent_recognition({"user_input": "你好", "conversation_text": "你好"}))
-
-    assert result["intent"] == {"name": "chat"}
-    assert result["need_tool_call"] is False
-
-
-def test_route_after_intent_uses_need_tool_call_flag() -> None:
-    assert route_after_intent({"need_tool_call": True}) == "tool_selection"
-    assert route_after_intent({"need_tool_call": False}) == "direct_response"
-
-
-def test_direct_response_normalizes_message_content() -> None:
-    _initialize_runtime(low_cost=FakeLowCostModel(text_result=[{"text": "你好，我在。"}]))
-
-    result = asyncio.run(direct_response({"user_input": "你好", "conversation_text": "你好"}))
-
-    assert result["execution_result"]["type"] == "text"
-    assert result["execution_result"]["message"] == "你好，我在。"
-
-
 def test_tool_selection_passes_through_all_tools_when_catalog_is_within_budget() -> None:
     calls: list[str] = []
     _initialize_runtime(
@@ -237,7 +193,6 @@ def test_tool_selection_passes_through_all_tools_when_catalog_is_within_budget()
             {
                 "user_input": "帮我打开卧室灯",
                 "conversation_text": "帮我打开卧室灯",
-                "intent": {"name": "device_control"},
             }
         )
     )
@@ -270,7 +225,6 @@ def test_tool_selection_actively_excludes_tools_when_catalog_exceeds_budget() ->
             {
                 "user_input": "帮我打开卧室灯",
                 "conversation_text": "帮我打开卧室灯",
-                "intent": {"name": "device_control"},
             }
         )
     )
@@ -297,7 +251,6 @@ def test_tool_selection_returns_empty_when_no_tools_available() -> None:
             {
                 "user_input": "帮我打开卧室灯",
                 "conversation_text": "帮我打开卧室灯",
-                "intent": {"name": "device_control"},
             }
         )
     )
@@ -397,7 +350,6 @@ def test_agent_execution_retries_after_tool_error_until_final_output() -> None:
             {
                 "user_input": "帮我打开卧室灯",
                 "conversation_text": "帮我打开卧室灯",
-                "intent": {"name": "device_control"},
                 "metadata": {},
             }
         )

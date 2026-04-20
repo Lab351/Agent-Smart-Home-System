@@ -124,14 +124,9 @@ def build_result(
     }
 
 
-def log_zero_tool_selection(
-    prompt_input: str,
-    intent: Any,
-    comment: str,
-) -> None:
+def log_zero_tool_selection(prompt_input: str, comment: str) -> None:
     print(
         "[tool_selection] no tools selected "
-        f"intent={json.dumps(intent, ensure_ascii=False)} "
         f"comment={comment} "
         f"user_input={prompt_input}",
         file=sys.stderr,
