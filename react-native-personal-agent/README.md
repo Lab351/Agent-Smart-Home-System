@@ -45,8 +45,6 @@ npm run start
 
 - `EXPO_PUBLIC_USER_ID`
 - `EXPO_PUBLIC_BACKEND_URL`
-- `EXPO_PUBLIC_MQTT_HOST`
-- `EXPO_PUBLIC_MQTT_WS_PORT`
 - `EXPO_PUBLIC_BEACON_UUID`
 
 ## 目录说明
@@ -62,7 +60,6 @@ npm run start
 
 这个项目目前是“可运行的迁移骨架”，不是快应用功能等价替代。已完成的是结构和关键原生能力接入，尚未完成的包括：
 
-- MQTT transport 的正式实现
 - ASR 上传和后端识别闭环
 - Room-Agent / Home-Agent 真实执行结果回流
 - 偏好编辑表单与完整交互

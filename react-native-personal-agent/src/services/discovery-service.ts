@@ -106,13 +106,6 @@ export class DiscoveryService {
       roomName: String(value.room_name ?? getRoomDisplayName(roomId)),
       agentId,
       url: typeof value.url === 'string' ? value.url : null,
-      mqttBroker: typeof value.mqtt_broker === 'string' ? value.mqtt_broker : null,
-      mqttWsPort:
-        typeof value.mqtt_ws_port === 'number'
-          ? value.mqtt_ws_port
-          : value.mqtt_ws_port
-            ? Number(value.mqtt_ws_port)
-            : null,
       capabilities: Array.isArray(value.capabilities)
         ? value.capabilities.map(item => String(item))
         : [],

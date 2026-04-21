@@ -75,7 +75,6 @@ type AppStateValue = {
   beaconScanIssue: BeaconScanIssue | null;
   isScanningBeacon: boolean;
   isStartingBeaconScan: boolean;
-  mqttStatus: ConnectionStatus;
   controlStatus: ConnectionStatus;
   microphonePermission: PermissionSnapshot | null;
   bluetoothPermission: PermissionSnapshot | null;
@@ -184,7 +183,6 @@ export function AppStateProvider({ children }: PropsWithChildren) {
   const [beaconDiagnostics, setBeaconDiagnostics] = useState<BeaconScanDiagnostic[]>([]);
   const [beaconScanIssue, setBeaconScanIssue] = useState<BeaconScanIssue | null>(null);
   const [isStartingBeaconScan, setIsStartingBeaconScan] = useState(false);
-  const [mqttStatus] = useState<ConnectionStatus>('disconnected');
   const [controlStatus, setControlStatus] = useState<ConnectionStatus>('disconnected');
   const [microphonePermission, setMicrophonePermission] = useState<PermissionSnapshot | null>(null);
   const [bluetoothPermission, setBluetoothPermission] = useState<PermissionSnapshot | null>(null);
@@ -913,7 +911,6 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       beaconScanIssue,
       isScanningBeacon,
       isStartingBeaconScan,
-      mqttStatus,
       controlStatus,
       microphonePermission,
       bluetoothPermission,
@@ -1088,7 +1085,6 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       lastRecording,
       lastCommandExecution,
       microphonePermission,
-      mqttStatus,
       preferenceService,
       preferences,
       recognizeRecording,

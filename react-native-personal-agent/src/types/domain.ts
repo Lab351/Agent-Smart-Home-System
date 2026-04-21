@@ -100,8 +100,6 @@ export interface AgentDiscoveryResult {
   roomName: string;
   agentId: string;
   url?: string | null;
-  mqttBroker?: string | null;
-  mqttWsPort?: number | null;
   devices: AgentDeviceDescriptor[];
   capabilities: string[];
   metadata?: Record<string, unknown>;
