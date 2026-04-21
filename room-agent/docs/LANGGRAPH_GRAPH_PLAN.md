@@ -8,12 +8,12 @@
 
 文档规划的架构：
 ```
-intent_recognition -> tool_selection -> tool_call_planning -> execute
+tool_selection -> tool_call_planning -> execute
 ```
 
 实际实现的架构：
 ```
-intent_recognition -> tool_selection -> agent_execution (ReAct subgraph)
+tool_selection -> agent_execution (ReAct subgraph)
 ```
 
 实际采用了完整的 ReAct Agent 执行模式，包含多步迭代、自主规划和工具调用，而非文档中描述的单步 tool_call_planning 节点。

@@ -9,10 +9,13 @@ from langchain_core.tools import BaseTool, tool
 
 from app.server import initialize_runtime_dependencies
 from config.settings import LLMRole
-from graph.nodes.direct_response import direct_response
-from graph.nodes.intent_recognition import intent_recognition, route_after_intent
 from graph.nodes.tool_selection import tool_selection
-from graph.subgraphs.agent_execution.entry import agent_call_model, agent_finalize_output
+from graph.nodes.tool_selection.node import TOOL_CATALOG_TOKEN_THRESHOLD
+from graph.subgraphs.agent_execution.entry import (
+    agent_call_model,
+    agent_finalize_output,
+    compile_agent_execution_subgraph,
+)
 
 
 class FakeRegistry:
@@ -22,7 +25,8 @@ class FakeRegistry:
             LLMRole.LOW_COST: low_cost,
         }
 
-    def get(self, role: LLMRole) -> Any:
+    def get(self, role: LLMRole, *, enable_thinking: bool = False) -> Any:
+        _ = enable_thinking
         return self._providers.get(role)
 
 
@@ -170,57 +174,18 @@ def build_light_control_tool(calls: list[str]) -> BaseTool:
     return light_control
 
 
-def test_intent_recognition_uses_json_schema_output() -> None:
-    _initialize_runtime(
-        low_cost=FakeLowCostModel(
-            structured_result={"intent_name": "chat", "need_tool_call": False}
-        )
-    )
+def build_weather_query_tool(calls: list[str], *, description: str = "Query the weather.") -> BaseTool:
+    @tool(description=description)
+    async def weather_query(city: str) -> str:
+        calls.append(city)
+        return f"{city} 晴"
 
-    result = asyncio.run(intent_recognition({"user_input": "你好", "conversation_text": "你好"}))
-
-    assert result["intent"] == {"name": "chat"}
-    assert result["need_tool_call"] is False
-    assert result["next_action"] == "direct_response"
+    return weather_query
 
 
-def test_intent_recognition_falls_back_to_local_json_parser() -> None:
-    _initialize_runtime(
-        low_cost=FakeLowCostModel(
-            text_result='```json\n{"intent_name":"chat","need_tool_call":false}\n```',
-            structured_error=NotImplementedError("json_schema not supported"),
-        )
-    )
-
-    result = asyncio.run(intent_recognition({"user_input": "你好", "conversation_text": "你好"}))
-
-    assert result["intent"] == {"name": "chat"}
-    assert result["need_tool_call"] is False
-
-
-def test_route_after_intent_uses_need_tool_call_flag() -> None:
-    assert route_after_intent({"need_tool_call": True}) == "tool_selection"
-    assert route_after_intent({"need_tool_call": False}) == "direct_response"
-
-
-def test_direct_response_normalizes_message_content() -> None:
-    _initialize_runtime(low_cost=FakeLowCostModel(text_result=[{"text": "你好，我在。"}]))
-
-    result = asyncio.run(direct_response({"user_input": "你好", "conversation_text": "你好"}))
-
-    assert result["execution_result"]["type"] == "text"
-    assert result["execution_result"]["message"] == "你好，我在。"
-
-
-def test_tool_selection_returns_selected_tools() -> None:
+def test_tool_selection_passes_through_all_tools_when_catalog_is_within_budget() -> None:
     calls: list[str] = []
     _initialize_runtime(
-        low_cost=FakeLowCostModel(
-            structured_result={
-                "selected_tool_names": ["light_control"],
-                "comment": "selected",
-            }
-        ),
         mcp_client=FakeMCPClient([build_light_control_tool(calls)]),
     )
 
@@ -229,13 +194,46 @@ def test_tool_selection_returns_selected_tools() -> None:
             {
                 "user_input": "帮我打开卧室灯",
                 "conversation_text": "帮我打开卧室灯",
-                "intent": {"name": "device_control"},
             }
         )
     )
 
     assert [tool["name"] for tool in result["selected_tools"]] == ["light_control"]
-    assert result["execution_result"]["comment"] == "selected"
+    assert result["execution_result"]["mode"] == "passthrough"
+    assert result["execution_result"]["selected_count"] == 1
+
+
+def test_tool_selection_actively_excludes_tools_when_catalog_exceeds_budget() -> None:
+    calls: list[str] = []
+    oversized_description = "天气查询。" * (TOOL_CATALOG_TOKEN_THRESHOLD + 100)
+    _initialize_runtime(
+        powerful=FakeLowCostModel(
+            structured_result={
+                "excluded_tool_names": ["weather_query"],
+                "comment": "排除了明显无关的天气工具。",
+            }
+        ),
+        mcp_client=FakeMCPClient(
+            [
+                build_light_control_tool(calls),
+                build_weather_query_tool(calls, description=oversized_description),
+            ]
+        ),
+    )
+
+    result = asyncio.run(
+        tool_selection(
+            {
+                "user_input": "帮我打开卧室灯",
+                "conversation_text": "帮我打开卧室灯",
+            }
+        )
+    )
+
+    assert [tool["name"] for tool in result["selected_tools"]] == ["light_control"]
+    assert result["execution_result"]["mode"] == "active_exclusion"
+    assert result["execution_result"]["comment"] == "排除了明显无关的天气工具。"
+    assert result["execution_result"]["rendered_tool_tokens"] > TOOL_CATALOG_TOKEN_THRESHOLD
 
 
 def test_tool_selection_returns_empty_when_no_tools_available() -> None:
@@ -254,7 +252,6 @@ def test_tool_selection_returns_empty_when_no_tools_available() -> None:
             {
                 "user_input": "帮我打开卧室灯",
                 "conversation_text": "帮我打开卧室灯",
-                "intent": {"name": "device_control"},
             }
         )
     )
@@ -290,3 +287,77 @@ def test_agent_call_model_and_finalize_output_use_bound_chat_model() -> None:
 
     assert second_pass["messages"][0].content == "卧室灯已打开。"
     assert finalized == {"final_output": {"message": "卧室灯已打开。"}}
+
+
+def test_agent_execution_retries_after_tool_error_until_final_output() -> None:
+    class RetryAfterToolErrorModel:
+        def bind(self, **kwargs: Any) -> _FakeBoundModel:
+            _ = kwargs
+            return _FakeBoundModel(self, [])
+
+        def bind_tools(self, tools: list[BaseTool], **kwargs: Any) -> _FakeBoundModel:
+            _ = kwargs
+            return _FakeBoundModel(self, tools)
+
+        async def _ainvoke(self, messages: list[BaseMessage], tools: list[BaseTool]) -> AIMessage:
+            tool_messages = [msg for msg in messages if isinstance(msg, ToolMessage)]
+            if not tool_messages:
+                return AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": tools[0].name,
+                            "args": {"entity_id": "light.bedroom"},
+                            "id": "call-1",
+                            "type": "tool_call",
+                        }
+                    ],
+                )
+
+            if tool_messages[-1].status == "error":
+                return AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": tools[0].name,
+                            "args": {"entity_id": "light.bedroom"},
+                            "id": "call-2",
+                            "type": "tool_call",
+                        }
+                    ],
+                )
+
+            return AIMessage(content="卧室灯已打开。")
+
+    call_counter = {"count": 0}
+
+    @tool
+    async def flaky_light_control(entity_id: str) -> str:
+        """Fail once and then succeed."""
+        call_counter["count"] += 1
+        if call_counter["count"] == 1:
+            raise RuntimeError("temporary network error")
+        return f"已执行 {entity_id}"
+
+    _initialize_runtime(powerful=RetryAfterToolErrorModel())
+
+    app = compile_agent_execution_subgraph(
+        selected_tools=[{"name": "flaky_light_control", "description": "", "args_schema": {}}],
+        tool_instances=[flaky_light_control],
+    )
+
+    result = asyncio.run(
+        app.ainvoke(
+            {
+                "user_input": "帮我打开卧室灯",
+                "conversation_text": "帮我打开卧室灯",
+                "metadata": {},
+            }
+        )
+    )
+
+    patch = result["outer_state_patch"]
+    assert call_counter["count"] == 2
+    assert patch["status"] == "completed"
+    assert patch["execution_result"]["type"] == "agent_final_output"
+    assert patch["execution_result"]["message"] == "卧室灯已打开。"

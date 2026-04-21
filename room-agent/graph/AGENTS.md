@@ -152,7 +152,6 @@ async def some_llm_node(state: RoomAgentGraphState) -> dict:
         data = await JsonParserWithRepair()(raw_output, schema=OUTPUT_SCHEMA)
 
     return {
-        "intent": data,
         "status": "completed",
     }
 ```
