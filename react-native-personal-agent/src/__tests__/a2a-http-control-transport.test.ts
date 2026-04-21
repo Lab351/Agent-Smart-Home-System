@@ -93,6 +93,40 @@ describe('A2AHttpControlTransport', () => {
     warnSpy.mockRestore();
   });
 
+  it('explains .local agent-card URLs as mDNS-dependent registry addresses', async () => {
+    const adapter = {
+      createSession: jest.fn(async () => {
+        throw new Error('network unavailable');
+      }),
+      getAgentCard: jest.fn(),
+      sendMessage: jest.fn(),
+      getTask: jest.fn(),
+    };
+    const transport = new A2AHttpControlTransport(adapter as never);
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const connected = await transport.connect({
+      personalAgentId: 'personal-agent-user1',
+      roomId: 'bedroom',
+      roomAgentId: 'room-agent-bedroom',
+      agentInfo: {
+        beaconId: '2',
+        roomId: 'bedroom',
+        roomName: '卧室',
+        agentId: 'room-agent-bedroom',
+        url: 'http://room-agent.local/',
+        devices: [],
+        capabilities: ['lighting'],
+      },
+    });
+
+    expect(connected).toBe(false);
+    expect(transport.getLastError()).toContain('.local 主机名');
+    expect(transport.getLastError()).toContain('gateway.agent_host');
+
+    warnSpy.mockRestore();
+  });
+
   it('sends text messages and emits polled task updates until completed', async () => {
     let pollCount = 0;
     const adapter = {

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from time import perf_counter
 from typing import Any
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
@@ -25,6 +26,14 @@ from a2a.types import (
 from a2a.utils import new_task
 from a2a.utils.errors import ServerError
 
+from integrations.observability import (
+    build_trace_context,
+    get_observability_payload,
+    observe_stage,
+    record_task_result,
+    reset_current_trace,
+    set_current_trace,
+)
 
 logger = logging.getLogger(__name__)
 SUPPORTED_CONTENT_TYPES = ["text", "text/plain"]
@@ -65,18 +74,57 @@ class RoomAgentExecutor(AgentExecutor):
 
         user_input = context.get_user_input()
         logger.info("Received RoomAgent A2A request: %s", user_input)
+        from app.server import get_settings
+
+        settings = get_settings()
+        trace_context = build_trace_context(
+            metadata=getattr(context.message, "metadata", None),
+            agent_id=settings.agent.id,
+            agent_type="room",
+            service_name="room-agent",
+            task_id=task.id,
+            context_id=task.context_id,
+        )
+        trace_token = set_current_trace(trace_context)
+        started_at = trace_context.server_started_at
+        started_perf = perf_counter()
 
         try:
-            await self.invoke_roomagent_entrypoint(
-                user_input=user_input,
-                context_id=task.context_id,
-                task_id=task.id,
-                conversation_text=_build_conversation_text(
-                    task=task,
-                    current_message=context.message,
-                ),
+            with observe_stage("a2a_execute", metadata={"message_id": context.message.message_id}):
+                execution_result = await self.invoke_roomagent_entrypoint(
+                    user_input=user_input,
+                    context_id=task.context_id,
+                    task_id=task.id,
+                    conversation_text=_build_conversation_text(
+                        task=task,
+                        current_message=context.message,
+                    ),
+                    observability=get_observability_payload(trace_context),
+                )
+            task_state = "completed"
+            success = True
+            if isinstance(execution_result, dict) and execution_result.get("unfinished"):
+                task_state = "failed"
+                success = False
+            record_task_result(
+                started_at=started_at,
+                started_perf=started_perf,
+                success=success,
+                task_state=task_state,
+                metadata={"message_id": context.message.message_id},
             )
+        except Exception as exc:
+            record_task_result(
+                started_at=started_at,
+                started_perf=started_perf,
+                success=False,
+                task_state="failed",
+                metadata={"message_id": context.message.message_id},
+                error_type=type(exc).__name__,
+            )
+            raise
         finally:
+            reset_current_trace(trace_token)
             _CURRENT_UPDATER = None
 
     async def invoke_roomagent_entrypoint(
@@ -86,6 +134,7 @@ class RoomAgentExecutor(AgentExecutor):
         context_id: str,
         task_id: str,
         conversation_text: str | None = None,
+        observability: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Invoke the RoomAgent LangGraph entrypoint and return execution_result."""
         app = _compile_graph()
@@ -97,11 +146,18 @@ class RoomAgentExecutor(AgentExecutor):
             {
                 "user_input": user_input,
                 "conversation_text": (conversation_text or user_input).strip() or user_input,
-                "metadata": {
-                    "context_id": context_id,
-                    "task_id": task_id,
-                    "source": "a2a",
-                },
+                "metadata": (
+                    {
+                        "context_id": context_id,
+                        "task_id": task_id,
+                        "source": "a2a",
+                        **(
+                            {"observability": dict(observability)}
+                            if observability
+                            else {}
+                        ),
+                    }
+                ),
             }
         )
 
@@ -191,24 +247,29 @@ def _compile_graph():
     return compile_graph()
 
 
-def build_a2a_application(*, host: str, port: int) -> A2AStarletteApplication:
+def build_a2a_application(
+    *,
+    host: str,
+    port: int,
+    public_url: str | None = None,
+) -> A2AStarletteApplication:
     """Create the RoomAgent A2A Starlette application."""
     request_handler = DefaultRequestHandler(
         agent_executor=RoomAgentExecutor(),
         task_store=InMemoryTaskStore(),
     )
     return A2AStarletteApplication(
-        agent_card=build_agent_card(host=host, port=port),
+        agent_card=build_agent_card(host=host, port=port, public_url=public_url),
         http_handler=request_handler,
     )
 
 
-def build_agent_card(*, host: str, port: int) -> AgentCard:
+def build_agent_card(*, host: str, port: int, public_url: str | None = None) -> AgentCard:
     """Create the RoomAgent agent card for A2A discovery."""
     return AgentCard(
         name="RoomAgent",
         description="负责查询和修改家居终端状态，并可安排房间级自动化规则的 RoomAgent A2A 服务。",
-        url=f"http://{host}:{port}/",
+        url=_normalize_public_url(public_url) or f"http://{host}:{port}/",
         version="0.1.0",
         default_input_modes=SUPPORTED_CONTENT_TYPES,
         default_output_modes=SUPPORTED_CONTENT_TYPES,
@@ -224,3 +285,14 @@ def build_agent_card(*, host: str, port: int) -> AgentCard:
             )
         ],
     )
+
+
+def _normalize_public_url(public_url: str | None) -> str | None:
+    if not public_url:
+        return None
+
+    stripped = public_url.strip()
+    if not stripped:
+        return None
+
+    return stripped.rstrip("/") + "/"

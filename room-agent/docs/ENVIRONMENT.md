@@ -9,6 +9,8 @@ These are consumed directly by [app/server.py](../app/server.py):
 - `ROOM_AGENT_HOST`: bind host for the HTTP service. Default: `127.0.0.1`
 - `ROOM_AGENT_PORT`: bind port for the HTTP service. Default: `10000`
 
+For phone-based testing, `ROOM_AGENT_HOST` usually needs to be `0.0.0.0` so the service listens on the LAN interface. The public A2A URL advertised to Personal Agent is auto-detected from the active LAN IP and `ROOM_AGENT_PORT`. Set `gateway.agent_host` only when the deployment needs a fixed domain, reverse proxy, tunnel, or static IP override.
+
 ## Launch-time variables used by the shell wrapper
 
 These are consumed by [server.sh](../server.sh):

@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import logging
+import os
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import quote
 
 import httpx
 
 from config.settings import BeaconSettings, GatewaySettings, Settings
+from .public_url import resolve_public_agent_url
 
 
 logger = logging.getLogger(__name__)
@@ -32,10 +35,17 @@ class GatewayClient:
         *,
         timeout: float = 10.0,
         transport: httpx.AsyncBaseTransport | None = None,
+        bind_host: str | None = None,
+        port: int | None = None,
+        public_url_resolver: Callable[[Settings, str, int], str] = resolve_public_agent_url,
     ) -> None:
         self.timeout = timeout
         self.transport = transport
+        self.bind_host = bind_host or os.getenv("ROOM_AGENT_HOST", "127.0.0.1")
+        self.port = port or int(os.getenv("ROOM_AGENT_PORT", "10000"))
+        self.public_url_resolver = public_url_resolver
         self.is_registered = False
+        self.last_registered_public_url: str | None = None
         self.last_error: str | None = None
 
     async def register_agent(self, settings: Settings) -> bool:
@@ -43,10 +53,12 @@ class GatewayClient:
         gateway = settings.agent.gateway
         if gateway is None:
             self.is_registered = False
+            self.last_registered_public_url = None
             self.last_error = "Gateway settings are not configured."
             return False
 
         try:
+            public_url = self._resolve_public_url(settings)
             async with self._client() as client:
                 if settings.beacon and settings.beacon.enabled:
                     await self._post_json(
@@ -57,10 +69,11 @@ class GatewayClient:
                 await self._post_json(
                     client,
                     _join_url(gateway.url, "/api/registry/register"),
-                    _build_agent_registration_payload(settings, gateway),
+                    _build_agent_registration_payload(settings, gateway, public_url),
                 )
         except Exception as exc:
             self.is_registered = False
+            self.last_registered_public_url = None
             self.last_error = f"{type(exc).__name__}: {exc}"
             logger.warning(
                 "Failed to register RoomAgent with qwen-backend: %s",
@@ -69,11 +82,13 @@ class GatewayClient:
             return False
 
         self.is_registered = True
+        self.last_registered_public_url = public_url
         self.last_error = None
         logger.info(
-            "Registered RoomAgent with qwen-backend agent=%s beacon=%s",
+            "Registered RoomAgent with qwen-backend agent=%s beacon=%s url=%s",
             settings.agent.id,
             settings.beacon.beacon_id if settings.beacon else None,
+            public_url,
         )
         return True
 
@@ -82,6 +97,7 @@ class GatewayClient:
         gateway = settings.agent.gateway
         if gateway is None:
             self.is_registered = False
+            self.last_registered_public_url = None
             self.last_error = "Gateway settings are not configured."
             return False
 
@@ -89,6 +105,15 @@ class GatewayClient:
             return await self.register_agent(settings)
 
         try:
+            public_url = self._resolve_public_url(settings)
+            if public_url != self.last_registered_public_url:
+                logger.info(
+                    "RoomAgent public URL changed from %s to %s; re-registering.",
+                    self.last_registered_public_url,
+                    public_url,
+                )
+                return await self.register_agent(settings)
+
             async with self._client() as client:
                 if settings.beacon and settings.beacon.enabled:
                     await self._post_json(
@@ -109,6 +134,7 @@ class GatewayClient:
                 )
         except Exception as exc:
             self.is_registered = False
+            self.last_registered_public_url = None
             self.last_error = f"{type(exc).__name__}: {exc}"
             logger.warning(
                 "Failed to send RoomAgent heartbeat to qwen-backend: %s",
@@ -121,6 +147,9 @@ class GatewayClient:
 
     def _client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(timeout=self.timeout, transport=self.transport)
+
+    def _resolve_public_url(self, settings: Settings) -> str:
+        return self.public_url_resolver(settings, self.bind_host, self.port).rstrip("/") + "/"
 
     async def _post_json(
         self,
@@ -152,9 +181,11 @@ def _build_beacon_registration_payload(settings: Settings) -> dict[str, Any]:
 def _build_agent_registration_payload(
     settings: Settings,
     gateway: GatewaySettings | None = None,
+    public_url: str | None = None,
 ) -> dict[str, Any]:
     gateway = gateway or _require_gateway(settings)
-    agent_url = gateway.agent_host.rstrip("/") + "/"
+    resolved_url = public_url or resolve_public_agent_url(settings, "127.0.0.1", 10000)
+    agent_url = resolved_url.rstrip("/") + "/"
     return {
         "id": settings.agent.id,
         "name": f"{settings.agent.room_id} RoomAgent",

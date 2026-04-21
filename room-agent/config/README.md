@@ -142,16 +142,16 @@ beacon:
 - `url`: 后端地址
 - `register_on_startup`: 是否启动时注册
 - `heartbeat_interval`: 心跳间隔
-- `agent_host`: Room Agent 对外服务地址。因为 qwen-backend 是一个 AI Gateway，会将请求转发回本服务。
+- `agent_host`: 可选的 Room Agent 对外服务地址。不填时启动和 heartbeat 会自动检测当前局域网 IP 并注册；只有固定域名、反向代理、隧道或静态 IP 部署才需要手动填写。
 
 参考配置
 
 ```yaml
 gateway:
-  url: "http://home-gateway.local" # Qwen Backend地址
+  url: "http://<qwen-backend-ip>:3088" # Qwen Backend地址
   register_on_startup: true # 是否在启动时注册到后端
   heartbeat_interval: 60 # 心跳间隔，单位秒
-  agent_host: "http://room-agent.local" # Room Agent对外服务地址
+  # agent_host: "http://<room-agent-lan-ip>:10000" # 可选：固定对外服务地址
 ```
 
 如果和外面根目录的 docs 有冲突，以本文档为准。
