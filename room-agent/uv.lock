@@ -1257,7 +1257,7 @@ wheels = [
 
 [[package]]
 name = "room-agent"
-version = "0.4.4"
+version = "1.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "a2a-sdk", extra = ["http-server"] },
