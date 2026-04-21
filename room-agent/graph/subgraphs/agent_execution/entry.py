@@ -41,6 +41,7 @@ async def agent_execution(state: RoomAgentGraphState) -> RoomAgentGraphState:
         {
             "user_input": state.get("user_input", ""),
             "conversation_text": state.get("conversation_text", ""),
+            "subagent_system_prompt": state.get("subagent_system_prompt", ""),
             "metadata": dict(state.get("metadata", {})),
         }
     )
@@ -104,17 +105,17 @@ async def subgraph_input_transform(
     user_input = state.get("user_input", "").strip()
     prompt_input = state.get("conversation_text", "").strip() or user_input
     conversation_text = maybe_apply_qwen_nothink(prompt_input)
+    system_prompt = state.get("subagent_system_prompt", "").strip() or await _build_system_prompt(
+        selected_tools=selected_tools,
+    )
 
     return {
         "user_input": user_input,
         "conversation_text": conversation_text,
+        "subagent_system_prompt": system_prompt,
         "metadata": dict(state.get("metadata", {})),
         "messages": [
-            SystemMessage(
-                content=await _build_system_prompt(
-                    selected_tools=selected_tools,
-                )
-            ),
+            SystemMessage(content=system_prompt),
             HumanMessage(content=conversation_text),
         ],
         "step_count": 0,
