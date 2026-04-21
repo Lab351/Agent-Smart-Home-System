@@ -14,7 +14,6 @@ from app.server import get_settings, get_llm_provider_registry, get_mcp_client
 from config.settings import LLMRole
 from graph.mcp_prompt_context import build_mcp_prompts_context
 from graph.state import RoomAgentGraphState
-from graph.utils.prompt_patch import maybe_apply_qwen_nothink
 from integrations.llm_provider import normalize_message_content
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
@@ -104,7 +103,7 @@ async def subgraph_input_transform(
     """Initialize the message state for the tool-calling loop."""
     user_input = state.get("user_input", "").strip()
     prompt_input = state.get("conversation_text", "").strip() or user_input
-    conversation_text = maybe_apply_qwen_nothink(prompt_input)
+    conversation_text = prompt_input
     system_prompt = state.get("subagent_system_prompt", "").strip() or await _build_system_prompt(
         selected_tools=selected_tools,
     )

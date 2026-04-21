@@ -9,7 +9,6 @@ from app.server import get_llm_provider_registry, get_mcp_client, get_settings
 from config.settings import LLMRole
 from graph.mcp_prompt_context import build_mcp_prompts_context
 from graph.state import RoomAgentGraphState
-from graph.utils.prompt_patch import maybe_apply_qwen_nothink
 from integrations.llm_provider import normalize_message_content
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
@@ -71,11 +70,9 @@ async def clarifying(state: SashaVerificationState) -> SashaVerificationState:
     messages = [
         SystemMessage(content=_build_clarifying_system_prompt(state.get("static_context", ""))),
         HumanMessage(
-            content=maybe_apply_qwen_nothink(
-                _build_current_question_prompt(
-                    conversation_text=state.get("conversation_text", ""),
-                    user_input=state.get("user_input", ""),
-                )
+            content=_build_current_question_prompt(
+                conversation_text=state.get("conversation_text", ""),
+                user_input=state.get("user_input", ""),
             )
         ),
     ]
@@ -89,11 +86,9 @@ async def filtering(state: SashaVerificationState) -> SashaVerificationState:
         HumanMessage(content="Which are the relevant devices?"),
         AIMessage(content=state.get("clarifying_text", "")),
         HumanMessage(
-            content=maybe_apply_qwen_nothink(
-                _build_current_question_prompt(
-                    conversation_text=state.get("conversation_text", ""),
-                    user_input=state.get("user_input", ""),
-                )
+            content=_build_current_question_prompt(
+                conversation_text=state.get("conversation_text", ""),
+                user_input=state.get("user_input", ""),
             )
         ),
     ]
@@ -114,11 +109,9 @@ async def planning(state: SashaVerificationState) -> SashaVerificationState:
         HumanMessage(content="How are these devices used to meet the goal?"),
         AIMessage(content=state.get("filtered_context", "")),
         HumanMessage(
-            content=maybe_apply_qwen_nothink(
-                _build_current_question_prompt(
-                    conversation_text=state.get("conversation_text", ""),
-                    user_input=state.get("user_input", ""),
-                )
+            content=_build_current_question_prompt(
+                conversation_text=state.get("conversation_text", ""),
+                user_input=state.get("user_input", ""),
             )
         ),
     ]
