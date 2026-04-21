@@ -50,8 +50,7 @@ def _settings(*, register_on_startup: bool) -> Settings:
         ),
         beacon=BeaconSettings(
             enabled=True,
-            beacon_id="esp32-beacon-bedroom-01",
-            uuid="01234567-89AB-CDEF-0123456789ABCDEF",
+            beacon_id="2",
             major=2,
             minor=0,
         ),
