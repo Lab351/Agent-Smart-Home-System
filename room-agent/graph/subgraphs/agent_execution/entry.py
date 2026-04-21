@@ -74,7 +74,6 @@ def compile_agent_execution_subgraph(
         ),
     )
     graph.add_node("agent_finalize_output", agent_finalize_output)
-    graph.add_node("agent_handle_limit_or_error", agent_handle_limit_or_error)
     graph.add_node("agent_submit_reply", agent_submit_reply)
     graph.add_node("subgraph_output_transform", subgraph_output_transform)
 
@@ -86,12 +85,11 @@ def compile_agent_execution_subgraph(
         {
             "tools": "tools",
             "finalize": "agent_finalize_output",
-            "handle_error": "agent_handle_limit_or_error",
+            "handle_error": "agent_submit_reply",
         },
     )
     graph.add_edge("tools", "agent_call_model")
     graph.add_edge("agent_finalize_output", "agent_submit_reply")
-    graph.add_edge("agent_handle_limit_or_error", "agent_submit_reply")
     graph.add_edge("agent_submit_reply", "subgraph_output_transform")
     graph.add_edge("subgraph_output_transform", END)
     return graph.compile()
@@ -194,22 +192,6 @@ def agent_finalize_output(state: AgentExecutionState) -> AgentExecutionState:
         }
 
     return {"final_output": {"message": message}}
-
-
-def agent_handle_limit_or_error(state: AgentExecutionState) -> AgentExecutionState:
-    """Ensure a structured terminal error exists."""
-    terminal_error = dict(state.get("terminal_error", {}))
-    if terminal_error:
-        return {"terminal_error": terminal_error}
-    return {
-        "terminal_error": {
-            "type": "agent_execution_error",
-            "message": "Agent execution failed without a structured error.",
-            "source_node": "agent_handle_limit_or_error",
-            "retryable": False,
-        }
-    }
-
 
 async def agent_submit_reply(state: AgentExecutionState) -> AgentExecutionState:
     """Submit the terminal reply through the active A2A updater when available."""
