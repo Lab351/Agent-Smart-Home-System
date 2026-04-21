@@ -11,7 +11,6 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 
 import uvicorn
-from starlette.responses import PlainTextResponse
 
 DIRECT_EXECUTION_ERROR = (
     "Do not run room-agent/app/server.py directly. "
@@ -28,7 +27,6 @@ from config.settings import HomeAssistantMCPSettings, LLMRole, Settings, load_se
 from .gateway_client import GatewayClient
 from .public_url import PublicUrlResolutionError, resolve_public_agent_url
 from integrations.mcp_client import MCPToolClient, build_home_assistant_mcp_client
-from integrations.observability import build_recorder, set_global_recorder
 from integrations.llm_provider import LLMProviderRegistry, create_llm_provider_registry
 
 
@@ -36,7 +34,6 @@ logger = logging.getLogger(__name__)
 _SETTINGS: Settings | None = None
 _LLM_PROVIDER_REGISTRY: LLMProviderRegistry | None = None
 _MCP_CLIENT: MCPToolClient | None = None
-_OBSERVABILITY_RECORDER = None
 _CONFIG_PATH: str | None = None
 _LLM_CONFIG_PATH: str | None = None
 ROOM_AGENT_HOST_ENV = "ROOM_AGENT_HOST"
@@ -69,21 +66,11 @@ def initialize_runtime_dependencies(
     global _LLM_PROVIDER_REGISTRY
     global _MCP_CLIENT
     global _MCP_HEALTH_STATUS
-    global _OBSERVABILITY_RECORDER
 
     _SETTINGS = settings
     _LLM_PROVIDER_REGISTRY = llm_provider_registry or create_llm_provider_registry(settings.llm)
     _MCP_CLIENT = mcp_client
     _MCP_HEALTH_STATUS = mcp_health_status or MCPHealthStatus()
-    agent_settings = getattr(settings, "agent", None)
-    agent_id = getattr(agent_settings, "id", "room-agent-default")
-    _OBSERVABILITY_RECORDER = build_recorder(
-        service_name="room-agent",
-        agent_id=agent_id,
-        agent_type="room",
-        settings=settings,
-    )
-    set_global_recorder(_OBSERVABILITY_RECORDER)
 
 
 def get_settings() -> Settings:
@@ -97,11 +84,6 @@ def get_settings() -> Settings:
 def get_mcp_client() -> MCPToolClient | None:
     """Return the process-wide MCP client singleton."""
     return _MCP_CLIENT
-
-
-def get_observability_recorder():
-    """Return the process-wide observability recorder singleton."""
-    return _OBSERVABILITY_RECORDER
 
 
 def get_mcp_health_status() -> dict[str, object | None]:
@@ -282,17 +264,6 @@ class ServiceRuntime:
             except PublicUrlResolutionError as exc:
                 logger.warning("Unable to resolve RoomAgent public URL for agent-card: %s", exc)
         app = build_a2a_application(host=self.host, port=self.port, public_url=public_url).build()
-        recorder = get_observability_recorder()
-        prometheus_path = settings.observability.prometheus.path
-        if recorder is not None and settings.observability.prometheus.enabled:
-            app.add_route(
-                prometheus_path,
-                lambda request: PlainTextResponse(  # type: ignore[arg-type]
-                    recorder.render_prometheus(),
-                    media_type="text/plain; version=0.0.4; charset=utf-8",
-                ),
-                methods=["GET"],
-            )
 
         server = uvicorn.Server(
             uvicorn.Config(

@@ -42,15 +42,6 @@ beacon:
 
 runtime:
   log_level: "DEBUG"
-
-observability:
-  enabled: true
-  raw_event_dir: ".runtime/observability"
-  pricing_file: "config/observability.pricing.json"
-  sampling_ratio: 0.5
-  prometheus:
-    enabled: true
-    path: "/metrics"
 """.strip(),
         encoding="utf-8",
     )
@@ -83,12 +74,6 @@ observability:
     assert settings.agent.home_assistant_mcp.health_check.enabled is True
     assert settings.runtime.room_agent_config_path == str(config_path)
     assert settings.runtime.log_level == "DEBUG"
-    assert settings.observability.enabled is True
-    assert settings.observability.raw_event_dir == ".runtime/observability"
-    assert settings.observability.pricing_file == "config/observability.pricing.json"
-    assert settings.observability.sampling_ratio == 0.5
-    assert settings.observability.prometheus.enabled is True
-    assert settings.observability.prometheus.path == "/metrics"
 
 
 def test_load_settings_allows_omitted_gateway_agent_host(tmp_path: Path) -> None:

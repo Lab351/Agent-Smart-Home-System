@@ -117,25 +117,11 @@ class RuntimeSettings(BaseModel):
     log_level: str = "INFO"
 
 
-class PrometheusSettings(BaseModel):
-    enabled: bool = True
-    path: str = "/metrics"
-
-
-class ObservabilitySettings(BaseModel):
-    enabled: bool = True
-    raw_event_dir: str = ".runtime/observability"
-    pricing_file: str = "config/observability.pricing.json"
-    sampling_ratio: float = 1.0
-    prometheus: PrometheusSettings = Field(default_factory=PrometheusSettings)
-
-
 class Settings(BaseModel):
     agent: AgentSettings = Field(default_factory=AgentSettings)
     beacon: BeaconSettings | None = None
     llm: LLMSettings = Field(default_factory=LLMSettings)
     runtime: RuntimeSettings = Field(default_factory=RuntimeSettings)
-    observability: ObservabilitySettings = Field(default_factory=ObservabilitySettings)
 
 
 def _load_yaml_config(config_path: str) -> dict:
@@ -215,11 +201,6 @@ def load_settings(
     runtime_data = (
         yaml_data.get("runtime", {}) if isinstance(yaml_data.get("runtime"), dict) else {}
     )
-    observability_data = (
-        yaml_data.get("observability", {})
-        if isinstance(yaml_data.get("observability"), dict)
-        else {}
-    )
     ha_mcp_data = (
         agent_data.get("home_assistant_mcp", {})
         if isinstance(agent_data.get("home_assistant_mcp"), dict)
@@ -244,8 +225,5 @@ def load_settings(
                 "log_level", RuntimeSettings.model_fields["log_level"].default
             ),
         ),
-        observability=ObservabilitySettings.model_validate(observability_data)
-        if observability_data
-        else ObservabilitySettings(),
     )
     return settings

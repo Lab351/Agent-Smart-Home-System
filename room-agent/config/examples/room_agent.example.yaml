@@ -34,12 +34,3 @@ beacon:
 
 runtime:
   log_level: "INFO"
-
-observability:
-  enabled: true
-  raw_event_dir: ".runtime/observability"
-  pricing_file: "config/observability.pricing.json"
-  sampling_ratio: 1.0
-  prometheus:
-    enabled: true
-    path: "/metrics"
