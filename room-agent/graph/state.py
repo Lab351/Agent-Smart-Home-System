@@ -5,13 +5,6 @@ from __future__ import annotations
 from typing import Any, Literal, NotRequired, TypedDict
 
 
-class IntentResult(TypedDict, total=False):
-    """Structured intent classification result."""
-
-    name: str
-    confidence: float
-
-
 class ExecutionError(TypedDict, total=False):
     """Structured execution error payload."""
 
@@ -26,8 +19,6 @@ class RoomAgentGraphState(TypedDict, total=False):
 
     user_input: str
     conversation_text: str
-    intent: IntentResult
-    need_tool_call: bool
     candidate_tools: list[dict[str, Any]]
     selected_tools: list[dict[str, Any]]
     tool_call_history: list[dict[str, Any]]

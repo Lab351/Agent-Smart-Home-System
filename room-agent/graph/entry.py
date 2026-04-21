@@ -6,10 +6,7 @@ from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
-from .nodes.direct_response import direct_response
-from .nodes.intent_recognition import intent_recognition
 from .nodes.tool_selection import tool_selection
-from .nodes.intent_recognition import route_after_intent
 from .state import RoomAgentGraphState
 from .subgraphs.agent_execution import agent_execution
 
@@ -37,23 +34,15 @@ def build_graph() -> StateGraph:
     graph = StateGraph(RoomAgentGraphState)
 
     graph.add_node("initialize_request", initialize_request)
-    graph.add_node("intent_recognition", intent_recognition)
-    graph.add_node("direct_response", direct_response)
     graph.add_node("agent_execution", agent_execution)
     graph.add_node("tool_selection", tool_selection)
+
+    # Edges.
     graph.add_edge(START, "initialize_request")
-    graph.add_edge("initialize_request", "intent_recognition")
-    graph.add_conditional_edges(
-        "intent_recognition",
-        route_after_intent,
-        {
-            "direct_response": "direct_response",
-            "tool_selection": "tool_selection",
-        },
-    )
-    graph.add_edge("direct_response", END)
+    graph.add_edge("initialize_request", "tool_selection")
     graph.add_edge("tool_selection", "agent_execution")
     graph.add_edge("agent_execution", END)
+    
     return graph
 
 

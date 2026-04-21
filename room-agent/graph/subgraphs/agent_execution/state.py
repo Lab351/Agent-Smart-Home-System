@@ -22,7 +22,7 @@ class AgentExecutionState(TypedDict, total=False):
     Field groups:
 
     - request context: copied in from the outer graph so the subgraph can plan
-      against the original user request and the intent/tool-selection result
+      against the original user request and the tool-selection result
     - runtime loop state: mutated on each planner / tool-execution iteration
     - terminal state: written once the subgraph reaches final output or fails
     """
@@ -30,8 +30,6 @@ class AgentExecutionState(TypedDict, total=False):
     # Original request context forwarded from the outer graph.
     user_input: str
     conversation_text: str
-    # Intent recognized by the outer graph; used as planner context only.
-    intent: dict[str, Any]
     metadata: dict[str, Any]
     messages: Annotated[list[BaseMessage], add_messages]
 

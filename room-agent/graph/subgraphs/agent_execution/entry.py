@@ -6,7 +6,7 @@ import json
 import inspect
 import logging
 from functools import partial
-from typing import Any
+from typing import Any, cast
 
 from a2a.types import TaskState
 from app.a2a_server import create_text_part, get_current_updater
@@ -14,6 +14,7 @@ from app.server import get_settings, get_llm_provider_registry, get_mcp_client
 from config.settings import LLMRole
 from graph.mcp_prompt_context import build_mcp_prompts_context
 from graph.state import RoomAgentGraphState
+from graph.utils.prompt_patch import maybe_apply_qwen_nothink
 from integrations.llm_provider import normalize_message_content
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
@@ -40,7 +41,6 @@ async def agent_execution(state: RoomAgentGraphState) -> RoomAgentGraphState:
         {
             "user_input": state.get("user_input", ""),
             "conversation_text": state.get("conversation_text", ""),
-            "intent": dict(state.get("intent", {})),
             "metadata": dict(state.get("metadata", {})),
         }
     )
@@ -102,17 +102,16 @@ async def subgraph_input_transform(
 ) -> AgentExecutionState:
     """Initialize the message state for the tool-calling loop."""
     user_input = state.get("user_input", "").strip()
-    conversation_text = state.get("conversation_text", "").strip() or user_input
+    prompt_input = state.get("conversation_text", "").strip() or user_input
+    conversation_text = maybe_apply_qwen_nothink(prompt_input)
 
     return {
         "user_input": user_input,
         "conversation_text": conversation_text,
-        "intent": dict(state.get("intent", {})),
         "metadata": dict(state.get("metadata", {})),
         "messages": [
             SystemMessage(
                 content=await _build_system_prompt(
-                    intent=state.get("intent", {}),
                     selected_tools=selected_tools,
                 )
             ),
@@ -162,7 +161,7 @@ def route_after_model_call(state: AgentExecutionState) -> str:
     """Route based on the model output and terminal state."""
     if state.get("terminal_error"):
         return "handle_error"
-    if tools_condition(state, messages_key="messages") == "tools":
+    if tools_condition(cast(dict[str, Any], state), messages_key="messages") == "tools":
         return "tools"
     return "finalize"
 
@@ -259,7 +258,6 @@ def subgraph_output_transform(state: AgentExecutionState) -> AgentExecutionState
 
 async def _build_system_prompt(
     *,
-    intent: dict[str, Any],
     selected_tools: list[dict[str, Any]],
 ) -> str:
     tool_names = ", ".join(
@@ -285,12 +283,22 @@ async def _build_system_prompt(
         logger.info(f"Failed to retrieve MCP system prompt: {exc}")
 
     return (
-        "你是一个房间智能体。基于用户请求决定是否调用绑定工具；"
-        "如果需要工具，使用最合适的工具并在拿到结果后给出简洁中文答复；"
-        "如果不需要工具，直接回答。"
-        f"\n识别意图: {json.dumps(intent, ensure_ascii=False)}"
+        """
+你是智能家居控制助手。你的目标是：准确理解用户意图，并在需要时调用工具完成查询或控制。
+
+请严格遵循以下规则：
+1. 先判断任务类型：
+   - 设备控制/状态查询：优先通过工具执行。
+   - 闲聊或纯知识问答（与设备无关）：可直接自然语言回复。
+2. 当用户未明确下达设备指令，但描述了行为或场景时，需要推断其隐含控制目标，并执行最合理的操作。
+3. 工具调用失败时，允许重试 1 - 2 次；若仍失败，必须明确告知失败原因或限制。
+4. 严禁编造工具结果、设备状态或执行记录。
+5. 无论是否调用工具，最后都必须给出一段面向用户的自然语言回复。
+
+回复风格要求：简洁、明确、可执行；若已完成操作，要说明关键结果；若未完成，要说明下一步建议。
+"""
         f"\n候选工具: {tool_names}"
-        f"{mcp_prompt}"
+        f"\n以下是厂商提示词（可参考并与上述规则结合使用）:\n{mcp_prompt}"
     )
 
 
@@ -413,7 +421,7 @@ def _normalize_tool_error_message(error_content: Any) -> str:
     return text or "Tool execution failed."
 
 
-def _summarize_value(value: Any, *, limit: int = 180) -> str:
+def _summarize_value(value: Any, *, limit: int = 400) -> str:
     if isinstance(value, str):
         text = value
     else:
@@ -427,8 +435,11 @@ def _summarize_value(value: Any, *, limit: int = 180) -> str:
     return text[: limit - 3] + "..."
 
 
-def _get_powerful_model() -> Any:
-    model = get_llm_provider_registry().get(LLMRole.POWERFUL)
+def _get_powerful_model(*, enable_thinking: bool = False) -> Any:
+    model = get_llm_provider_registry().get(
+        LLMRole.POWERFUL,
+        enable_thinking=enable_thinking,
+    )
     if model is None:
         raise RuntimeError(f"LLM provider is unavailable for role={LLMRole.POWERFUL.value}")
     return model
