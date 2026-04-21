@@ -41,7 +41,7 @@ export function HomeScreen({
             tone={currentRoomName ? 'accent' : 'neutral'}
           />
           <StatusTile
-            label="A2A"
+            label="控制通道"
             value={
               controlStatus === 'connected'
                 ? '已连接'
