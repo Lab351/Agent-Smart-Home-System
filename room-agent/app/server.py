@@ -35,7 +35,6 @@ _LLM_PROVIDER_REGISTRY: LLMProviderRegistry | None = None
 _MCP_CLIENT: MCPToolClient | None = None
 _CONFIG_PATH: str | None = None
 _LLM_CONFIG_PATH: str | None = None
-_DEFAULT_ENABLE_THINKING = False
 ROOM_AGENT_HOST_ENV = "ROOM_AGENT_HOST"
 ROOM_AGENT_PORT_ENV = "ROOM_AGENT_PORT"
 
@@ -60,21 +59,15 @@ def initialize_runtime_dependencies(
     llm_provider_registry: LLMProviderRegistry | None = None,
     mcp_client: MCPToolClient | None = None,
     mcp_health_status: MCPHealthStatus | None = None,
-    default_enable_thinking: bool = False,
 ) -> None:
     """Initialize process-wide runtime singletons explicitly."""
     global _SETTINGS
     global _LLM_PROVIDER_REGISTRY
     global _MCP_CLIENT
     global _MCP_HEALTH_STATUS
-    global _DEFAULT_ENABLE_THINKING
 
     _SETTINGS = settings
-    _DEFAULT_ENABLE_THINKING = default_enable_thinking
-    _LLM_PROVIDER_REGISTRY = llm_provider_registry or create_llm_provider_registry(
-        settings.llm,
-        default_enable_thinking=default_enable_thinking,
-    )
+    _LLM_PROVIDER_REGISTRY = llm_provider_registry or create_llm_provider_registry(settings.llm)
     _MCP_CLIENT = mcp_client
     _MCP_HEALTH_STATUS = mcp_health_status or MCPHealthStatus()
 
@@ -112,12 +105,6 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help="Path to room-agent LLM config file.",
     )
-    parser.add_argument(
-        "--enable-thinking",
-        dest="enable_thinking",
-        action="store_true",
-        help="Enable thinking by default when creating LLM providers from the registry.",
-    )
     return parser.parse_args()
 
 
@@ -126,10 +113,7 @@ def get_llm_provider_registry() -> LLMProviderRegistry:
     global _LLM_PROVIDER_REGISTRY
     if _LLM_PROVIDER_REGISTRY is None:
         settings = get_settings()
-        _LLM_PROVIDER_REGISTRY = create_llm_provider_registry(
-            settings.llm,
-            default_enable_thinking=_DEFAULT_ENABLE_THINKING,
-        )
+        _LLM_PROVIDER_REGISTRY = create_llm_provider_registry(settings.llm)
     return _LLM_PROVIDER_REGISTRY
 
 
@@ -345,12 +329,10 @@ def cli() -> None:
     """Synchronous console-script entrypoint for packaging tools."""
     global _CONFIG_PATH
     global _LLM_CONFIG_PATH
-    global _DEFAULT_ENABLE_THINKING
 
     args = parse_args()
     _CONFIG_PATH = args.config_path
     _LLM_CONFIG_PATH = args.llm_config_path
-    _DEFAULT_ENABLE_THINKING = args.enable_thinking
     with contextlib.suppress(KeyboardInterrupt):
         asyncio.run(main())
 
