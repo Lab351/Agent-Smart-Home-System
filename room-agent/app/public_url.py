@@ -8,7 +8,7 @@ import subprocess
 from collections.abc import Iterable
 from urllib.parse import urlparse
 
-from config.settings import Settings
+from config.settings import GatewaySettings, Settings
 
 
 class PublicUrlResolutionError(RuntimeError):
@@ -21,13 +21,38 @@ def resolve_public_agent_url(settings: Settings, bind_host: str, port: int) -> s
     if gateway is None:
         raise PublicUrlResolutionError("Gateway settings are required to resolve public URL.")
 
-    configured_host = (gateway.agent_host or "").strip()
+    return _resolve_reachable_agent_url(gateway=gateway, bind_host=bind_host, port=port)
+
+
+def resolve_agent_card_url(settings: Settings, bind_host: str, port: int) -> str:
+    """Resolve the URL advertised in the A2A AgentCard."""
+    try:
+        return _resolve_reachable_agent_url(
+            gateway=settings.agent.gateway,
+            bind_host=bind_host,
+            port=port,
+        )
+    except PublicUrlResolutionError:
+        loopback_url = _loopback_url_or_none(bind_host, port)
+        if loopback_url is not None:
+            return loopback_url
+        raise
+
+
+def _resolve_reachable_agent_url(
+    *,
+    gateway: GatewaySettings | None,
+    bind_host: str,
+    port: int,
+) -> str:
+    configured_host = (gateway.agent_host or "").strip() if gateway is not None else ""
     if configured_host:
         return _normalize_url(configured_host)
 
-    route_ip = _detect_route_local_ip(gateway.url)
-    if route_ip is not None:
-        return _build_http_url(route_ip, port)
+    if gateway is not None:
+        route_ip = _detect_route_local_ip(gateway.url)
+        if route_ip is not None:
+            return _build_http_url(route_ip, port)
 
     bind_ip = _valid_ipv4_or_none(bind_host)
     if bind_ip is not None:
@@ -49,6 +74,21 @@ def _normalize_url(value: str) -> str:
 
 def _build_http_url(host: str, port: int) -> str:
     return f"http://{host}:{port}/"
+
+
+def _loopback_url_or_none(host: str, port: int) -> str | None:
+    if host == "localhost":
+        return _build_http_url(host, port)
+
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return None
+
+    if address.version == 4 and address.is_loopback:
+        return _build_http_url(str(address), port)
+
+    return None
 
 
 def _detect_route_local_ip(gateway_url: str) -> str | None:

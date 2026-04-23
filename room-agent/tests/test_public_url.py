@@ -3,20 +3,28 @@ from __future__ import annotations
 import pytest
 
 import app.public_url as public_url
-from app.public_url import PublicUrlResolutionError, resolve_public_agent_url
+from app.public_url import (
+    PublicUrlResolutionError,
+    resolve_agent_card_url,
+    resolve_public_agent_url,
+)
 from config.settings import AgentSettings, GatewaySettings, RuntimeSettings, Settings
 
 
-def _settings(*, agent_host: str | None = None) -> Settings:
+def _settings(*, agent_host: str | None = None, with_gateway: bool = True) -> Settings:
     return Settings.model_construct(
         agent=AgentSettings(
             id="room-agent-bedroom",
             room_id="bedroom",
-            gateway=GatewaySettings(
-                url="http://backend.test:3088",
-                register_on_startup=True,
-                heartbeat_interval=45,
-                agent_host=agent_host,
+            gateway=(
+                GatewaySettings(
+                    url="http://backend.test:3088",
+                    register_on_startup=True,
+                    heartbeat_interval=45,
+                    agent_host=agent_host,
+                )
+                if with_gateway
+                else None
             ),
         ),
         beacon=None,
@@ -69,3 +77,31 @@ def test_resolution_fails_when_no_valid_ip_is_available(
 
     with pytest.raises(PublicUrlResolutionError):
         resolve_public_agent_url(_settings(), bind_host="127.0.0.1", port=10000)
+
+
+def test_agent_card_url_can_resolve_lan_ip_without_gateway(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(public_url, "_enumerate_host_ipv4_candidates", lambda: ["192.168.1.44"])
+
+    resolved = resolve_agent_card_url(
+        _settings(with_gateway=False),
+        bind_host="0.0.0.0",
+        port=10000,
+    )
+
+    assert resolved == "http://192.168.1.44:10000/"
+
+
+def test_agent_card_url_keeps_loopback_bind_for_local_only_testing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(public_url, "_enumerate_host_ipv4_candidates", lambda: [])
+
+    resolved = resolve_agent_card_url(
+        _settings(with_gateway=False),
+        bind_host="127.0.0.1",
+        port=10000,
+    )
+
+    assert resolved == "http://127.0.0.1:10000/"

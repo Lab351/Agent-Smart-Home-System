@@ -130,7 +130,7 @@ Room Agent 侧：
 
 - `beacon.beacon_id` 等于 `String(beacon.major)`。
 - `gateway.url` 指向 qwen-backend。
-- `ROOM_AGENT_HOST=0.0.0.0` 让 A2A 服务监听局域网网卡；`gateway.agent_host` 仅在固定域名、反向代理、隧道或静态 IP 部署时手动填写。
+- `serve --host 0.0.0.0` 或 `ROOM_AGENT_HOST=0.0.0.0` 让 A2A 服务监听局域网网卡；`gateway.agent_host` 仅在固定域名、反向代理、隧道、静态 IP 部署或自动检测网卡不正确时手动填写。
 - 启动后确认 qwen-backend 的 `/api/beacon/:beacon_id` 能查到 `room_id` 和 `agent_id`。
 
 Personal Agent 侧：
