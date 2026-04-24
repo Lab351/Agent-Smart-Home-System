@@ -1,24 +1,78 @@
+import { Type } from 'class-transformer';
+import {
+  IsArray,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
+
 export class DeviceInfo {
+  @IsString()
+  @IsNotEmpty()
   id: string;
+
+  @IsString()
+  @IsNotEmpty()
   name: string;
+
+  @IsString()
+  @IsNotEmpty()
   type: string;
 }
 
 export class RoomDevices {
+  @IsString()
+  @IsNotEmpty()
   room: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DeviceInfo)
   devices: DeviceInfo[];
 }
 
 export class IntentContext {
+  @IsOptional()
+  @IsString()
   current_room?: string;
+
+  @IsOptional()
+  @IsString()
   current_beacon_id?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RoomDevices)
   available_devices?: RoomDevices[];
-  conversation_history?: Array<{ role: string; content: string }>;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ConversationMessage)
+  conversation_history?: ConversationMessage[];
 }
 
 export class IntentParseDto {
+  @IsString()
+  @IsNotEmpty()
   text: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => IntentContext)
   context?: IntentContext;
+}
+
+export class ConversationMessage {
+  @IsString()
+  @IsNotEmpty()
+  role: string;
+
+  @IsString()
+  @IsNotEmpty()
+  content: string;
 }
 
 export class ParsedIntent {
