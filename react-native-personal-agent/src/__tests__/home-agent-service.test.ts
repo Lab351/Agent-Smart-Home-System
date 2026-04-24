@@ -9,7 +9,7 @@ describe('HomeAgentService', () => {
 
     await service.sendTask({
       text: '打开回家模式',
-      kind: 'action',
+      kind: 'agent_message',
       room: 'livingroom',
       device: 'scene',
       action: 'activate',
@@ -22,6 +22,9 @@ describe('HomeAgentService', () => {
 
     expect(http.post).toHaveBeenCalledWith('/api/home/tasks', {
       source_agent: 'personal-agent-user1',
+      text: '打开回家模式',
+      routing: null,
+      query: null,
       intent: {
         room: 'livingroom',
         device: 'scene',

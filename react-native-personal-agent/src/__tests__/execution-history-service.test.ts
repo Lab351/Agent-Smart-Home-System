@@ -19,7 +19,7 @@ function createResult(id: number): VoiceCommandExecutionResult {
     taskInterrupted: false,
     intent: {
       text: `command-${id}`,
-      kind: 'action',
+      kind: 'agent_message',
       device: 'main_light',
       action: 'turn_on',
       room: 'livingroom',

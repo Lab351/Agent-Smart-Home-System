@@ -18,7 +18,7 @@ function createResult(id: number): VoiceCommandExecutionResult {
     agentId: `room-agent-${id}`,
     intent: {
       text: `command-${id}`,
-      kind: 'action',
+      kind: 'agent_message',
       device: 'main_light',
       action: 'turn_on',
       room: 'livingroom',

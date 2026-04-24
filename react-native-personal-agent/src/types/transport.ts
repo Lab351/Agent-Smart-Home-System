@@ -22,7 +22,16 @@ export interface QueryCommand {
   roomId: string;
   roomAgentId: string;
   utterance: string;
-  queryType: 'room_state';
+  queryType: 'room_state' | 'room_devices';
+  metadata?: Record<string, unknown>;
+  sourceAgent: string;
+}
+
+export interface AgentMessageCommand {
+  roomId: string;
+  roomAgentId: string;
+  utterance: string;
+  messageType: 'generic' | 'control' | 'room_state' | 'room_devices';
   metadata?: Record<string, unknown>;
   sourceAgent: string;
 }
@@ -53,6 +62,7 @@ export interface IControlTransport {
   getLastError(): string | null;
   sendControl(command: ControlCommand): Promise<ControlDispatchResult>;
   sendQuery(command: QueryCommand): Promise<ControlDispatchResult>;
+  sendMessage(command: AgentMessageCommand): Promise<ControlDispatchResult>;
   queryCapabilities(options: {
     roomId: string;
     roomAgentId: string;

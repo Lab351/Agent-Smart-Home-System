@@ -28,7 +28,7 @@ function createExecutionResult(): VoiceCommandExecutionResult {
     taskInterrupted: false,
     intent: {
       text: '打开客厅主灯',
-      kind: 'action',
+      kind: 'agent_message',
       device: 'main_light',
       action: 'turn_on',
       room: 'livingroom',

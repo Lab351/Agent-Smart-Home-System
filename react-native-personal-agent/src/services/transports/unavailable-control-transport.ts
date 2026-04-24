@@ -1,4 +1,5 @@
 import type {
+  AgentMessageCommand,
   AgentDiscoveryResult,
   ControlCommand,
   ControlDispatchResult,
@@ -49,6 +50,20 @@ export class UnavailableControlTransport implements IControlTransport {
       isTerminal: true,
       isInterrupted: false,
       detail: '查询通道未接入',
+      action: null,
+      raw: null,
+    };
+  }
+
+  async sendMessage(_command: AgentMessageCommand): Promise<ControlDispatchResult> {
+    return {
+      success: false,
+      taskId: null,
+      contextId: null,
+      state: 'unknown',
+      isTerminal: true,
+      isInterrupted: false,
+      detail: '消息通道未接入',
       action: null,
       raw: null,
     };

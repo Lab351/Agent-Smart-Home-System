@@ -1,12 +1,6 @@
 import { appEnv, getRoomDisplayName } from '@/config/env';
-import { buildRoomAgentSnapshot } from '@/features/voice-control/room-agent-snapshot';
 import { buildRoomTaskDispatchPresentation } from '@/features/voice-control/task-state';
-import type {
-  ParsedIntent,
-  RoomAgentSnapshot,
-  RoomBinding,
-  VoiceCommandExecutionResult,
-} from '@/types';
+import type { ParsedIntent, RoomBinding, VoiceCommandExecutionResult } from '@/types';
 
 import { A2AHttpControlTransport } from './transports/a2a-http-control-transport';
 import { ControlService } from './control-service';
@@ -71,15 +65,13 @@ export class VoiceCommandOrchestrator {
       switch (intent.kind) {
         case 'chat':
           return this.executeChat(intent, fallbackRoomId, fallbackRoomName);
-        case 'query':
-          return await this.executeQuery(intent, text, fallbackRoomId, fallbackRoomName);
-        case 'action':
-          return await this.executeAction(intent, text, fallbackRoomId, fallbackRoomName);
+        case 'agent_message':
+          return await this.executeAgentMessage(intent, text, fallbackRoomId, fallbackRoomName);
         default:
           return this.createResult(intent, {
             success: false,
             status: '意图未识别',
-            detail: '当前没有识别到可执行的聊天、查询或控制意图。',
+            detail: '当前没有识别到可执行的聊天或 agent 消息意图。',
             route: 'unresolved',
             roomId: intent.room ?? fallbackRoomId,
             roomName: this.resolveRoomName(intent.room ?? fallbackRoomId, fallbackRoomName),
@@ -109,23 +101,12 @@ export class VoiceCommandOrchestrator {
     this.discoveryService.destroy();
   }
 
-  private async executeAction(
+  private async executeAgentMessage(
     intent: ParsedIntent,
     text: string,
     fallbackRoomId: string | null,
     fallbackRoomName: string | null,
   ): Promise<VoiceCommandExecutionResult> {
-    if (!intent.action) {
-      return this.createResult(intent, {
-        success: false,
-        status: '意图未识别',
-        detail: '未能从文本中识别出可执行动作，建议补充“打开/关闭/调到多少”等动作词。',
-        route: 'unresolved',
-        roomId: intent.room ?? fallbackRoomId,
-        roomName: this.resolveRoomName(intent.room ?? fallbackRoomId, fallbackRoomName),
-      });
-    }
-
     if (intent.routing?.target === 'home-agent') {
       const success = await this.homeAgentService.sendTask(intent);
       return this.createResult(intent, {
@@ -140,6 +121,27 @@ export class VoiceCommandOrchestrator {
       });
     }
 
+    if (intent.query?.type === 'room_state') {
+      return this.executeRoomStateQuery(intent, text, fallbackRoomId, fallbackRoomName);
+    }
+
+    if (intent.query?.type === 'room_devices') {
+      return this.executeRoomDevicesQuery(intent, text, fallbackRoomId, fallbackRoomName);
+    }
+
+    if (intent.action && intent.device) {
+      return this.executeRoomControlMessage(intent, text, fallbackRoomId, fallbackRoomName);
+    }
+
+    return this.executeGenericRoomMessage(intent, text, fallbackRoomId, fallbackRoomName);
+  }
+
+  private async executeRoomControlMessage(
+    intent: ParsedIntent,
+    text: string,
+    fallbackRoomId: string | null,
+    fallbackRoomName: string | null,
+  ): Promise<VoiceCommandExecutionResult> {
     const roomId = intent.routing?.roomId ?? intent.room ?? fallbackRoomId;
     if (!roomId) {
       return this.createResult(intent, {
@@ -149,17 +151,6 @@ export class VoiceCommandOrchestrator {
         route: 'unresolved',
         roomId: null,
         roomName: null,
-      });
-    }
-
-    if (!intent.device) {
-      return this.createResult(intent, {
-        success: false,
-        status: '缺少设备目标',
-        detail: '动作已识别，但目标设备不明确，建议补充“主灯/空调/窗帘”等设备词。',
-        route: 'unresolved',
-        roomId,
-        roomName: this.resolveRoomName(roomId, fallbackRoomName),
       });
     }
 
@@ -195,8 +186,8 @@ export class VoiceCommandOrchestrator {
     const dispatch = await this.controlService.sendControl(
       agentInfo.roomId,
       text,
-      intent.device,
-      intent.action,
+      intent.device!,
+      intent.action!,
       intent.parameters,
     );
 
@@ -204,8 +195,8 @@ export class VoiceCommandOrchestrator {
       success: dispatch.success,
       ...buildRoomTaskDispatchPresentation(dispatch, {
         roomName: agentInfo.roomName,
-        targetDevice: intent.device,
-        action: intent.action,
+        targetDevice: intent.device!,
+        action: intent.action!,
       }),
       route: 'room-agent',
       roomId: agentInfo.roomId,
@@ -235,21 +226,9 @@ export class VoiceCommandOrchestrator {
     });
   }
 
-  private async executeQuery(
-    intent: ParsedIntent,
-    text: string,
-    fallbackRoomId: string | null,
-    fallbackRoomName: string | null,
-  ): Promise<VoiceCommandExecutionResult> {
-    if (intent.query?.type === 'room_state') {
-      return this.executeRoomStateQuery(intent, text, fallbackRoomId, fallbackRoomName);
-    }
-
-    return this.executeRoomDevicesQuery(intent, fallbackRoomId, fallbackRoomName);
-  }
-
   private async executeRoomDevicesQuery(
     intent: ParsedIntent,
+    text: string,
     fallbackRoomId: string | null,
     fallbackRoomName: string | null,
   ): Promise<VoiceCommandExecutionResult> {
@@ -295,21 +274,26 @@ export class VoiceCommandOrchestrator {
       });
     }
 
-    const description = await this.controlService.queryCapabilities(agentInfo.roomId, agentInfo);
-    const snapshot = buildRoomAgentSnapshot(description, {
-      roomId: agentInfo.roomId,
-      roomName: agentInfo.roomName,
+    const dispatch = await this.controlService.queryRoomDevices(agentInfo.roomId, text, {
+      metadata: {
+        queryType: 'room_devices',
+      },
     });
 
-    const presentation = this.buildRoomDevicesQueryPresentation(snapshot, agentInfo.roomName);
     return this.createResult(intent, {
-      success: true,
-      status: presentation.status,
-      detail: presentation.detail,
+      success: dispatch.success,
+      status: this.resolveRoomQueryStatus(dispatch, 'room_devices'),
+      detail: this.resolveRoomQueryDetail(dispatch.detail, agentInfo.roomName, 'room_devices'),
       route: 'query',
       roomId: agentInfo.roomId,
       roomName: agentInfo.roomName,
       agentId: agentInfo.agentId,
+      taskId: dispatch.taskId,
+      taskContextId: dispatch.contextId,
+      taskState: dispatch.state,
+      taskTerminal: dispatch.isTerminal,
+      taskInterrupted: dispatch.isInterrupted,
+      taskAction: dispatch.action,
     });
   }
 
@@ -370,7 +354,7 @@ export class VoiceCommandOrchestrator {
     return this.createResult(intent, {
       success: dispatch.success,
       status: this.resolveRoomStateQueryStatus(dispatch),
-      detail: dispatch.detail,
+      detail: this.resolveRoomQueryDetail(dispatch.detail, agentInfo.roomName, 'room_state'),
       route: 'query',
       roomId: agentInfo.roomId,
       roomName: agentInfo.roomName,
@@ -384,43 +368,114 @@ export class VoiceCommandOrchestrator {
     });
   }
 
-  private buildRoomDevicesQueryPresentation(
-    snapshot: RoomAgentSnapshot | null,
+  private async executeGenericRoomMessage(
+    intent: ParsedIntent,
+    text: string,
+    fallbackRoomId: string | null,
     fallbackRoomName: string | null,
-  ): { status: string; detail: string } {
-    const roomName =
-      snapshot?.roomName ?? this.resolveRoomName(snapshot?.roomId ?? null, fallbackRoomName) ?? '当前房间';
+  ): Promise<VoiceCommandExecutionResult> {
+    const roomId = intent.routing?.roomId ?? intent.room ?? fallbackRoomId;
 
-    if (!snapshot) {
-      return {
-        status: '已连上 Room-Agent',
-        detail: `${roomName}已连上 Room-Agent，但暂未获取到设备描述。`,
-      };
+    if (!roomId) {
+      return this.createResult(intent, {
+        success: false,
+        status: '缺少房间上下文',
+        detail: '当前没有足够的房间上下文，无法把消息路由到 room-agent。',
+        route: 'unresolved',
+        roomId: null,
+        roomName: null,
+      });
     }
 
-    if (snapshot.devices.length > 0) {
-      const deviceNames = snapshot.devices
-        .map(device => device.name?.trim() || device.id)
-        .filter(name => name.length > 0)
-        .join('、');
-
-      return {
-        status: '已获取房间设备清单',
-        detail: `${roomName}里目前登记了 ${snapshot.devices.length} 个设备：${deviceNames}。`,
-      };
+    const agentInfo = await this.discoveryService.getRoomAgentByRoomId(roomId);
+    if (!agentInfo) {
+      return this.createResult(intent, {
+        success: false,
+        status: '未发现 Room-Agent',
+        detail: `尚未获取到房间 ${roomId} 的代理映射，暂时无法转发该消息。`,
+        route: 'room-agent',
+        roomId,
+        roomName: this.resolveRoomName(roomId, fallbackRoomName),
+      });
     }
 
-    if (snapshot.capabilities.length > 0) {
-      return {
-        status: '已获取房间能力摘要',
-        detail: `${roomName}暂未登记可展示的设备清单，但当前可见 ${snapshot.capabilities.length} 类能力：${snapshot.capabilities.join('、')}。`,
-      };
+    this.controlService.setRoomAgent(agentInfo.roomId, agentInfo.agentId);
+    const connected = await this.controlService.connect(agentInfo, agentInfo.roomId);
+    if (!connected) {
+      const connectionError = this.controlService.getLastError();
+      return this.createResult(intent, {
+        success: false,
+        status: '消息通道连接失败',
+        detail: connectionError
+          ? `已经发现目标 room-agent，但消息链路未连通。${connectionError}`
+          : '已经发现目标 room-agent，但消息链路未连通。',
+        route: 'room-agent',
+        roomId: agentInfo.roomId,
+        roomName: agentInfo.roomName,
+        agentId: agentInfo.agentId,
+      });
     }
 
-    return {
-      status: '已连上 Room-Agent',
-      detail: `${roomName}已连上 Room-Agent，但暂未获取到设备描述。`,
-    };
+    const dispatch = await this.controlService.sendRoomMessage(agentInfo.roomId, text, {
+      messageType: 'generic',
+    });
+
+    return this.createResult(intent, {
+      success: dispatch.success,
+      status: this.resolveRoomMessageStatus(dispatch),
+      detail: this.resolveRoomMessageDetail(dispatch.detail, agentInfo.roomName),
+      route: 'room-agent',
+      roomId: agentInfo.roomId,
+      roomName: agentInfo.roomName,
+      agentId: agentInfo.agentId,
+      taskId: dispatch.taskId,
+      taskContextId: dispatch.contextId,
+      taskState: dispatch.state,
+      taskTerminal: dispatch.isTerminal,
+      taskInterrupted: dispatch.isInterrupted,
+      taskAction: dispatch.action,
+    });
+  }
+
+  private resolveRoomQueryStatus(
+    dispatch: {
+      success: boolean;
+      state: VoiceCommandExecutionResult['taskState'];
+      isTerminal: boolean;
+      isInterrupted: boolean;
+    },
+    queryType: 'room_state' | 'room_devices',
+  ): string {
+    const queryLabel = queryType === 'room_devices' ? '房间设备查询' : '房间状态查询';
+
+    if (dispatch.isInterrupted) {
+      return dispatch.state === 'auth-required' ? `${queryLabel}等待鉴权` : `${queryLabel}等待补充输入`;
+    }
+
+    if (!dispatch.success) {
+      return `${queryLabel}失败`;
+    }
+
+    if (!dispatch.isTerminal) {
+      return `${queryLabel}已提交`;
+    }
+
+    return queryType === 'room_devices' ? '已收到房间设备信息' : '已收到房间状态';
+  }
+
+  private resolveRoomQueryDetail(
+    detail: string,
+    roomName: string | null,
+    queryType: 'room_state' | 'room_devices',
+  ): string {
+    if (detail.trim().length > 0) {
+      return detail;
+    }
+
+    const displayRoomName = roomName ?? '当前房间';
+    return queryType === 'room_devices'
+      ? `${displayRoomName}已连上 Room-Agent，但暂未收到设备清单回复。`
+      : `${displayRoomName}已连上 Room-Agent，但暂未收到状态回复。`;
   }
 
   private resolveRoomStateQueryStatus(dispatch: {
@@ -429,21 +484,39 @@ export class VoiceCommandOrchestrator {
     isTerminal: boolean;
     isInterrupted: boolean;
   }): string {
+    return this.resolveRoomQueryStatus(dispatch, 'room_state');
+  }
+
+  private resolveRoomMessageStatus(dispatch: {
+    success: boolean;
+    state: VoiceCommandExecutionResult['taskState'];
+    isTerminal: boolean;
+    isInterrupted: boolean;
+  }): string {
     if (dispatch.isInterrupted) {
       return dispatch.state === 'auth-required'
-        ? '房间状态查询等待鉴权'
-        : '房间状态查询等待补充输入';
+        ? 'Room-Agent 消息等待鉴权'
+        : 'Room-Agent 消息等待补充输入';
     }
 
     if (!dispatch.success) {
-      return '房间状态查询失败';
+      return 'Room-Agent 消息处理失败';
     }
 
     if (!dispatch.isTerminal) {
-      return '房间状态查询已提交';
+      return '消息已提交到 Room-Agent';
     }
 
-    return '已收到房间状态';
+    return '已收到 Room-Agent 回复';
+  }
+
+  private resolveRoomMessageDetail(detail: string, roomName: string | null): string {
+    if (detail.trim().length > 0) {
+      return detail;
+    }
+
+    const displayRoomName = roomName ?? '当前房间';
+    return `${displayRoomName}已连上 Room-Agent，但暂未收到消息回复。`;
   }
 
   private resolveErrorRoute(
@@ -454,7 +527,7 @@ export class VoiceCommandOrchestrator {
       return 'chat';
     }
 
-    if (intent.kind === 'query') {
+    if (intent.query?.roomId) {
       return intent.query?.roomId ?? intent.room ?? fallbackRoomId ? 'query' : 'unresolved';
     }
 

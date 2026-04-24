@@ -96,7 +96,7 @@ export class RoutingDecision {
 }
 
 export class IntentParseResult {
-  kind: 'chat' | 'query' | 'action';
+  kind: 'chat' | 'agent_message';
   reply?: string | null;
   query?: IntentQuery | null;
   intent?: ParsedIntent | null;

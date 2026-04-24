@@ -375,6 +375,76 @@ describe('A2AHttpControlTransport', () => {
     });
   });
 
+  it('sends room device queries as blocking A2A messages with room_devices metadata', async () => {
+    const adapter = {
+      createSession: jest.fn(async () => ({
+        client: {} as never,
+        serviceBaseUrl: 'http://127.0.0.1:8001',
+        agentCardUrl: 'http://127.0.0.1:8001/.well-known/agent-card.json',
+        agentCard: createAgentCard(),
+      })),
+      getAgentCard: jest.fn(),
+      sendMessage: jest.fn(async (_client, params) => {
+        expect(params.configuration.blocking).toBe(true);
+        expect(params.message.parts).toEqual([
+          expect.objectContaining({
+            kind: 'text',
+            text: '房间里有什么设备可以控制',
+          }),
+        ]);
+        expect(params.message.metadata).toEqual(
+          expect.objectContaining({
+            queryRequest: expect.objectContaining({
+              roomId: 'livingroom',
+              queryType: 'room_devices',
+            }),
+          }),
+        );
+
+        return {
+          kind: 'message',
+          messageId: 'reply-query-devices-1',
+          role: 'agent',
+          parts: [{ kind: 'text', text: '客厅当前可控制的设备有主灯、窗帘和空调。' }],
+        };
+      }),
+      getTask: jest.fn(),
+    };
+    const transport = new A2AHttpControlTransport(adapter as never);
+
+    await transport.connect({
+      personalAgentId: 'personal-agent-user1',
+      roomId: 'livingroom',
+      roomAgentId: 'room-agent-livingroom',
+      agentInfo: {
+        beaconId: '1',
+        roomId: 'livingroom',
+        roomName: '客厅',
+        agentId: 'room-agent-livingroom',
+        url: 'http://127.0.0.1:8001',
+        devices: [],
+        capabilities: ['lighting', 'device_query'],
+      },
+    });
+
+    const dispatch = await transport.sendQuery({
+      roomId: 'livingroom',
+      roomAgentId: 'room-agent-livingroom',
+      utterance: '房间里有什么设备可以控制',
+      queryType: 'room_devices',
+      sourceAgent: 'personal-agent-user1',
+    });
+
+    expect(dispatch).toMatchObject({
+      success: true,
+      taskId: null,
+      state: 'completed',
+      isTerminal: true,
+      isInterrupted: false,
+      detail: '客厅当前可控制的设备有主灯、窗帘和空调。',
+    });
+  });
+
   it('marks the task unknown after repeated polling failures', async () => {
     const adapter = {
       createSession: jest.fn(async () => ({

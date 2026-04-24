@@ -6,7 +6,7 @@ describe('IntentService', () => {
       post: jest.fn(async () => ({
         success: true,
         data: {
-          kind: 'action',
+          kind: 'agent_message',
           intent: {
             device: 'light',
             action: 'turn_on',
@@ -30,7 +30,7 @@ describe('IntentService', () => {
     });
 
     expect(intent).toMatchObject({
-      kind: 'action',
+      kind: 'agent_message',
       device: 'light',
       action: 'turn_on',
       room: 'livingroom',
@@ -47,7 +47,7 @@ describe('IntentService', () => {
       post: jest.fn(async () => ({
         success: true,
         data: {
-          kind: 'query',
+          kind: 'agent_message',
           query: {
             type: 'room_devices',
             room_id: 'livingroom',
@@ -68,7 +68,7 @@ describe('IntentService', () => {
     });
 
     expect(intent).toMatchObject({
-      kind: 'query',
+      kind: 'agent_message',
       room: 'livingroom',
       source: 'llm',
       query: {
@@ -86,7 +86,7 @@ describe('IntentService', () => {
       post: jest.fn(async () => ({
         success: true,
         data: {
-          kind: 'query',
+          kind: 'agent_message',
           query: {
             type: 'room_state',
             room_id: 'livingroom',
@@ -107,7 +107,7 @@ describe('IntentService', () => {
     });
 
     expect(intent).toMatchObject({
-      kind: 'query',
+      kind: 'agent_message',
       room: 'livingroom',
       source: 'llm',
       query: {
@@ -160,7 +160,7 @@ describe('IntentService', () => {
     });
 
     expect(intent).toMatchObject({
-      kind: 'query',
+      kind: 'agent_message',
       room: 'bedroom',
       source: 'fallback',
       query: {
@@ -186,7 +186,7 @@ describe('IntentService', () => {
     });
 
     expect(intent).toMatchObject({
-      kind: 'query',
+      kind: 'agent_message',
       room: 'livingroom',
       source: 'fallback',
       query: {
@@ -210,7 +210,7 @@ describe('IntentService', () => {
     const intent = await service.parse('打开客厅灯亮度80');
 
     expect(intent).toMatchObject({
-      kind: 'action',
+      kind: 'agent_message',
       device: 'light',
       action: 'turn_on',
       room: 'livingroom',
@@ -239,7 +239,7 @@ describe('IntentService', () => {
     const service = new IntentService({ post: jest.fn() } as never);
     const intent = service.parseLocal('打开客厅主灯');
 
-    expect(intent.kind).toBe('action');
+    expect(intent.kind).toBe('agent_message');
     expect(intent.device).toBe('main_light');
   });
 });

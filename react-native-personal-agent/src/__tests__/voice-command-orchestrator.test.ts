@@ -4,7 +4,7 @@ import type { ParsedIntent } from '@/types';
 function createIntent(overrides: Partial<ParsedIntent> = {}): ParsedIntent {
   return {
     text: '打开客厅主灯',
-    kind: 'action',
+    kind: 'agent_message',
     device: 'main_light',
     action: 'turn_on',
     room: 'livingroom',
@@ -120,12 +120,12 @@ describe('VoiceCommandOrchestrator', () => {
     });
   });
 
-  it('routes room device queries through discovery and capability lookup only', async () => {
+  it('routes room device queries through A2A query dispatch without using capability snapshots', async () => {
     const intentService = {
       parse: jest.fn(async () =>
         createIntent({
           text: '房间里有什么设备',
-          kind: 'query',
+          kind: 'agent_message',
           device: null,
           action: null,
           query: {
@@ -151,15 +151,17 @@ describe('VoiceCommandOrchestrator', () => {
     const controlService = {
       setRoomAgent: jest.fn(),
       connect: jest.fn(async () => true),
-      queryCapabilities: jest.fn(async () => ({
-        room_id: 'livingroom',
-        room_name: '客厅',
-        devices: [
-          { id: 'main_light', name: '主灯', type: 'light' },
-          { id: 'curtain', name: '窗帘', type: 'curtain' },
-        ],
-        capabilities: ['lighting', 'curtain'],
+      queryRoomDevices: jest.fn(async () => ({
+        success: true,
+        taskId: null,
+        contextId: 'ctx-query-devices-1',
+        state: 'completed',
+        isTerminal: true,
+        isInterrupted: false,
+        detail: '客厅当前可控制的设备有主灯、窗帘和空调。',
+        action: null,
       })),
+      queryCapabilities: jest.fn(),
       sendControl: jest.fn(),
       destroy: jest.fn(async () => undefined),
       getLastError: jest.fn(() => null),
@@ -176,14 +178,24 @@ describe('VoiceCommandOrchestrator', () => {
 
     expect(discoveryService.getRoomAgentByRoomId).toHaveBeenCalledWith('livingroom');
     expect(controlService.connect).toHaveBeenCalled();
-    expect(controlService.queryCapabilities).toHaveBeenCalledWith('livingroom', expect.any(Object));
+    expect(controlService.queryRoomDevices).toHaveBeenCalledWith(
+      'livingroom',
+      '房间里有什么设备',
+      {
+        metadata: {
+          queryType: 'room_devices',
+        },
+      },
+    );
+    expect(controlService.queryCapabilities).not.toHaveBeenCalled();
     expect(controlService.sendControl).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       success: true,
       route: 'query',
-      status: '已获取房间设备清单',
-      detail: '客厅里目前登记了 2 个设备：主灯、窗帘。',
+      status: '已收到房间设备信息',
+      detail: '客厅当前可控制的设备有主灯、窗帘和空调。',
       roomId: 'livingroom',
+      taskState: 'completed',
     });
   });
 
@@ -192,7 +204,7 @@ describe('VoiceCommandOrchestrator', () => {
       parse: jest.fn(async () =>
         createIntent({
           text: '客厅灯现在开着吗',
-          kind: 'query',
+          kind: 'agent_message',
           device: null,
           action: null,
           query: {
@@ -271,7 +283,7 @@ describe('VoiceCommandOrchestrator', () => {
       parse: jest.fn(async () =>
         createIntent({
           text: '房间里有什么设备',
-          kind: 'query',
+          kind: 'agent_message',
           device: null,
           action: null,
           room: null,
@@ -300,12 +312,12 @@ describe('VoiceCommandOrchestrator', () => {
     });
   });
 
-  it('returns a graceful degraded query reply when the room-agent has no description payload', async () => {
+  it('returns a graceful degraded query reply when the room-agent query response is empty', async () => {
     const intentService = {
       parse: jest.fn(async () =>
         createIntent({
           text: '房间里有什么设备',
-          kind: 'query',
+          kind: 'agent_message',
           device: null,
           action: null,
           query: {
@@ -331,7 +343,17 @@ describe('VoiceCommandOrchestrator', () => {
     const controlService = {
       setRoomAgent: jest.fn(),
       connect: jest.fn(async () => true),
-      queryCapabilities: jest.fn(async () => null),
+      queryRoomDevices: jest.fn(async () => ({
+        success: true,
+        taskId: null,
+        contextId: 'ctx-query-devices-empty',
+        state: 'completed',
+        isTerminal: true,
+        isInterrupted: false,
+        detail: '',
+        action: null,
+      })),
+      queryCapabilities: jest.fn(),
       sendControl: jest.fn(),
       destroy: jest.fn(async () => undefined),
       getLastError: jest.fn(() => null),
@@ -349,8 +371,8 @@ describe('VoiceCommandOrchestrator', () => {
     expect(result).toMatchObject({
       success: true,
       route: 'query',
-      status: '已连上 Room-Agent',
-      detail: '客厅已连上 Room-Agent，但暂未获取到设备描述。',
+      status: '已收到房间设备信息',
+      detail: '客厅已连上 Room-Agent，但暂未收到设备清单回复。',
     });
   });
 
@@ -600,7 +622,8 @@ describe('VoiceCommandOrchestrator', () => {
 
     expect(result).toMatchObject({
       success: false,
-      status: '缺少设备目标',
+      status: '未发现 Room-Agent',
+      route: 'room-agent',
       roomId: 'bedroom',
       roomName: '卧室',
     });
@@ -636,7 +659,8 @@ describe('VoiceCommandOrchestrator', () => {
 
     expect(result).toMatchObject({
       success: false,
-      status: '意图未识别',
+      status: '未发现 Room-Agent',
+      route: 'room-agent',
       roomId: 'bedroom',
       roomName: '卧室',
     });

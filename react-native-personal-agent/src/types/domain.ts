@@ -108,7 +108,7 @@ export interface AgentDiscoveryResult {
   metadata?: Record<string, unknown>;
 }
 
-export type IntentKind = 'chat' | 'query' | 'action';
+export type IntentKind = 'chat' | 'agent_message';
 
 export interface ParsedIntentQuery {
   type: 'room_devices' | 'room_state';

@@ -12,7 +12,7 @@ type IntentContext = {
 type IntentApiResponse = {
   success?: boolean;
   data?: {
-    kind?: IntentKind;
+    kind?: IntentKind | 'query' | 'action';
     reply?: string | null;
     query?: {
       type?: 'room_devices' | 'room_state';
@@ -151,7 +151,7 @@ export class IntentService {
     if (this.isRoomDevicesQuery(cleanText)) {
       return {
         text: cleanText,
-        kind: 'query',
+        kind: 'agent_message',
         device: null,
         action: null,
         room,
@@ -174,7 +174,7 @@ export class IntentService {
     if (this.isRoomStateQuery(cleanText)) {
       return {
         text: cleanText,
-        kind: 'query',
+        kind: 'agent_message',
         device: null,
         action: null,
         room,
@@ -215,7 +215,7 @@ export class IntentService {
 
       return {
         text: cleanText,
-        kind: 'action',
+        kind: 'agent_message',
         device,
         action,
         room,
@@ -273,29 +273,27 @@ export class IntentService {
       source: 'llm',
       reply: kind === 'chat' ? data.reply ?? DEFAULT_CHAT_REPLY : null,
       query:
-        kind === 'query'
+        kind === 'agent_message' && query
           ? {
-              type: query?.type ?? 'room_devices',
-              roomId: query?.roomId ?? room,
+              type: query.type,
+              roomId: query.roomId ?? room,
               reason:
-                query?.reason ??
-                (query?.type === 'room_state' ? '后端识别为房间状态查询' : '后端识别为房间设备查询'),
+                query.reason ??
+                (query.type === 'room_state' ? '后端识别为房间状态查询' : '后端识别为房间设备查询'),
             }
           : null,
-      routing:
-        data.routing || kind === 'query' || kind === 'chat'
-          ? {
-              target:
-                data.routing?.target ??
-                (kind === 'query' ? 'room-agent' : kind === 'chat' ? null : 'home-agent'),
-              roomId: data.routing?.room_id ?? room,
-              agentId: data.routing?.agent_id ?? null,
-              reason:
-                data.routing?.reason ??
-                query?.reason ??
-                (kind === 'chat' ? '这是聊天回复' : '后端意图路由结果'),
-            }
-          : undefined,
+      routing: {
+        target: this.resolveRoutingTarget(kind, data, query, room),
+        roomId:
+          kind === 'chat'
+            ? null
+            : data.routing?.room_id ?? query?.roomId ?? room,
+        agentId: data.routing?.agent_id ?? null,
+        reason:
+          data.routing?.reason ??
+          query?.reason ??
+          (kind === 'chat' ? '这是聊天回复' : '后端要求把原话转发给目标 agent'),
+      },
     };
   }
 
@@ -340,31 +338,58 @@ export class IntentService {
   }
 
   private normalizeKind(data: NonNullable<IntentApiResponse['data']>): IntentKind {
-    if (data.kind === 'chat' || data.kind === 'query' || data.kind === 'action') {
+    if (data.kind === 'chat' || data.kind === 'agent_message') {
       return data.kind;
     }
 
+    if (data.kind === 'query' || data.kind === 'action') {
+      return 'agent_message';
+    }
+
     if (data.query?.type === 'room_devices' || data.query?.type === 'room_state') {
-      return 'query';
+      return 'agent_message';
     }
 
     if (typeof data.reply === 'string' && data.reply.trim().length > 0) {
       return 'chat';
     }
 
-    return 'action';
+    return 'agent_message';
   }
 
   private defaultConfidenceForKind(kind: IntentKind): number {
     switch (kind) {
-      case 'action':
-        return 0.8;
-      case 'query':
+      case 'agent_message':
         return 0.75;
       case 'chat':
       default:
         return 0.6;
     }
+  }
+
+  private resolveRoutingTarget(
+    kind: IntentKind,
+    data: NonNullable<IntentApiResponse['data']>,
+    query: ParsedIntentQuery | null,
+    room: string | null,
+  ): 'room-agent' | 'home-agent' | null {
+    if (kind === 'chat') {
+      return null;
+    }
+
+    if (data.routing?.target === 'room-agent' || data.routing?.target === 'home-agent') {
+      return data.routing.target;
+    }
+
+    if (query) {
+      return 'room-agent';
+    }
+
+    if (room) {
+      return 'room-agent';
+    }
+
+    return 'home-agent';
   }
 
   private isRoomDevicesQuery(text: string): boolean {
