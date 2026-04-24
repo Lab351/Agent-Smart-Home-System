@@ -3,6 +3,7 @@ services:
     build: .
     container_name: qwen-backend
     image: registry.cn-guangzhou.aliyuncs.com/weishuokun/qwen-backend:latest
+    platform: linux/amd64
     restart: unless-stopped
     ports:
       - "3088:3000"

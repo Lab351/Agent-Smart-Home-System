@@ -252,12 +252,12 @@ export class BleBeaconService implements IBleBeaconService {
     };
 
     const parsedManufacturerData = parseEsp32BeaconManufacturerData(device.manufacturerData);
-    console.debug('[BleBeaconService] Received BLE advertisement', {
-      ...baseContext,
-      rssi,
-      manufacturerDataLength: parsedManufacturerData.bytes?.length ?? 0,
-      manufacturerDataPreview: this.formatManufacturerDataPreview(parsedManufacturerData.bytes),
-    });
+    // console.debug('[BleBeaconService] Received BLE advertisement', {
+    //   ...baseContext,
+    //   rssi,
+    //   manufacturerDataLength: parsedManufacturerData.bytes?.length ?? 0,
+    //   manufacturerDataPreview: this.formatManufacturerDataPreview(parsedManufacturerData.bytes),
+    // });
 
     if (rssi === null) {
       this.emitDiagnostic({
@@ -453,7 +453,7 @@ export class BleBeaconService implements IBleBeaconService {
   }
 
   private emitDiagnostic(diagnostic: BeaconScanDiagnostic): void {
-    console.debug('[BleBeaconService] Ignored BLE advertisement', diagnostic);
+    // console.debug('[BleBeaconService] Ignored BLE advertisement', diagnostic);
     this.diagnosticListeners.forEach(listener => {
       listener(diagnostic);
     });
