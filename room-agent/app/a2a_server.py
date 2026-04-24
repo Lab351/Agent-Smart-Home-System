@@ -212,7 +212,7 @@ def build_agent_card(*, host: str, port: int) -> AgentCard:
         version="0.1.0",
         default_input_modes=SUPPORTED_CONTENT_TYPES,
         default_output_modes=SUPPORTED_CONTENT_TYPES,
-        capabilities=AgentCapabilities(streaming=False, push_notifications=False),
+        capabilities=AgentCapabilities(streaming=True, push_notifications=False),
         skills=[
             AgentSkill(
                 id="home_device_control_and_automation",
