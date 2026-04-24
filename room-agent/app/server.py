@@ -10,6 +10,8 @@ import argparse
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 
+from starlette.middleware.cors import CORSMiddleware
+
 import uvicorn
 
 DIRECT_EXECUTION_ERROR = (
@@ -254,9 +256,17 @@ class ServiceRuntime:
 
     async def run_a2a_http_server(self, stop_event: asyncio.Event) -> None:
         """Run the RoomAgent A2A HTTP service until shutdown is requested."""
+        a2a_server_instance = build_a2a_application(host=self.host, port=self.port).build()
+        a2a_server_instance.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
         server = uvicorn.Server(
             uvicorn.Config(
-                build_a2a_application(host=self.host, port=self.port).build(),
+                a2a_server_instance,
                 host=self.host,
                 port=self.port,
                 log_level="info",

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
 
+from a2a.types import TaskState
+from app.a2a_server import create_text_part, get_current_updater
 from app.server import get_llm_provider_registry, get_mcp_client, get_settings
 from config.settings import LLMRole
 from graph.mcp_prompt_context import build_mcp_prompts_context
@@ -18,6 +21,7 @@ from .state import SashaVerificationState
 
 SASHA_VER_ENV = "__RA_SASHA_VER"
 _TRUTHY_VALUES = {"1", "true", "yes", "on"}
+logger = logging.getLogger(__name__)
 
 
 async def sasha_verification(state: RoomAgentGraphState) -> RoomAgentGraphState:
@@ -76,7 +80,9 @@ async def clarifying(state: SashaVerificationState) -> SashaVerificationState:
             )
         ),
     ]
-    return {"clarifying_text": await _invoke_text_model(messages, source_node="clarifying")}
+    clarifying_text = await _invoke_text_model(messages, source_node="clarifying")
+    await _push_reasoning_result("clarifying", clarifying_text)
+    return {"clarifying_text": clarifying_text}
 
 
 async def filtering(state: SashaVerificationState) -> SashaVerificationState:
@@ -93,6 +99,7 @@ async def filtering(state: SashaVerificationState) -> SashaVerificationState:
         ),
     ]
     filtering_text = await _invoke_text_model(messages, source_node="filtering")
+    await _push_reasoning_result("filtering", filtering_text)
     return {
         "filtering_text": filtering_text,
         "filtered_context": _build_filtered_context(
@@ -115,7 +122,9 @@ async def planning(state: SashaVerificationState) -> SashaVerificationState:
             )
         ),
     ]
-    return {"planning_text": await _invoke_text_model(messages, source_node="planning")}
+    planning_text = await _invoke_text_model(messages, source_node="planning")
+    await _push_reasoning_result("planning", planning_text)
+    return {"planning_text": planning_text}
 
 
 def subgraph_output_transform(state: SashaVerificationState) -> SashaVerificationState:
@@ -130,7 +139,6 @@ def subgraph_output_transform(state: SashaVerificationState) -> SashaVerificatio
             f"Filtering result:\n{state.get('filtering_text', '').strip()}",
             f"Planning result:\n{state.get('planning_text', '').strip()}",
             f"Current user question:\n{user_input}",
-            f"Repeated question:\n{user_input}",
         ]
     ).strip()
     return {
@@ -170,6 +178,8 @@ def _build_clarifying_system_prompt(static_context: str) -> str:
         "Clarifying task: consider the goal of the user's command in relation to the devices "
         "available in the home template. Decide whether the goal is achievable with the devices "
         "available, and return a concise natural-language result. Do not output JSON."
+        "**NOTE** 用户提到的设备名未必和 static context 里的名字有重合。根据设备名字和意图灵活判断"
+        "你可以在回答前简单思考一会"
         f"\n\nVendor static context:\n{_render_static_context(static_context)}"
     )
 
@@ -241,3 +251,20 @@ async def _invoke_text_model(messages: list[BaseMessage], *, source_node: str) -
     if not text:
         raise RuntimeError(f"{source_node} returned empty content.")
     return text
+
+
+async def _push_reasoning_result(step: str, text: str) -> None:
+    normalized_step = step.strip() or "unknown"
+    normalized_text = text.strip()
+    if not normalized_text:
+        return
+
+    try:
+        updater = get_current_updater()
+    except RuntimeError:
+        logger.debug("No TaskUpdater available; skip reasoning result push.")
+        return
+
+    message_text = f"[{normalized_step}]\n{normalized_text}"
+    message = updater.new_agent_message(parts=[create_text_part(message_text)])
+    await updater.update_status(TaskState.working, message)
