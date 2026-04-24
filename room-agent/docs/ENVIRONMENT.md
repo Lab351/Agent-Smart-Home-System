@@ -33,7 +33,3 @@ These appear in [.env.example](../.env.example) as reference values for local de
 ## Test-only switch
 
 - `__RA_ABALATION_TEST`: when set, `graph/nodes/tool_selection.py` bypasses the model and selects all candidate tools. This is a test-only escape hatch and should not be used in normal runtime.
-
-## Qwen prompt patch switch
-
-- `__RA_QWEN_NOTHINK`: when set to a truthy value (`1`, `true`, `yes`, `on`), Room Agent appends `/nothink` to selected prompt inputs via `graph/utils/prompt_patch.py`. Leave unset for other models to avoid prompt pollution.

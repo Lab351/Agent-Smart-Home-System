@@ -20,7 +20,6 @@ from graph.nodes.tool_selection.utils import (
 )
 from graph.nodes.utils.structured_output import invoke_structured_output
 from graph.state import RoomAgentGraphState
-from graph.utils.prompt_patch import maybe_apply_qwen_nothink
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
 
@@ -149,21 +148,19 @@ def _build_active_exclusion_messages(
             )
         ),
         HumanMessage(
-            content=maybe_apply_qwen_nothink(
-                json.dumps(
-                    {
-                        "task": (
-                            "请基于用户输入和候选工具，排除明显无关的工具。"
-                            "输出 JSON，字段为 excluded_tool_names(string[]) 和 comment(string)。"
-                        ),
-                        "user_input": prompt_input,
-                        "mcp_prompts": mcp_prompt_context,
-                        "rendered_tool_tokens": rendered_tool_tokens,
-                        "token_threshold": TOOL_CATALOG_TOKEN_THRESHOLD,
-                        "candidate_tools": candidate_tools,
-                    },
-                    ensure_ascii=False,
-                )
+            content=json.dumps(
+                {
+                    "task": (
+                        "请基于用户输入和候选工具，排除明显无关的工具。"
+                        "输出 JSON，字段为 excluded_tool_names(string[]) 和 comment(string)。"
+                    ),
+                    "user_input": prompt_input,
+                    "mcp_prompts": mcp_prompt_context,
+                    "rendered_tool_tokens": rendered_tool_tokens,
+                    "token_threshold": TOOL_CATALOG_TOKEN_THRESHOLD,
+                    "candidate_tools": candidate_tools,
+                },
+                ensure_ascii=False,
             )
         ),
     ]

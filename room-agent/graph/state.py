@@ -19,6 +19,7 @@ class RoomAgentGraphState(TypedDict, total=False):
 
     user_input: str
     conversation_text: str
+    subagent_system_prompt: str
     candidate_tools: list[dict[str, Any]]
     selected_tools: list[dict[str, Any]]
     tool_call_history: list[dict[str, Any]]

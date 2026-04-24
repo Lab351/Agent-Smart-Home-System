@@ -9,18 +9,21 @@ from langgraph.graph import END, START, StateGraph
 from .nodes.tool_selection import tool_selection
 from .state import RoomAgentGraphState
 from .subgraphs.agent_execution import agent_execution
+from .subgraphs.sasha_verification import sasha_verification
 
 
 def initialize_request(state: RoomAgentGraphState) -> RoomAgentGraphState:
     """Normalize the incoming request into the shared state schema."""
     user_input = state.get("user_input", "").strip()
     conversation_text = state.get("conversation_text", "").strip() or user_input
+    subagent_system_prompt = state.get("subagent_system_prompt", "").strip()
     metadata = dict(state.get("metadata", {}))
     metadata.setdefault("graph_version", "v1")
 
     return {
         "user_input": user_input,
         "conversation_text": conversation_text,
+        "subagent_system_prompt": subagent_system_prompt,
         "candidate_tools": state.get("candidate_tools", []),
         "selected_tools": state.get("selected_tools", []),
         "tool_call_history": state.get("tool_call_history", []),
@@ -34,12 +37,14 @@ def build_graph() -> StateGraph:
     graph = StateGraph(RoomAgentGraphState)
 
     graph.add_node("initialize_request", initialize_request)
+    graph.add_node("sasha_verification", sasha_verification)
     graph.add_node("agent_execution", agent_execution)
     graph.add_node("tool_selection", tool_selection)
 
     # Edges.
     graph.add_edge(START, "initialize_request")
-    graph.add_edge("initialize_request", "tool_selection")
+    graph.add_edge("initialize_request", "sasha_verification")
+    graph.add_edge("sasha_verification", "tool_selection")
     graph.add_edge("tool_selection", "agent_execution")
     graph.add_edge("agent_execution", END)
     

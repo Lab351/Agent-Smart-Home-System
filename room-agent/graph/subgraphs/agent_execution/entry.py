@@ -14,7 +14,6 @@ from app.server import get_settings, get_llm_provider_registry, get_mcp_client
 from config.settings import LLMRole
 from graph.mcp_prompt_context import build_mcp_prompts_context
 from graph.state import RoomAgentGraphState
-from graph.utils.prompt_patch import maybe_apply_qwen_nothink
 from integrations.llm_provider import normalize_message_content
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
@@ -41,6 +40,7 @@ async def agent_execution(state: RoomAgentGraphState) -> RoomAgentGraphState:
         {
             "user_input": state.get("user_input", ""),
             "conversation_text": state.get("conversation_text", ""),
+            "subagent_system_prompt": state.get("subagent_system_prompt", ""),
             "metadata": dict(state.get("metadata", {})),
         }
     )
@@ -103,18 +103,18 @@ async def subgraph_input_transform(
     """Initialize the message state for the tool-calling loop."""
     user_input = state.get("user_input", "").strip()
     prompt_input = state.get("conversation_text", "").strip() or user_input
-    conversation_text = maybe_apply_qwen_nothink(prompt_input)
+    conversation_text = prompt_input
+    system_prompt = state.get("subagent_system_prompt", "").strip() or await _build_system_prompt(
+        selected_tools=selected_tools,
+    )
 
     return {
         "user_input": user_input,
         "conversation_text": conversation_text,
+        "subagent_system_prompt": system_prompt,
         "metadata": dict(state.get("metadata", {})),
         "messages": [
-            SystemMessage(
-                content=await _build_system_prompt(
-                    selected_tools=selected_tools,
-                )
-            ),
+            SystemMessage(content=system_prompt),
             HumanMessage(content=conversation_text),
         ],
         "step_count": 0,
@@ -291,9 +291,10 @@ async def _build_system_prompt(
    - 设备控制/状态查询：优先通过工具执行。
    - 闲聊或纯知识问答（与设备无关）：可直接自然语言回复。
 2. 当用户未明确下达设备指令，但描述了行为或场景时，需要推断其隐含控制目标，并执行最合理的操作。
-3. 工具调用失败时，允许重试 1 - 2 次；若仍失败，必须明确告知失败原因或限制。
-4. 严禁编造工具结果、设备状态或执行记录。
-5. 无论是否调用工具，最后都必须给出一段面向用户的自然语言回复。
+3. 用户提到的设备未必完全匹配工具列表中的设备名称。传入 Hass tool 的 `name` 字段**必须**来源于<mcp_prompt>中提供的设备名字。区域名字同理。**严禁**不经考虑将用户提到的实体直接传入。
+4. 工具调用失败时，允许重试 1 - 2 次；若仍失败，必须明确告知失败原因或限制。
+5. 严禁编造工具结果、设备状态或执行记录。
+6. 无论是否调用工具，最后都必须给出一段面向用户的自然语言回复。
 
 回复风格要求：简洁、明确、可执行；若已完成操作，要说明关键结果；若未完成，要说明下一步建议。
 """

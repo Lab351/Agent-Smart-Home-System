@@ -182,7 +182,7 @@ class ServiceRuntime:
         )
         gateway_client = self.gateway_client
         if settings.agent.gateway and gateway_client is None:
-            gateway_client = GatewayClient()
+            gateway_client = GatewayClient(settings.agent.gateway.url)
             self.gateway_client = gateway_client
         logger.info(
             "RoomAgent settings loaded for agent=%s room=%s powerful_provider=%s low_cost_provider=%s",

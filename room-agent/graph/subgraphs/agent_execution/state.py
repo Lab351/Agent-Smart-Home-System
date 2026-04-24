@@ -30,6 +30,7 @@ class AgentExecutionState(TypedDict, total=False):
     # Original request context forwarded from the outer graph.
     user_input: str
     conversation_text: str
+    subagent_system_prompt: str
     metadata: dict[str, Any]
     messages: Annotated[list[BaseMessage], add_messages]
 
