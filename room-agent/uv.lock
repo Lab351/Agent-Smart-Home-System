@@ -1274,7 +1274,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a2a-sdk", extras = ["http-server"], specifier = ">=0.3.25" },
+    { name = "a2a-sdk", extras = ["http-server"], specifier = "==0.3.25" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "langchain-core", specifier = ">=1.0.0" },
     { name = "langchain-mcp-adapters", specifier = ">=0.1.0" },
