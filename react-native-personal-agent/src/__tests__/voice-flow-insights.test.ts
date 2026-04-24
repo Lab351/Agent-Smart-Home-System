@@ -94,7 +94,7 @@ describe('buildVoiceFlowInsights', () => {
       }),
     });
 
-    expect(insights.title).toBe('本次命令在理解阶段中断');
+    expect(insights.title).toBe('本次请求在理解与路由阶段中断');
     expect(insights.steps.map(step => step.state)).toEqual([
       'complete',
       'error',
@@ -112,7 +112,7 @@ describe('buildVoiceFlowInsights', () => {
       lastCommandExecution: createExecutionResult(),
     });
 
-    expect(insights.title).toBe('本次控制链路已完成');
+    expect(insights.title).toBe('本次 Agent 转发已完成');
     expect(insights.steps.every(step => step.state === 'complete')).toBe(true);
   });
 
