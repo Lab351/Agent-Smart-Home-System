@@ -9,6 +9,7 @@ import type {
   ControlTaskState,
   ControlTaskStateUpdate,
   IControlTransport,
+  QueryCommand,
 } from '@/types';
 
 import { A2AClientAdapter, type IA2AClientAdapter } from './a2a-client-adapter';
@@ -37,6 +38,7 @@ export class A2AHttpControlTransport implements IControlTransport {
   private activeTaskRoomId: string | null = null;
   private activeTraceId: string | null = null;
   private activeRequestStartedAt: number | null = null;
+  private activeRequestKind: 'control' | 'query' | null = null;
   private activePollToken = 0;
   private readonly pollIntervalMs: number;
   private readonly maxPollAttempts: number;
@@ -56,6 +58,14 @@ export class A2AHttpControlTransport implements IControlTransport {
     agentInfo?: AgentDiscoveryResult | null;
   }): Promise<boolean> {
     const agentUrl = options.agentInfo?.url ?? null;
+    console.debug('[A2AHttpControlTransport] Connecting to room-agent', {
+      roomId: options.roomId ?? null,
+      roomAgentId: options.roomAgentId ?? null,
+      beaconId: options.agentInfo?.beaconId ?? null,
+      agentUrl,
+      documentationUrl: options.agentInfo?.documentationUrl ?? null,
+    });
+
     if (!agentUrl) {
       this.connected = false;
       this.client = null;
@@ -65,6 +75,11 @@ export class A2AHttpControlTransport implements IControlTransport {
       this.cachedDescription = null;
       this.resetTaskTracking();
       this.lastError = 'discovery 未返回可用的 room-agent URL';
+      console.debug('[A2AHttpControlTransport] Connection aborted: missing room-agent URL', {
+        roomId: options.roomId ?? null,
+        roomAgentId: options.roomAgentId ?? null,
+        beaconId: options.agentInfo?.beaconId ?? null,
+      });
       return false;
     }
 
@@ -79,9 +94,22 @@ export class A2AHttpControlTransport implements IControlTransport {
       this.connected = true;
       this.resetTaskTracking();
       this.lastError = null;
+      console.debug('[A2AHttpControlTransport] Connected to room-agent', {
+        roomId: options.roomId ?? null,
+        roomAgentId: options.roomAgentId ?? null,
+        serviceBaseUrl: session.serviceBaseUrl,
+        agentCardUrl: session.agentCardUrl,
+        agentCardName: session.agentCard.name,
+      });
       return true;
     } catch (error) {
-      console.warn('[A2AHttpControlTransport] Failed to create A2A client session', error);
+      console.warn('[A2AHttpControlTransport] Failed to create A2A client session', {
+        roomId: options.roomId ?? null,
+        roomAgentId: options.roomAgentId ?? null,
+        beaconId: options.agentInfo?.beaconId ?? null,
+        agentUrl,
+        error,
+      });
       this.connected = false;
       this.client = null;
       this.serviceBaseUrl = null;
@@ -149,8 +177,6 @@ export class A2AHttpControlTransport implements IControlTransport {
     }
 
     try {
-      const requestStartedAt = Date.now();
-      const traceId = this.extractTraceId(command.metadata);
       const requestMetadata = {
         controlRequest: {
           roomId: command.roomId,
@@ -163,32 +189,25 @@ export class A2AHttpControlTransport implements IControlTransport {
         },
         ...(this.extractObservabilityMetadata(command.metadata) ?? {}),
       };
-
-      const result = await this.adapter.sendMessage(this.client, {
-        configuration: {
-          acceptedOutputModes: ACCEPTED_OUTPUT_MODES,
-          blocking: false,
-          historyLength: 20,
-        },
-        message: {
-          kind: 'message',
-          messageId: this.generateId('msg'),
-          role: 'user',
-          contextId: command.contextId ?? undefined,
-          taskId: command.taskId ?? undefined,
-          metadata: requestMetadata,
-          parts: [
-            {
-              kind: 'text',
-              text: command.utterance,
-              metadata: requestMetadata,
-            },
-          ],
-        },
-        metadata: requestMetadata,
+      console.debug('[A2AHttpControlTransport] Sending A2A control request', {
+        roomId: command.roomId,
+        roomAgentId: command.roomAgentId,
+        targetDevice: command.targetDevice,
+        action: command.action,
+        taskId: command.taskId ?? null,
+        contextId: command.contextId ?? null,
       });
-
-      const dispatch = this.resolveSendResult(result, command.roomId, traceId, requestStartedAt);
+      const dispatch = await this.sendMessageRequest({
+        roomId: command.roomId,
+        utterance: command.utterance,
+        metadata: requestMetadata,
+        contextId: command.contextId ?? undefined,
+        taskId: command.taskId ?? undefined,
+        traceSource: command.metadata,
+        requestKind: 'control',
+        blocking: false,
+        errorFallback: 'A2A 控制请求发送失败',
+      });
       this.lastError = dispatch.success ? null : dispatch.detail;
       return dispatch;
     } catch (error) {
@@ -206,6 +225,51 @@ export class A2AHttpControlTransport implements IControlTransport {
         raw: error,
       };
     }
+  }
+
+  async sendQuery(command: QueryCommand): Promise<ControlDispatchResult> {
+    if (!this.connected || !this.client) {
+      this.lastError = '查询通道尚未建立';
+      return {
+        success: false,
+        taskId: null,
+        contextId: null,
+        state: 'unknown',
+        isTerminal: true,
+        isInterrupted: false,
+        detail: this.lastError,
+        action: null,
+        raw: null,
+      };
+    }
+
+    const requestMetadata = {
+      queryRequest: {
+        roomId: command.roomId,
+        roomAgentId: command.roomAgentId,
+        sourceAgent: command.sourceAgent,
+        queryType: command.queryType,
+        ...this.extractAdditionalControlMetadata(command.metadata),
+      },
+      ...(this.extractObservabilityMetadata(command.metadata) ?? {}),
+    };
+    console.debug('[A2AHttpControlTransport] Sending A2A query request', {
+      roomId: command.roomId,
+      roomAgentId: command.roomAgentId,
+      queryType: command.queryType,
+    });
+
+    const dispatch = await this.sendMessageRequest({
+      roomId: command.roomId,
+      utterance: command.utterance,
+      metadata: requestMetadata,
+      traceSource: command.metadata,
+      requestKind: 'query',
+      blocking: true,
+      errorFallback: 'A2A 查询请求发送失败',
+    });
+    this.lastError = dispatch.success ? null : dispatch.detail;
+    return dispatch;
   }
 
   async queryCapabilities(options: {
@@ -261,11 +325,91 @@ export class A2AHttpControlTransport implements IControlTransport {
     return true;
   }
 
+  private async sendMessageRequest(options: {
+    roomId: string;
+    utterance: string;
+    metadata: Record<string, unknown>;
+    contextId?: string;
+    taskId?: string;
+    traceSource?: Record<string, unknown>;
+    requestKind: 'control' | 'query';
+    blocking: boolean;
+    errorFallback: string;
+  }): Promise<ControlDispatchResult> {
+    if (!this.client) {
+      return {
+        success: false,
+        taskId: null,
+        contextId: null,
+        state: 'unknown',
+        isTerminal: true,
+        isInterrupted: false,
+        detail: options.requestKind === 'query' ? '查询通道尚未建立' : '控制通道尚未建立',
+        action: null,
+        raw: null,
+      };
+    }
+
+    try {
+      const requestStartedAt = Date.now();
+      const traceId = this.extractTraceId(options.traceSource);
+      const result = await this.adapter.sendMessage(this.client, {
+        configuration: {
+          acceptedOutputModes: ACCEPTED_OUTPUT_MODES,
+          blocking: options.blocking,
+          historyLength: 20,
+        },
+        message: {
+          kind: 'message',
+          messageId: this.generateId('msg'),
+          role: 'user',
+          contextId: options.contextId,
+          taskId: options.taskId,
+          metadata: options.metadata,
+          parts: [
+            {
+              kind: 'text',
+              text: options.utterance,
+              metadata: options.metadata,
+            },
+          ],
+        },
+        metadata: options.metadata,
+      });
+
+      console.debug(
+        '[A2AHttpControlTransport] A2A response received',
+        this.summarizeA2AResult(result),
+      );
+      return this.resolveSendResult(
+        result,
+        options.roomId,
+        traceId,
+        requestStartedAt,
+        options.requestKind,
+      );
+    } catch (error) {
+      const detail = this.toErrorMessage(error, options.errorFallback);
+      return {
+        success: false,
+        taskId: null,
+        contextId: null,
+        state: 'unknown',
+        isTerminal: true,
+        isInterrupted: false,
+        detail,
+        action: null,
+        raw: error,
+      };
+    }
+  }
+
   private resolveSendResult(
     result: Message | Task,
     roomId: string,
     traceId: string | null,
-    requestStartedAt: number
+    requestStartedAt: number,
+    requestKind: 'control' | 'query'
   ): ControlDispatchResult {
     if (this.isMessage(result)) {
       const detail = this.extractMessageText(result.parts) || 'Room-Agent 已返回即时响应。';
@@ -299,11 +443,11 @@ export class A2AHttpControlTransport implements IControlTransport {
       };
     }
 
-    const update = this.createTaskStateUpdate(result, roomId, traceId, requestStartedAt);
+    const update = this.createTaskStateUpdate(result, roomId, traceId, requestStartedAt, requestKind);
     this.emitStateUpdate(update);
 
     if (update.taskId && !this.shouldStopPolling(update)) {
-      this.startTaskPolling(update.taskId, roomId, traceId, requestStartedAt);
+      this.startTaskPolling(update.taskId, roomId, traceId, requestStartedAt, requestKind);
     } else {
       this.resetTaskTracking();
     }
@@ -333,10 +477,17 @@ export class A2AHttpControlTransport implements IControlTransport {
     this.activeTaskRoomId = null;
     this.activeTraceId = null;
     this.activeRequestStartedAt = null;
+    this.activeRequestKind = null;
     this.cachedState = null;
   }
 
-  private startTaskPolling(taskId: string, roomId: string, traceId: string | null, requestStartedAt: number): void {
+  private startTaskPolling(
+    taskId: string,
+    roomId: string,
+    traceId: string | null,
+    requestStartedAt: number,
+    requestKind: 'control' | 'query'
+  ): void {
     this.activePollToken += 1;
     const pollToken = this.activePollToken;
 
@@ -344,6 +495,7 @@ export class A2AHttpControlTransport implements IControlTransport {
     this.activeTaskRoomId = roomId;
     this.activeTraceId = traceId;
     this.activeRequestStartedAt = requestStartedAt;
+    this.activeRequestKind = requestKind;
 
     void this.pollTaskUntilTerminal({
       pollToken,
@@ -374,7 +526,8 @@ export class A2AHttpControlTransport implements IControlTransport {
           task,
           options.roomId,
           this.activeTraceId,
-          this.activeRequestStartedAt
+          this.activeRequestStartedAt,
+          this.activeRequestKind ?? 'control'
         );
         this.emitStateUpdate(update);
 
@@ -424,14 +577,34 @@ export class A2AHttpControlTransport implements IControlTransport {
     return result.kind === 'message';
   }
 
+  private summarizeA2AResult(result: Message | Task): Record<string, unknown> {
+    if (this.isMessage(result)) {
+      return {
+        kind: result.kind,
+        taskId: this.extractTaskId(result),
+        contextId: this.extractContextId(result),
+        partCount: result.parts?.length ?? 0,
+      };
+    }
+
+    return {
+      kind: result.kind,
+      taskId: this.extractTaskId(result),
+      contextId: this.extractContextId(result),
+      state: result.status?.state ?? null,
+      artifactCount: result.artifacts?.length ?? 0,
+    };
+  }
+
   private createTaskStateUpdate(
     task: Task,
     roomId: string,
     traceId: string | null,
-    requestStartedAt: number | null
+    requestStartedAt: number | null,
+    requestKind: 'control' | 'query'
   ): ControlTaskStateUpdate {
     const state = this.normalizeTaskState(task.status?.state);
-    const detail = this.extractTaskDetail(task, state);
+    const detail = this.extractTaskDetail(task, state, requestKind);
     const isInterrupted = this.isInterruptedState(state);
     const action = this.extractTaskAction(task, state, detail);
 
@@ -501,7 +674,11 @@ export class A2AHttpControlTransport implements IControlTransport {
     return update.isTerminal || update.isInterrupted;
   }
 
-  private extractTaskDetail(task: Task, state: ControlTaskState): string {
+  private extractTaskDetail(
+    task: Task,
+    state: ControlTaskState,
+    requestKind: 'control' | 'query'
+  ): string {
     const fromStatus = this.extractMessageText(task.status?.message?.parts);
     if (fromStatus) {
       return fromStatus;
@@ -517,15 +694,21 @@ export class A2AHttpControlTransport implements IControlTransport {
 
     switch (state) {
       case 'submitted':
-        return 'Room-Agent 已接收控制请求，等待开始执行。';
+        return requestKind === 'query'
+          ? 'Room-Agent 已接收状态查询请求，等待开始执行。'
+          : 'Room-Agent 已接收控制请求，等待开始执行。';
       case 'working':
-        return 'Room-Agent 正在执行控制任务。';
+        return requestKind === 'query'
+          ? 'Room-Agent 正在查询房间状态。'
+          : 'Room-Agent 正在执行控制任务。';
       case 'input-required':
         return 'Room-Agent 需要补充输入后才能继续执行。';
       case 'auth-required':
         return 'Room-Agent 需要额外鉴权后才能继续执行。';
       case 'completed':
-        return 'Room-Agent 已完成本次控制任务。';
+        return requestKind === 'query'
+          ? 'Room-Agent 已完成本次状态查询。'
+          : 'Room-Agent 已完成本次控制任务。';
       case 'failed':
         return 'Room-Agent 返回失败状态，请检查后端执行日志。';
       case 'canceled':

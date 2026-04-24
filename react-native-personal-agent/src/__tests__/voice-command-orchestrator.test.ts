@@ -4,12 +4,15 @@ import type { ParsedIntent } from '@/types';
 function createIntent(overrides: Partial<ParsedIntent> = {}): ParsedIntent {
   return {
     text: '打开客厅主灯',
+    kind: 'action',
     device: 'main_light',
     action: 'turn_on',
     room: 'livingroom',
     parameters: {},
     confidence: 0.92,
     source: 'llm',
+    reply: null,
+    query: null,
     ...overrides,
   };
 }
@@ -52,7 +55,7 @@ describe('VoiceCommandOrchestrator', () => {
       intentService as never,
       discoveryService as never,
       controlService as never,
-      homeAgentService as never
+      homeAgentService as never,
     );
 
     const result = await orchestrator.execute('打开客厅主灯');
@@ -64,7 +67,7 @@ describe('VoiceCommandOrchestrator', () => {
       '打开客厅主灯',
       'main_light',
       'turn_on',
-      {}
+      {},
     );
     expect(result).toMatchObject({
       success: true,
@@ -73,6 +76,281 @@ describe('VoiceCommandOrchestrator', () => {
       taskId: 'task-1',
       taskState: 'submitted',
       taskTerminal: false,
+    });
+  });
+
+  it('returns chat replies without touching discovery or control', async () => {
+    const intentService = {
+      parse: jest.fn(async () =>
+        createIntent({
+          kind: 'chat',
+          device: null,
+          action: null,
+          reply: '你好，我可以帮你查询设备和控制家居。',
+        }),
+      ),
+    };
+    const discoveryService = {
+      getRoomAgentByRoomId: jest.fn(),
+      destroy: jest.fn(),
+    };
+    const controlService = {
+      connect: jest.fn(),
+      sendControl: jest.fn(),
+      destroy: jest.fn(async () => undefined),
+    };
+
+    const orchestrator = new VoiceCommandOrchestrator(
+      intentService as never,
+      discoveryService as never,
+      controlService as never,
+      { sendTask: jest.fn(async () => true) } as never,
+    );
+
+    const result = await orchestrator.execute('你好');
+
+    expect(discoveryService.getRoomAgentByRoomId).not.toHaveBeenCalled();
+    expect(controlService.connect).not.toHaveBeenCalled();
+    expect(controlService.sendControl).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      success: true,
+      route: 'chat',
+      status: '已生成对话回复',
+      detail: '你好，我可以帮你查询设备和控制家居。',
+    });
+  });
+
+  it('routes room device queries through discovery and capability lookup only', async () => {
+    const intentService = {
+      parse: jest.fn(async () =>
+        createIntent({
+          text: '房间里有什么设备',
+          kind: 'query',
+          device: null,
+          action: null,
+          query: {
+            type: 'room_devices',
+            roomId: 'livingroom',
+            reason: 'ask room devices',
+          },
+        }),
+      ),
+    };
+    const discoveryService = {
+      getRoomAgentByRoomId: jest.fn(async () => ({
+        roomId: 'livingroom',
+        roomName: '客厅',
+        beaconId: '1',
+        agentId: 'room-agent-livingroom',
+        url: 'http://127.0.0.1:8001/a2a',
+        devices: [],
+        capabilities: ['lighting'],
+      })),
+      destroy: jest.fn(),
+    };
+    const controlService = {
+      setRoomAgent: jest.fn(),
+      connect: jest.fn(async () => true),
+      queryCapabilities: jest.fn(async () => ({
+        room_id: 'livingroom',
+        room_name: '客厅',
+        devices: [
+          { id: 'main_light', name: '主灯', type: 'light' },
+          { id: 'curtain', name: '窗帘', type: 'curtain' },
+        ],
+        capabilities: ['lighting', 'curtain'],
+      })),
+      sendControl: jest.fn(),
+      destroy: jest.fn(async () => undefined),
+      getLastError: jest.fn(() => null),
+    };
+
+    const orchestrator = new VoiceCommandOrchestrator(
+      intentService as never,
+      discoveryService as never,
+      controlService as never,
+      { sendTask: jest.fn(async () => true) } as never,
+    );
+
+    const result = await orchestrator.execute('房间里有什么设备');
+
+    expect(discoveryService.getRoomAgentByRoomId).toHaveBeenCalledWith('livingroom');
+    expect(controlService.connect).toHaveBeenCalled();
+    expect(controlService.queryCapabilities).toHaveBeenCalledWith('livingroom', expect.any(Object));
+    expect(controlService.sendControl).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      success: true,
+      route: 'query',
+      status: '已获取房间设备清单',
+      detail: '客厅里目前登记了 2 个设备：主灯、窗帘。',
+      roomId: 'livingroom',
+    });
+  });
+
+  it('routes room state queries through A2A query dispatch without using control actions', async () => {
+    const intentService = {
+      parse: jest.fn(async () =>
+        createIntent({
+          text: '客厅灯现在开着吗',
+          kind: 'query',
+          device: null,
+          action: null,
+          query: {
+            type: 'room_state',
+            roomId: 'livingroom',
+            reason: 'ask room state',
+          },
+        }),
+      ),
+    };
+    const discoveryService = {
+      getRoomAgentByRoomId: jest.fn(async () => ({
+        roomId: 'livingroom',
+        roomName: '客厅',
+        beaconId: '1',
+        agentId: 'room-agent-livingroom',
+        url: 'http://127.0.0.1:8001/a2a',
+        devices: [],
+        capabilities: ['lighting', 'state_query'],
+      })),
+      destroy: jest.fn(),
+    };
+    const controlService = {
+      setRoomAgent: jest.fn(),
+      connect: jest.fn(async () => true),
+      queryRoomState: jest.fn(async () => ({
+        success: true,
+        taskId: null,
+        contextId: 'ctx-query-1',
+        state: 'completed',
+        isTerminal: true,
+        isInterrupted: false,
+        detail: '客厅主灯当前处于开启状态。',
+        action: null,
+      })),
+      queryCapabilities: jest.fn(),
+      sendControl: jest.fn(),
+      destroy: jest.fn(async () => undefined),
+      getLastError: jest.fn(() => null),
+    };
+
+    const orchestrator = new VoiceCommandOrchestrator(
+      intentService as never,
+      discoveryService as never,
+      controlService as never,
+      { sendTask: jest.fn(async () => true) } as never,
+    );
+
+    const result = await orchestrator.execute('客厅灯现在开着吗');
+
+    expect(discoveryService.getRoomAgentByRoomId).toHaveBeenCalledWith('livingroom');
+    expect(controlService.connect).toHaveBeenCalled();
+    expect(controlService.queryRoomState).toHaveBeenCalledWith(
+      'livingroom',
+      '客厅灯现在开着吗',
+      {
+        metadata: {
+          queryType: 'room_state',
+        },
+      },
+    );
+    expect(controlService.queryCapabilities).not.toHaveBeenCalled();
+    expect(controlService.sendControl).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      success: true,
+      route: 'query',
+      status: '已收到房间状态',
+      detail: '客厅主灯当前处于开启状态。',
+      roomId: 'livingroom',
+      taskState: 'completed',
+    });
+  });
+
+  it('returns an unresolved result when room device queries have no room context', async () => {
+    const intentService = {
+      parse: jest.fn(async () =>
+        createIntent({
+          text: '房间里有什么设备',
+          kind: 'query',
+          device: null,
+          action: null,
+          room: null,
+          query: {
+            type: 'room_devices',
+            roomId: null,
+            reason: 'ask room devices',
+          },
+        }),
+      ),
+    };
+
+    const orchestrator = new VoiceCommandOrchestrator(
+      intentService as never,
+      { getRoomAgentByRoomId: jest.fn(), destroy: jest.fn() } as never,
+      { destroy: jest.fn(async () => undefined) } as never,
+      { sendTask: jest.fn(async () => true) } as never,
+    );
+
+    const result = await orchestrator.execute('房间里有什么设备');
+
+    expect(result).toMatchObject({
+      success: false,
+      route: 'unresolved',
+      status: '缺少房间上下文',
+    });
+  });
+
+  it('returns a graceful degraded query reply when the room-agent has no description payload', async () => {
+    const intentService = {
+      parse: jest.fn(async () =>
+        createIntent({
+          text: '房间里有什么设备',
+          kind: 'query',
+          device: null,
+          action: null,
+          query: {
+            type: 'room_devices',
+            roomId: 'livingroom',
+            reason: 'ask room devices',
+          },
+        }),
+      ),
+    };
+    const discoveryService = {
+      getRoomAgentByRoomId: jest.fn(async () => ({
+        roomId: 'livingroom',
+        roomName: '客厅',
+        beaconId: '1',
+        agentId: 'room-agent-livingroom',
+        url: 'http://127.0.0.1:8001/a2a',
+        devices: [],
+        capabilities: ['lighting'],
+      })),
+      destroy: jest.fn(),
+    };
+    const controlService = {
+      setRoomAgent: jest.fn(),
+      connect: jest.fn(async () => true),
+      queryCapabilities: jest.fn(async () => null),
+      sendControl: jest.fn(),
+      destroy: jest.fn(async () => undefined),
+      getLastError: jest.fn(() => null),
+    };
+
+    const orchestrator = new VoiceCommandOrchestrator(
+      intentService as never,
+      discoveryService as never,
+      controlService as never,
+      { sendTask: jest.fn(async () => true) } as never,
+    );
+
+    const result = await orchestrator.execute('房间里有什么设备');
+
+    expect(result).toMatchObject({
+      success: true,
+      route: 'query',
+      status: '已连上 Room-Agent',
+      detail: '客厅已连上 Room-Agent，但暂未获取到设备描述。',
     });
   });
 
@@ -85,7 +363,7 @@ describe('VoiceCommandOrchestrator', () => {
             roomId: 'livingroom',
             reason: 'global scene',
           },
-        })
+        }),
       ),
     };
     const homeAgentService = {
@@ -96,7 +374,7 @@ describe('VoiceCommandOrchestrator', () => {
       intentService as never,
       { getRoomAgentByRoomId: jest.fn(), destroy: jest.fn() } as never,
       { destroy: jest.fn(async () => undefined) } as never,
-      homeAgentService as never
+      homeAgentService as never,
     );
 
     const result = await orchestrator.execute('打开回家模式');
@@ -138,7 +416,7 @@ describe('VoiceCommandOrchestrator', () => {
       intentService as never,
       discoveryService as never,
       controlService as never,
-      { sendTask: jest.fn(async () => true) } as never
+      { sendTask: jest.fn(async () => true) } as never,
     );
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 
@@ -188,7 +466,7 @@ describe('VoiceCommandOrchestrator', () => {
       intentService as never,
       discoveryService as never,
       controlService as never,
-      { sendTask: jest.fn(async () => true) } as never
+      { sendTask: jest.fn(async () => true) } as never,
     );
 
     const result = await orchestrator.execute('打开客厅主灯');
@@ -230,7 +508,7 @@ describe('VoiceCommandOrchestrator', () => {
       intentService as never,
       discoveryService as never,
       controlService as never,
-      { sendTask: jest.fn(async () => true) } as never
+      { sendTask: jest.fn(async () => true) } as never,
     );
 
     const result = await orchestrator.execute('打开客厅主灯');
@@ -277,7 +555,7 @@ describe('VoiceCommandOrchestrator', () => {
       intentService as never,
       discoveryService as never,
       controlService as never,
-      { sendTask: jest.fn(async () => true) } as never
+      { sendTask: jest.fn(async () => true) } as never,
     );
 
     const result = await orchestrator.execute('打开客厅主灯');
@@ -299,14 +577,14 @@ describe('VoiceCommandOrchestrator', () => {
         createIntent({
           room: 'bedroom',
           device: null,
-        })
+        }),
       ),
     };
     const orchestrator = new VoiceCommandOrchestrator(
       intentService as never,
       { getRoomAgentByRoomId: jest.fn(), destroy: jest.fn() } as never,
       { destroy: jest.fn(async () => undefined) } as never,
-      { sendTask: jest.fn(async () => true) } as never
+      { sendTask: jest.fn(async () => true) } as never,
     );
 
     const result = await orchestrator.execute('打开卧室', {
@@ -335,14 +613,14 @@ describe('VoiceCommandOrchestrator', () => {
           room: 'bedroom',
           action: null,
           device: 'main_light',
-        })
+        }),
       ),
     };
     const orchestrator = new VoiceCommandOrchestrator(
       intentService as never,
       { getRoomAgentByRoomId: jest.fn(), destroy: jest.fn() } as never,
       { destroy: jest.fn(async () => undefined) } as never,
-      { sendTask: jest.fn(async () => true) } as never
+      { sendTask: jest.fn(async () => true) } as never,
     );
 
     const result = await orchestrator.execute('卧室主灯', {

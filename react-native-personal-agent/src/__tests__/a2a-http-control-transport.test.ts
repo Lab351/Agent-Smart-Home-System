@@ -305,6 +305,76 @@ describe('A2AHttpControlTransport', () => {
     });
   });
 
+  it('sends room state queries as blocking A2A messages with query metadata', async () => {
+    const adapter = {
+      createSession: jest.fn(async () => ({
+        client: {} as never,
+        serviceBaseUrl: 'http://127.0.0.1:8001',
+        agentCardUrl: 'http://127.0.0.1:8001/.well-known/agent-card.json',
+        agentCard: createAgentCard(),
+      })),
+      getAgentCard: jest.fn(),
+      sendMessage: jest.fn(async (_client, params) => {
+        expect(params.configuration.blocking).toBe(true);
+        expect(params.message.parts).toEqual([
+          expect.objectContaining({
+            kind: 'text',
+            text: '客厅灯现在开着吗',
+          }),
+        ]);
+        expect(params.message.metadata).toEqual(
+          expect.objectContaining({
+            queryRequest: expect.objectContaining({
+              roomId: 'livingroom',
+              queryType: 'room_state',
+            }),
+          }),
+        );
+
+        return {
+          kind: 'message',
+          messageId: 'reply-query-1',
+          role: 'agent',
+          parts: [{ kind: 'text', text: '客厅主灯当前处于开启状态。' }],
+        };
+      }),
+      getTask: jest.fn(),
+    };
+    const transport = new A2AHttpControlTransport(adapter as never);
+
+    await transport.connect({
+      personalAgentId: 'personal-agent-user1',
+      roomId: 'livingroom',
+      roomAgentId: 'room-agent-livingroom',
+      agentInfo: {
+        beaconId: '1',
+        roomId: 'livingroom',
+        roomName: '客厅',
+        agentId: 'room-agent-livingroom',
+        url: 'http://127.0.0.1:8001',
+        devices: [],
+        capabilities: ['lighting', 'state_query'],
+      },
+    });
+
+    const dispatch = await transport.sendQuery({
+      roomId: 'livingroom',
+      roomAgentId: 'room-agent-livingroom',
+      utterance: '客厅灯现在开着吗',
+      queryType: 'room_state',
+      sourceAgent: 'personal-agent-user1',
+    });
+
+    expect(dispatch).toMatchObject({
+      success: true,
+      taskId: null,
+      state: 'completed',
+      isTerminal: true,
+      isInterrupted: false,
+      detail: '客厅主灯当前处于开启状态。',
+    });
+  });
+
   it('marks the task unknown after repeated polling failures', async () => {
     const adapter = {
       createSession: jest.fn(async () => ({

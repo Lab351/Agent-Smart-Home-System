@@ -9,12 +9,15 @@ describe('HomeAgentService', () => {
 
     await service.sendTask({
       text: '打开回家模式',
+      kind: 'action',
       room: 'livingroom',
       device: 'scene',
       action: 'activate',
       parameters: { scene: 'home' },
       confidence: 0.92,
       source: 'llm',
+      reply: null,
+      query: null,
     });
 
     expect(http.post).toHaveBeenCalledWith('/api/home/tasks', {

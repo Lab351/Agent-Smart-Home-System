@@ -33,6 +33,7 @@ class MemoryStorageService implements IStorageService {
 function createIntent(overrides: Partial<ParsedIntent> = {}): ParsedIntent {
   return {
     text: '把客厅主灯亮度调到 80',
+    kind: 'action',
     device: 'main_light',
     action: 'set_brightness',
     room: 'livingroom',
@@ -41,6 +42,8 @@ function createIntent(overrides: Partial<ParsedIntent> = {}): ParsedIntent {
     },
     confidence: 0.93,
     source: 'llm',
+    reply: null,
+    query: null,
     ...overrides,
   };
 }

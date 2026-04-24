@@ -28,16 +28,25 @@ export class ParsedIntent {
   confidence: number;
 }
 
+export class IntentQuery {
+  type: 'room_devices' | 'room_state';
+  room_id?: string | null;
+  reason: string;
+}
+
 export class RoutingDecision {
-  target: 'room-agent' | 'home-agent';
-  room_id?: string;
-  agent_id?: string;
+  target: 'room-agent' | 'home-agent' | null;
+  room_id?: string | null;
+  agent_id?: string | null;
   reason: string;
 }
 
 export class IntentParseResult {
-  intent: ParsedIntent;
-  routing: RoutingDecision;
+  kind: 'chat' | 'query' | 'action';
+  reply?: string | null;
+  query?: IntentQuery | null;
+  intent?: ParsedIntent | null;
+  routing?: RoutingDecision | null;
   raw_response?: string;
 }
 

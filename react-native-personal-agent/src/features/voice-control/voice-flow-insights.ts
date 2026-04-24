@@ -82,6 +82,10 @@ function resolveFailedStep(
     return 'understand';
   }
 
+  if (result.route === 'chat') {
+    return 'understand';
+  }
+
   if (result.route === 'room-agent' && result.taskState) {
     return 'feedback';
   }
@@ -131,7 +135,9 @@ function resolveSummaryTitle(
   }
 
   if (failedStep === 'dispatch') {
-    return '本次命令在下发阶段中断';
+    return snapshot.lastCommandExecution?.route === 'query'
+      ? '本次查询在执行阶段中断'
+      : '本次命令在下发阶段中断';
   }
 
   if (failedStep === 'feedback') {
@@ -139,7 +145,11 @@ function resolveSummaryTitle(
   }
 
   if (snapshot.lastCommandExecution) {
-    return '本次控制链路已完成';
+    return snapshot.lastCommandExecution.route === 'chat'
+      ? '本次对话回复已完成'
+      : snapshot.lastCommandExecution.route === 'query'
+        ? '本次设备查询已完成'
+        : '本次控制链路已完成';
   }
 
   return '等待新的语音或文本指令';
@@ -155,7 +165,7 @@ function resolveSummaryDetail(snapshot: VoiceFlowSnapshot): string {
   }
 
   if (snapshot.isExecutingCommand) {
-    return '系统正在做意图解析、房间代理发现、agent-card 探活和控制请求下发。';
+    return '系统正在做意图解析，并根据结果进入查询或控制链路。';
   }
 
   if (snapshot.isAwaitingCommandResult || isPendingExecution(snapshot.lastCommandExecution)) {
@@ -206,14 +216,20 @@ function resolveStepNote(key: VoiceFlowStepKey, snapshot: VoiceFlowSnapshot): st
 
       return result?.route === 'unresolved'
         ? '意图或房间解析停在这里'
+        : result?.route === 'chat'
+          ? '这一步直接生成对话回复'
         : 'ASR 与 Intent 共同负责理解';
     case 'dispatch':
       if (snapshot.isExecutingCommand) {
-        return '正在做 discovery、探活和命令下发';
+        return result?.route === 'query'
+          ? '正在做 discovery、探活和设备清单查询'
+          : '正在做 discovery、探活和命令下发';
       }
 
-      return result?.route && result.route !== 'unresolved'
-        ? '目标代理已选定并尝试下发'
+      return result?.route && result.route !== 'unresolved' && result.route !== 'chat'
+        ? result.route === 'query'
+          ? '目标代理已选定并尝试查询'
+          : '目标代理已选定并尝试下发'
         : '理解完成后进入这一步';
     case 'feedback':
       if (snapshot.isAwaitingCommandResult || isPendingExecution(result)) {

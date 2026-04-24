@@ -63,12 +63,7 @@ export function VoiceControlScreen({
   onOpenTaskAction,
   onToggleRecording,
 }: VoiceControlScreenProps) {
-  const routeLabel =
-    lastCommandExecution?.route === 'home-agent'
-      ? 'Home-Agent'
-      : lastCommandExecution?.route === 'room-agent'
-        ? 'Room-Agent'
-        : '待路由';
+  const routeLabel = resolveRouteLabel(lastCommandExecution?.route);
   const isCommandBusy = isExecutingCommand || isRecognizingSpeech || isAwaitingCommandResult;
   const recordButtonLabel = isRecognizingSpeech ? '识别中' : isRecording ? '停止录音' : '开始录音';
   const taskStateLabel = formatTaskStateLabel(lastCommandExecution?.taskState);
@@ -572,13 +567,7 @@ export function VoiceControlScreen({
                 <View style={styles.historyMetaRow}>
                   <ResultChip
                     label="路由"
-                    value={
-                      item.route === 'home-agent'
-                        ? 'Home-Agent'
-                        : item.route === 'room-agent'
-                          ? 'Room-Agent'
-                          : '未路由'
-                    }
+                    value={resolveRouteLabel(item.route)}
                   />
                   <ResultChip
                     label="房间"
@@ -695,6 +684,23 @@ function resolveExecutionTone(
   }
 
   return result.success ? 'success' : 'error';
+}
+
+function resolveRouteLabel(
+  route: VoiceCommandExecutionResult['route'] | null | undefined
+): string {
+  switch (route) {
+    case 'home-agent':
+      return 'Home-Agent';
+    case 'query':
+      return '设备查询';
+    case 'chat':
+      return '对话回复';
+    case 'room-agent':
+      return 'Room-Agent';
+    default:
+      return '待路由';
+  }
 }
 
 const styles = StyleSheet.create({

@@ -95,6 +95,38 @@ export class ControlService {
     });
   }
 
+  async queryRoomState(
+    roomId: string,
+    utterance: string,
+    options?: {
+      metadata?: Record<string, unknown>;
+    }
+  ): Promise<ControlDispatchResult> {
+    const roomAgentId = this.getAgentIdForRoom(roomId);
+    if (!roomAgentId || !this.transport.isConnected()) {
+      return {
+        success: false,
+        taskId: null,
+        contextId: null,
+        state: 'unknown',
+        isTerminal: true,
+        isInterrupted: false,
+        detail: '查询通道尚未建立',
+        action: null,
+        raw: null,
+      };
+    }
+
+    return this.transport.sendQuery({
+      roomId,
+      roomAgentId,
+      utterance,
+      queryType: 'room_state',
+      metadata: options?.metadata,
+      sourceAgent: this.personalAgentId,
+    });
+  }
+
   async subscribeToState(
     roomId: string,
     callback: (state: ControlTaskStateUpdate) => void

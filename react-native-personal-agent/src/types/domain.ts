@@ -99,22 +99,36 @@ export interface AgentDiscoveryResult {
   roomId: string;
   roomName: string;
   agentId: string;
+  agentName?: string | null;
+  agentType?: string | null;
   url?: string | null;
+  documentationUrl?: string | null;
   devices: AgentDeviceDescriptor[];
   capabilities: string[];
   metadata?: Record<string, unknown>;
 }
 
+export type IntentKind = 'chat' | 'query' | 'action';
+
+export interface ParsedIntentQuery {
+  type: 'room_devices' | 'room_state';
+  roomId?: string | null;
+  reason?: string;
+}
+
 export interface ParsedIntent {
   text: string;
+  kind: IntentKind;
   device: string | null;
   action: string | null;
   room: string | null;
   parameters: Record<string, unknown>;
   confidence: number;
   source: 'llm' | 'fallback';
+  reply?: string | null;
+  query?: ParsedIntentQuery | null;
   routing?: {
-    target: 'room-agent' | 'home-agent';
+    target: 'room-agent' | 'home-agent' | null;
     roomId?: string | null;
     agentId?: string | null;
     reason?: string;
@@ -162,6 +176,8 @@ export interface ControlTaskStateUpdate {
   taskId: string | null;
   contextId: string | null;
   roomId: string | null;
+  traceId?: string | null;
+  latencyMs?: number | null;
   state: ControlTaskState;
   success: boolean;
   isTerminal: boolean;
@@ -206,7 +222,7 @@ export interface VoiceCommandExecutionResult {
   input: string;
   status: string;
   detail: string;
-  route: 'room-agent' | 'home-agent' | 'unresolved';
+  route: 'chat' | 'query' | 'room-agent' | 'home-agent' | 'unresolved';
   intent: ParsedIntent;
   roomId: string | null;
   roomName: string | null;

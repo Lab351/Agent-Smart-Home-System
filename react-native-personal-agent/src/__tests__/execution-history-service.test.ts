@@ -19,12 +19,15 @@ function createResult(id: number): VoiceCommandExecutionResult {
     taskInterrupted: false,
     intent: {
       text: `command-${id}`,
+      kind: 'action',
       device: 'main_light',
       action: 'turn_on',
       room: 'livingroom',
       parameters: {},
       confidence: 0.9,
       source: 'llm',
+      reply: null,
+      query: null,
     },
   };
 }

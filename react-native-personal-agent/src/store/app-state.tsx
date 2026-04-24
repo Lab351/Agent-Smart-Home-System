@@ -557,6 +557,10 @@ export function AppStateProvider({ children }: PropsWithChildren) {
               ? 'connected'
               : 'connecting'
             : 'error'
+          : result.route === 'query'
+            ? result.success
+              ? 'connected'
+              : 'error'
           : 'disconnected'
       );
 
@@ -589,7 +593,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
         }
       }
 
-      if (result.route === 'room-agent' && result.success && result.roomId) {
+      if ((result.route === 'room-agent' || result.route === 'query') && result.success && result.roomId) {
         activeRoomSnapshotRef.current = {
           roomId: result.roomId,
           roomName: result.roomName,
