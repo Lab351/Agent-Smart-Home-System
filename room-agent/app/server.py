@@ -11,6 +11,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 
+from starlette.middleware.cors import CORSMiddleware
+
 import uvicorn
 
 DIRECT_EXECUTION_ERROR = (
@@ -309,7 +311,12 @@ class ServiceRuntime:
         except PublicUrlResolutionError as exc:
             logger.warning("Unable to resolve RoomAgent public URL for agent-card: %s", exc)
         app = build_a2a_application(host=self.host, port=self.port, public_url=public_url).build()
-
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
         server = uvicorn.Server(
             uvicorn.Config(
                 app,
