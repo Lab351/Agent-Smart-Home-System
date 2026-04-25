@@ -12,9 +12,11 @@ from config.settings import LLMRole
 from graph.nodes.tool_selection import tool_selection
 from graph.nodes.tool_selection.node import TOOL_CATALOG_TOKEN_THRESHOLD
 from graph.subgraphs.agent_execution.entry import (
+    agent_execution,
     agent_call_model,
     agent_finalize_output,
     compile_agent_execution_subgraph,
+    subgraph_input_transform,
 )
 
 
@@ -361,3 +363,57 @@ def test_agent_execution_retries_after_tool_error_until_final_output() -> None:
     assert patch["status"] == "completed"
     assert patch["execution_result"]["type"] == "agent_final_output"
     assert patch["execution_result"]["message"] == "卧室灯已打开。"
+
+
+def test_agent_execution_subgraph_prefers_injected_system_prompt() -> None:
+    _initialize_runtime(powerful=FakePowerfulModel(final_message="当前没有可用工具。"))
+
+    result = asyncio.run(
+        subgraph_input_transform(
+            {
+                "user_input": "帮我打开卧室灯",
+                "conversation_text": "帮我打开卧室灯",
+                "subagent_system_prompt": "自定义子代理系统提示",
+                "metadata": {},
+            },
+            selected_tools=[],
+        )
+    )
+
+    assert result["subagent_system_prompt"] == "自定义子代理系统提示"
+    assert result["messages"][0].content == "自定义子代理系统提示"
+    assert result["messages"][1].content == "帮我打开卧室灯"
+
+
+def test_agent_execution_passes_outer_system_prompt_into_model_messages() -> None:
+    class CapturingPromptModel:
+        def __init__(self) -> None:
+            self.seen_messages: list[BaseMessage] = []
+
+        def bind(self, **kwargs: Any) -> _FakeBoundModel:
+            _ = kwargs
+            return _FakeBoundModel(self, [])
+
+        async def _ainvoke(self, messages: list[BaseMessage], tools: list[BaseTool]) -> AIMessage:
+            _ = tools
+            self.seen_messages = list(messages)
+            return AIMessage(content="完成。")
+
+    model = CapturingPromptModel()
+    _initialize_runtime(powerful=model)
+
+    result = asyncio.run(
+        agent_execution(
+            {
+                "user_input": "帮我打开卧室灯",
+                "conversation_text": "帮我打开卧室灯",
+                "subagent_system_prompt": "来自外层的系统提示",
+                "selected_tools": [],
+                "metadata": {},
+            }
+        )
+    )
+
+    assert result["status"] == "completed"
+    assert model.seen_messages[0].content == "来自外层的系统提示"
+    assert model.seen_messages[1].content == "帮我打开卧室灯"
