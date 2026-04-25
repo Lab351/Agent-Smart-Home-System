@@ -13,7 +13,7 @@ type QuickAction = {
 
 type HomeScreenProps = {
   currentRoomName: string | null;
-  mqttStatus: ConnectionStatus;
+  controlStatus: ConnectionStatus;
   isScanningBeacon: boolean;
   backendLabel: string;
   quickActions: QuickAction[];
@@ -21,7 +21,7 @@ type HomeScreenProps = {
 
 export function HomeScreen({
   currentRoomName,
-  mqttStatus,
+  controlStatus,
   isScanningBeacon,
   backendLabel,
   quickActions,
@@ -41,15 +41,17 @@ export function HomeScreen({
             tone={currentRoomName ? 'accent' : 'neutral'}
           />
           <StatusTile
-            label="MQTT"
+            label="控制通道"
             value={
-              mqttStatus === 'connected'
+              controlStatus === 'connected'
                 ? '已连接'
-                : mqttStatus === 'connecting'
+                : controlStatus === 'connecting'
                   ? '连接中'
-                  : '未连接'
+                  : controlStatus === 'error'
+                    ? '异常'
+                    : '未连接'
             }
-            tone={mqttStatus === 'connected' ? 'accent' : 'warning'}
+            tone={controlStatus === 'connected' ? 'accent' : 'warning'}
           />
           <StatusTile label="后端" value={backendLabel} tone="neutral" />
         </View>

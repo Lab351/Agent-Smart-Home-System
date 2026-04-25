@@ -28,12 +28,15 @@ function createExecutionResult(): VoiceCommandExecutionResult {
     taskInterrupted: false,
     intent: {
       text: '打开客厅主灯',
+      kind: 'agent_message',
       device: 'main_light',
       action: 'turn_on',
       room: 'livingroom',
       parameters: {},
       confidence: 0.96,
       source: 'llm',
+      reply: null,
+      query: null,
     },
   };
 }

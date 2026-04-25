@@ -6,12 +6,12 @@ import { useAppState } from '@/store';
 
 export default function HomeRoute() {
   const router = useRouter();
-  const { currentRoomBinding, isScanningBeacon, mqttStatus } = useAppState();
+  const { controlStatus, currentRoomBinding, isScanningBeacon } = useAppState();
 
   return (
     <HomeScreen
       currentRoomName={currentRoomBinding?.roomName ?? null}
-      mqttStatus={mqttStatus}
+      controlStatus={controlStatus}
       isScanningBeacon={isScanningBeacon}
       backendLabel={appEnv.backendUrl}
       quickActions={[

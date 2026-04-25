@@ -19,8 +19,6 @@ type AppExtra = {
   userId?: string;
   personalAgentId?: string;
   backendUrl?: string;
-  mqttHost?: string;
-  mqttWsPort?: number;
   beaconUuid?: string;
 };
 
@@ -31,8 +29,6 @@ export const appEnv = {
   userId,
   personalAgentId: extra.personalAgentId ?? `personal-agent-${userId}`,
   backendUrl: extra.backendUrl ?? 'http://120.78.228.69:3088',
-  mqttHost: extra.mqttHost ?? '120.78.228.69',
-  mqttWsPort: Number(extra.mqttWsPort ?? 9002),
   beaconUuid: extra.beaconUuid ?? '01234567-89AB-CDEF-0123456789ABCDEF',
   beaconRoomMapping,
   roomDisplayNames,

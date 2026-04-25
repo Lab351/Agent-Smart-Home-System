@@ -73,14 +73,9 @@ export class AgentSkillDto {
  * 通信配置DTO
  */
 export class CommunicationConfigDto {
-  @ApiProperty({ description: '通信后端', enum: ['mqtt', 'a2a_sdk'], example: 'mqtt' })
+  @ApiProperty({ description: '通信后端', enum: ['a2a_sdk'], example: 'a2a_sdk' })
   @IsString()
   backend: string;
-
-  @ApiPropertyOptional({ description: 'MQTT配置' })
-  @IsObject()
-  @IsOptional()
-  mqtt?: Record<string, any>;
 
   @ApiPropertyOptional({ description: 'A2A SDK配置' })
   @IsObject()

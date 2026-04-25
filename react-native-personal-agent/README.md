@@ -25,6 +25,7 @@ npm install
 npm run typecheck
 npm run lint
 npm run test:ci
+npm run demo:a2a -- --url http://192.168.0.221:10000/
 npm run prebuild
 npm run android
 npm run ios
@@ -34,8 +35,23 @@ npm run start
 说明：
 
 - `npm run start` 以 Dev Client 模式启动 Metro
+- `npm run demo:a2a` 用 Node 本机网络探测 room-agent A2A agent-card，并可发送一条
+  `message/send` 控制请求；例如 `npm run demo:a2a -- --probe-only` 只做探活
+- demo 也支持和 room-agent Python 调试脚本类似的子命令：
+  `npm run demo:a2a -- card --url http://127.0.0.1:10000/`、
+  `npm run demo:a2a -- send "你好" --url http://127.0.0.1:10000/`、
+  `npm run demo:a2a -- get-task <task_id> --url http://127.0.0.1:10000/`
 - `npm run android` / `npm run ios` 会生成并运行原生开发版本
 - BLE 与录音功能需要真机或具备原生能力的模拟器验证
+- A2A demo 验证的是当前电脑到 room-agent 的网络和 SDK JSON-RPC 调用；手机真机网络、
+  Dev Build 权限与应用内状态恢复仍需要在应用内链路单独验证
+- RN 应用内连接不会读取 `demo:a2a --url` 参数，而是通过 `EXPO_PUBLIC_BACKEND_URL`
+  指向的 discovery/registry 接口获取 room-agent URL；当前联调环境中后端返回的典型映射是
+  `bedroom -> room-agent-1 -> http://192.168.0.221:10000/`
+- 如果 `room-agent` 下的 Python 脚本用 `http://127.0.0.1:10000` 能通，但
+  `http://192.168.0.221:10000` 失败，通常表示服务只监听 localhost。手机联调前应让
+  room-agent 以 `ROOM_AGENT_HOST=0.0.0.0` 启动，并确认 agent-card 里的 `url` 是手机可访问的
+  LAN 地址。
 
 ## 配置
 
@@ -45,8 +61,6 @@ npm run start
 
 - `EXPO_PUBLIC_USER_ID`
 - `EXPO_PUBLIC_BACKEND_URL`
-- `EXPO_PUBLIC_MQTT_HOST`
-- `EXPO_PUBLIC_MQTT_WS_PORT`
 - `EXPO_PUBLIC_BEACON_UUID`
 
 ## 目录说明
@@ -62,7 +76,6 @@ npm run start
 
 这个项目目前是“可运行的迁移骨架”，不是快应用功能等价替代。已完成的是结构和关键原生能力接入，尚未完成的包括：
 
-- MQTT transport 的正式实现
 - ASR 上传和后端识别闭环
 - Room-Agent / Home-Agent 真实执行结果回流
 - 偏好编辑表单与完整交互

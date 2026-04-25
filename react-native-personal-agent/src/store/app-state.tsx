@@ -42,6 +42,7 @@ import type {
   PermissionSnapshot,
   RoomAgentSnapshot,
   RoomBinding,
+  AgentDiscoveryResult,
   TaskActionCallbackResult,
   UserPreferences,
   VoiceCommandExecutionResult,
@@ -75,7 +76,6 @@ type AppStateValue = {
   beaconScanIssue: BeaconScanIssue | null;
   isScanningBeacon: boolean;
   isStartingBeaconScan: boolean;
-  mqttStatus: ConnectionStatus;
   controlStatus: ConnectionStatus;
   microphonePermission: PermissionSnapshot | null;
   bluetoothPermission: PermissionSnapshot | null;
@@ -159,6 +159,26 @@ function buildTaskFollowUpDraftForState(state: ControlTaskStateUpdate['state']):
   return state === 'auth-required' ? '我已完成鉴权，请继续执行。' : '';
 }
 
+function buildRoomAgentConnectionDetail(options: {
+  roomId: string;
+  agentInfo?: AgentDiscoveryResult | null;
+  error?: string | null;
+}): string {
+  const parts = [`roomId=${options.roomId}`];
+
+  if (options.agentInfo?.agentId) {
+    parts.push(`agentId=${options.agentInfo.agentId}`);
+  }
+  if (options.agentInfo?.url) {
+    parts.push(`url=${options.agentInfo.url}`);
+  }
+  if (options.error) {
+    parts.push(options.error);
+  }
+
+  return parts.join('；');
+}
+
 export function AppStateProvider({ children }: PropsWithChildren) {
   const bleBeaconService = useRef(new BleBeaconService()).current;
   const audioRecordService = useRef(new ExpoAudioRecordService()).current;
@@ -184,7 +204,6 @@ export function AppStateProvider({ children }: PropsWithChildren) {
   const [beaconDiagnostics, setBeaconDiagnostics] = useState<BeaconScanDiagnostic[]>([]);
   const [beaconScanIssue, setBeaconScanIssue] = useState<BeaconScanIssue | null>(null);
   const [isStartingBeaconScan, setIsStartingBeaconScan] = useState(false);
-  const [mqttStatus] = useState<ConnectionStatus>('disconnected');
   const [controlStatus, setControlStatus] = useState<ConnectionStatus>('disconnected');
   const [microphonePermission, setMicrophonePermission] = useState<PermissionSnapshot | null>(null);
   const [bluetoothPermission, setBluetoothPermission] = useState<PermissionSnapshot | null>(null);
@@ -214,10 +233,15 @@ export function AppStateProvider({ children }: PropsWithChildren) {
   const recoveryHydratedRef = useRef(false);
   const initialTaskActionCallbackCheckedRef = useRef(false);
   const handledTaskActionCallbackUrlRef = useRef<string | null>(null);
+  const autoConnectTokenRef = useRef(0);
+  const lastAutoConnectBindingKeyRef = useRef<string | null>(null);
   const activeRoomSnapshotRef = useRef<{ roomId: string | null; roomName: string | null }>({
     roomId: null,
     roomName: null,
   });
+  const currentRoomAutoConnectKey = currentRoomBinding
+    ? `${currentRoomBinding.roomId}:${currentRoomBinding.beaconId ?? ''}`
+    : null;
 
   const handleScanResult = useEffectEvent((result: BeaconScanResult) => {
     startTransition(() => {
@@ -249,6 +273,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
 
     if (roomChanged) {
       activeRoomTaskIdRef.current = null;
+      autoConnectTokenRef.current += 1;
       setIsAwaitingCommandResult(false);
       if (!preserveInterruptedTask) {
         setTaskFollowUpDraft('');
@@ -413,6 +438,89 @@ export function AppStateProvider({ children }: PropsWithChildren) {
     }
   );
 
+  const connectCurrentRoomAgent = useEffectEvent(async (binding: RoomBinding): Promise<void> => {
+    const token = ++autoConnectTokenRef.current;
+
+    activeRoomSnapshotRef.current = {
+      roomId: binding.roomId,
+      roomName: binding.roomName,
+    };
+    setControlStatus('connecting');
+    setVoiceStatusText(`正在连接${binding.roomName ?? binding.roomId}的 Room-Agent...`);
+    setResponsePreview(
+      `已绑定房间 ${binding.roomId}，正在通过 discovery 查询 Room-Agent 并探活 agent-card。`
+    );
+
+    const isCurrentRequest = () =>
+      autoConnectTokenRef.current === token &&
+      activeRoomSnapshotRef.current.roomId === binding.roomId;
+
+    const agentInfo = await discoveryService.getRoomAgentByRoomId(binding.roomId);
+    if (!isCurrentRequest()) {
+      return;
+    }
+
+    if (!agentInfo) {
+      setControlStatus('error');
+      setVoiceStatusText('未发现 Room-Agent');
+      setResponsePreview(
+        `已绑定房间，但 discovery 未返回可用代理。${buildRoomAgentConnectionDetail({
+          roomId: binding.roomId,
+        })}`
+      );
+      return;
+    }
+
+    controlService.setRoomAgent(agentInfo.roomId, agentInfo.agentId);
+    const connected = await controlService.connect(agentInfo, agentInfo.roomId);
+    if (!isCurrentRequest()) {
+      return;
+    }
+
+    if (!connected) {
+      const connectionError = controlService.getLastError();
+      setControlStatus('error');
+      setVoiceStatusText('Room-Agent 自动连接失败');
+      setResponsePreview(
+        `已发现目标代理，但 A2A 控制通道未连通。${buildRoomAgentConnectionDetail({
+          roomId: agentInfo.roomId,
+          agentInfo,
+          error: connectionError,
+        })}`
+      );
+      return;
+    }
+
+    activeRoomSnapshotRef.current = {
+      roomId: agentInfo.roomId,
+      roomName: agentInfo.roomName,
+    };
+
+    await controlService.subscribeToDescription(agentInfo.roomId, handleRoomAgentDescription);
+    if (!isCurrentRequest()) {
+      return;
+    }
+
+    try {
+      await controlService.queryCapabilities(agentInfo.roomId, agentInfo);
+    } catch (error) {
+      console.warn('[AppState] Failed to refresh room-agent description after auto-connect', error);
+    }
+
+    if (!isCurrentRequest()) {
+      return;
+    }
+
+    setControlStatus('connected');
+    setVoiceStatusText('Room-Agent 控制通道已连接');
+    setResponsePreview(
+      `已连接 ${agentInfo.roomName ?? agentInfo.roomId} 的 Room-Agent。${buildRoomAgentConnectionDetail({
+        roomId: agentInfo.roomId,
+        agentInfo,
+      })}`
+    );
+  });
+
   const executeVoiceCommand = useCallback(async (input: string, source: 'text' | 'voice') => {
     const normalizedInput = input.trim();
     setIsExecutingCommand(true);
@@ -420,6 +528,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
     setIsRecoveredInterruptedTask(false);
     setRecoveredInterruptedTaskAt(null);
     activeRoomTaskIdRef.current = null;
+    autoConnectTokenRef.current += 1;
     handledTaskActionCallbackUrlRef.current = null;
     setLatestTaskActionCallback(null);
     setControlStatus('connecting');
@@ -448,6 +557,10 @@ export function AppStateProvider({ children }: PropsWithChildren) {
               ? 'connected'
               : 'connecting'
             : 'error'
+          : result.route === 'query'
+            ? result.success
+              ? 'connected'
+              : 'error'
           : 'disconnected'
       );
 
@@ -480,7 +593,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
         }
       }
 
-      if (result.route === 'room-agent' && result.success && result.roomId) {
+      if ((result.route === 'room-agent' || result.route === 'query') && result.success && result.roomId) {
         activeRoomSnapshotRef.current = {
           roomId: result.roomId,
           roomName: result.roomName,
@@ -528,6 +641,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
     setIsExecutingCommand(true);
     setIsAwaitingCommandResult(false);
     activeRoomTaskIdRef.current = null;
+    autoConnectTokenRef.current += 1;
     setControlStatus('connecting');
     setTranscript(normalizedInput);
     setResponsePreview('补充输入已准备发送，系统会复用当前 taskId/contextId 继续任务。');
@@ -778,6 +892,11 @@ export function AppStateProvider({ children }: PropsWithChildren) {
         return;
       }
 
+      activeRoomSnapshotRef.current = {
+        roomId: savedBinding?.roomId ?? null,
+        roomName: savedBinding?.roomName ?? null,
+      };
+
       startTransition(() => {
         setCurrentRoomBinding(savedBinding);
         setPreferences(loadedPreferences);
@@ -833,6 +952,27 @@ export function AppStateProvider({ children }: PropsWithChildren) {
     interruptedTaskRecoveryService,
     voiceCommandOrchestrator,
   ]);
+
+  useEffect(() => {
+    if (!recoveryHydratedRef.current) {
+      return;
+    }
+
+    if (!currentRoomBinding) {
+      if (lastAutoConnectBindingKeyRef.current !== null) {
+        autoConnectTokenRef.current += 1;
+      }
+      lastAutoConnectBindingKeyRef.current = null;
+      return;
+    }
+
+    if (lastAutoConnectBindingKeyRef.current === currentRoomAutoConnectKey) {
+      return;
+    }
+
+    lastAutoConnectBindingKeyRef.current = currentRoomAutoConnectKey;
+    void connectCurrentRoomAgent(currentRoomBinding);
+  }, [currentRoomAutoConnectKey]);
 
   useEffect(() => {
     const subscription = Linking.addEventListener('url', event => {
@@ -913,7 +1053,6 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       beaconScanIssue,
       isScanningBeacon,
       isStartingBeaconScan,
-      mqttStatus,
       controlStatus,
       microphonePermission,
       bluetoothPermission,
@@ -982,6 +1121,8 @@ export function AppStateProvider({ children }: PropsWithChildren) {
         }
 
         await beaconBindingCoordinator.unbind();
+        autoConnectTokenRef.current += 1;
+        lastAutoConnectBindingKeyRef.current = null;
         activeRoomTaskIdRef.current = null;
         activeRoomSnapshotRef.current = {
           roomId: null,
@@ -1088,7 +1229,6 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       lastRecording,
       lastCommandExecution,
       microphonePermission,
-      mqttStatus,
       preferenceService,
       preferences,
       recognizeRecording,

@@ -18,12 +18,15 @@ function createResult(id: number): VoiceCommandExecutionResult {
     agentId: `room-agent-${id}`,
     intent: {
       text: `command-${id}`,
+      kind: 'agent_message',
       device: 'main_light',
       action: 'turn_on',
       room: 'livingroom',
       parameters: {},
       confidence: 0.9,
       source: 'llm',
+      reply: null,
+      query: null,
     },
   };
 }

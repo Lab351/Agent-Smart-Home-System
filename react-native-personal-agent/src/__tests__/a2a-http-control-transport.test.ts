@@ -93,6 +93,40 @@ describe('A2AHttpControlTransport', () => {
     warnSpy.mockRestore();
   });
 
+  it('explains .local agent-card URLs as mDNS-dependent registry addresses', async () => {
+    const adapter = {
+      createSession: jest.fn(async () => {
+        throw new Error('network unavailable');
+      }),
+      getAgentCard: jest.fn(),
+      sendMessage: jest.fn(),
+      getTask: jest.fn(),
+    };
+    const transport = new A2AHttpControlTransport(adapter as never);
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const connected = await transport.connect({
+      personalAgentId: 'personal-agent-user1',
+      roomId: 'bedroom',
+      roomAgentId: 'room-agent-bedroom',
+      agentInfo: {
+        beaconId: '2',
+        roomId: 'bedroom',
+        roomName: '卧室',
+        agentId: 'room-agent-bedroom',
+        url: 'http://room-agent.local/',
+        devices: [],
+        capabilities: ['lighting'],
+      },
+    });
+
+    expect(connected).toBe(false);
+    expect(transport.getLastError()).toContain('.local 主机名');
+    expect(transport.getLastError()).toContain('gateway.agent_host');
+
+    warnSpy.mockRestore();
+  });
+
   it('sends text messages and emits polled task updates until completed', async () => {
     let pollCount = 0;
     const adapter = {
@@ -268,6 +302,146 @@ describe('A2AHttpControlTransport', () => {
       isTerminal: true,
       isInterrupted: false,
       detail: '客厅主灯已打开',
+    });
+  });
+
+  it('sends room state queries as blocking A2A messages with query metadata', async () => {
+    const adapter = {
+      createSession: jest.fn(async () => ({
+        client: {} as never,
+        serviceBaseUrl: 'http://127.0.0.1:8001',
+        agentCardUrl: 'http://127.0.0.1:8001/.well-known/agent-card.json',
+        agentCard: createAgentCard(),
+      })),
+      getAgentCard: jest.fn(),
+      sendMessage: jest.fn(async (_client, params) => {
+        expect(params.configuration.blocking).toBe(true);
+        expect(params.message.parts).toEqual([
+          expect.objectContaining({
+            kind: 'text',
+            text: '客厅灯现在开着吗',
+          }),
+        ]);
+        expect(params.message.metadata).toEqual(
+          expect.objectContaining({
+            queryRequest: expect.objectContaining({
+              roomId: 'livingroom',
+              queryType: 'room_state',
+            }),
+          }),
+        );
+
+        return {
+          kind: 'message',
+          messageId: 'reply-query-1',
+          role: 'agent',
+          parts: [{ kind: 'text', text: '客厅主灯当前处于开启状态。' }],
+        };
+      }),
+      getTask: jest.fn(),
+    };
+    const transport = new A2AHttpControlTransport(adapter as never);
+
+    await transport.connect({
+      personalAgentId: 'personal-agent-user1',
+      roomId: 'livingroom',
+      roomAgentId: 'room-agent-livingroom',
+      agentInfo: {
+        beaconId: '1',
+        roomId: 'livingroom',
+        roomName: '客厅',
+        agentId: 'room-agent-livingroom',
+        url: 'http://127.0.0.1:8001',
+        devices: [],
+        capabilities: ['lighting', 'state_query'],
+      },
+    });
+
+    const dispatch = await transport.sendQuery({
+      roomId: 'livingroom',
+      roomAgentId: 'room-agent-livingroom',
+      utterance: '客厅灯现在开着吗',
+      queryType: 'room_state',
+      sourceAgent: 'personal-agent-user1',
+    });
+
+    expect(dispatch).toMatchObject({
+      success: true,
+      taskId: null,
+      state: 'completed',
+      isTerminal: true,
+      isInterrupted: false,
+      detail: '客厅主灯当前处于开启状态。',
+    });
+  });
+
+  it('sends room device queries as blocking A2A messages with room_devices metadata', async () => {
+    const adapter = {
+      createSession: jest.fn(async () => ({
+        client: {} as never,
+        serviceBaseUrl: 'http://127.0.0.1:8001',
+        agentCardUrl: 'http://127.0.0.1:8001/.well-known/agent-card.json',
+        agentCard: createAgentCard(),
+      })),
+      getAgentCard: jest.fn(),
+      sendMessage: jest.fn(async (_client, params) => {
+        expect(params.configuration.blocking).toBe(true);
+        expect(params.message.parts).toEqual([
+          expect.objectContaining({
+            kind: 'text',
+            text: '房间里有什么设备可以控制',
+          }),
+        ]);
+        expect(params.message.metadata).toEqual(
+          expect.objectContaining({
+            queryRequest: expect.objectContaining({
+              roomId: 'livingroom',
+              queryType: 'room_devices',
+            }),
+          }),
+        );
+
+        return {
+          kind: 'message',
+          messageId: 'reply-query-devices-1',
+          role: 'agent',
+          parts: [{ kind: 'text', text: '客厅当前可控制的设备有主灯、窗帘和空调。' }],
+        };
+      }),
+      getTask: jest.fn(),
+    };
+    const transport = new A2AHttpControlTransport(adapter as never);
+
+    await transport.connect({
+      personalAgentId: 'personal-agent-user1',
+      roomId: 'livingroom',
+      roomAgentId: 'room-agent-livingroom',
+      agentInfo: {
+        beaconId: '1',
+        roomId: 'livingroom',
+        roomName: '客厅',
+        agentId: 'room-agent-livingroom',
+        url: 'http://127.0.0.1:8001',
+        devices: [],
+        capabilities: ['lighting', 'device_query'],
+      },
+    });
+
+    const dispatch = await transport.sendQuery({
+      roomId: 'livingroom',
+      roomAgentId: 'room-agent-livingroom',
+      utterance: '房间里有什么设备可以控制',
+      queryType: 'room_devices',
+      sourceAgent: 'personal-agent-user1',
+    });
+
+    expect(dispatch).toMatchObject({
+      success: true,
+      taskId: null,
+      state: 'completed',
+      isTerminal: true,
+      isInterrupted: false,
+      detail: '客厅当前可控制的设备有主灯、窗帘和空调。',
     });
   });
 

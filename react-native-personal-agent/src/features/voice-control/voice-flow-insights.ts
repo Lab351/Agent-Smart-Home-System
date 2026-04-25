@@ -82,6 +82,10 @@ function resolveFailedStep(
     return 'understand';
   }
 
+  if (result.route === 'chat') {
+    return 'understand';
+  }
+
   if (result.route === 'room-agent' && result.taskState) {
     return 'feedback';
   }
@@ -113,7 +117,7 @@ function resolveSummaryTitle(
   }
 
   if (snapshot.isExecutingCommand) {
-    return '正在做 discovery 和控制下发';
+    return '正在选择目标 Agent 并建立链路';
   }
 
   if (snapshot.isAwaitingCommandResult || isPendingExecution(snapshot.lastCommandExecution)) {
@@ -127,11 +131,11 @@ function resolveSummaryTitle(
   }
 
   if (failedStep === 'understand') {
-    return '本次命令在理解阶段中断';
+    return '本次请求在理解与路由阶段中断';
   }
 
   if (failedStep === 'dispatch') {
-    return '本次命令在下发阶段中断';
+    return '本次 Agent 转发在执行阶段中断';
   }
 
   if (failedStep === 'feedback') {
@@ -139,7 +143,11 @@ function resolveSummaryTitle(
   }
 
   if (snapshot.lastCommandExecution) {
-    return '本次控制链路已完成';
+    return snapshot.lastCommandExecution.route === 'chat'
+      ? '本次直接回复已完成'
+      : snapshot.lastCommandExecution.route === 'query'
+        ? '本次房间查询已完成'
+        : '本次 Agent 转发已完成';
   }
 
   return '等待新的语音或文本指令';
@@ -147,7 +155,7 @@ function resolveSummaryTitle(
 
 function resolveSummaryDetail(snapshot: VoiceFlowSnapshot): string {
   if (snapshot.isRecording) {
-    return '麦克风正在采集音频；停止录音后会自动进入 ASR 和后续控制链路。';
+    return '麦克风正在采集音频；停止录音后会自动进入 ASR，并决定是直接回复还是转发给 Agent。';
   }
 
   if (snapshot.isRecognizingSpeech) {
@@ -155,13 +163,13 @@ function resolveSummaryDetail(snapshot: VoiceFlowSnapshot): string {
   }
 
   if (snapshot.isExecutingCommand) {
-    return '系统正在做意图解析、房间代理发现、agent-card 探活和控制请求下发。';
+    return '系统正在判断是直接回复，还是把原话转发给目标 Agent。';
   }
 
   if (snapshot.isAwaitingCommandResult || isPendingExecution(snapshot.lastCommandExecution)) {
     return (
       snapshot.lastCommandExecution?.detail ??
-      '控制请求已经提交，当前正在等待 Room-Agent 返回最终任务状态。'
+      '消息已经转发给目标 Agent，当前正在等待最终结果。'
     );
   }
 
@@ -173,7 +181,7 @@ function resolveSummaryDetail(snapshot: VoiceFlowSnapshot): string {
     return snapshot.lastCommandExecution.detail;
   }
 
-  return '可以直接录音，也可以用文本调试链路来验证 ASR 之外的控制路径。';
+  return '可以直接录音，也可以用文本调试链路来验证 ASR 之外的 Agent 转发路径。';
 }
 
 function resolveStepLabel(key: VoiceFlowStepKey): string {
@@ -206,14 +214,20 @@ function resolveStepNote(key: VoiceFlowStepKey, snapshot: VoiceFlowSnapshot): st
 
       return result?.route === 'unresolved'
         ? '意图或房间解析停在这里'
-        : 'ASR 与 Intent 共同负责理解';
+        : result?.route === 'chat'
+          ? '这一步直接生成对话回复'
+        : 'ASR 与 Intent 负责判断“直接回复还是转发”';
     case 'dispatch':
       if (snapshot.isExecutingCommand) {
-        return '正在做 discovery、探活和命令下发';
+        return result?.route === 'query'
+          ? '正在做 discovery、探活并发起房间查询'
+          : '正在做 discovery、探活并转发消息';
       }
 
-      return result?.route && result.route !== 'unresolved'
-        ? '目标代理已选定并尝试下发'
+      return result?.route && result.route !== 'unresolved' && result.route !== 'chat'
+        ? result.route === 'query'
+          ? '目标 Agent 已选定并开始查询'
+          : '目标 Agent 已选定并开始处理消息'
         : '理解完成后进入这一步';
     case 'feedback':
       if (snapshot.isAwaitingCommandResult || isPendingExecution(result)) {

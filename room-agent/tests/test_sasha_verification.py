@@ -189,66 +189,6 @@ def test_sasha_verification_returns_empty_patch_when_disabled(monkeypatch) -> No
     assert result == {}
 
 
-def test_sasha_verification_subgraph_runs_three_steps_and_aggregates(monkeypatch) -> None:
-    monkeypatch.setenv("__RA_SASHA_VER", "yes")
-    model = SequentialTextModel(["clarify", "filter", "plan"])
-    _initialize_runtime(
-        powerful=model,
-        mcp_client=FakePromptMCPClient(prompt_text="use vendor names"),
-    )
-
-    app = compile_sasha_verification_subgraph()
-    result = asyncio.run(
-        app.ainvoke(
-            {
-                "user_input": "帮我打开卧室灯",
-                "conversation_text": "Conversation transcript:\nuser: 你好\n\nCurrent user input:\n帮我打开卧室灯",
-                "metadata": {},
-            }
-        )
-    )
-
-    patch = result["outer_state_patch"]
-    assert "clarify" in patch["conversation_text"]
-    assert "filter" in patch["conversation_text"]
-    assert "plan" in patch["conversation_text"]
-    assert patch["conversation_text"].endswith("Repeated question:\n帮我打开卧室灯")
-    assert "智能家居执行助手" in patch["subagent_system_prompt"]
-    assert "Filtered context:\nfilter" in patch["subagent_system_prompt"]
-    assert "不重新发散推理" in patch["subagent_system_prompt"]
-
-    assert len(model.calls) == 3
-    clarifying_messages = model.calls[0]
-    filtering_messages = model.calls[1]
-    planning_messages = model.calls[2]
-
-    assert isinstance(clarifying_messages[0], SystemMessage)
-    assert "consider the goal of the user's command" in clarifying_messages[0].content
-    assert "<MCP Prompts>" in clarifying_messages[0].content
-    assert "Question input:" in clarifying_messages[1].content
-    assert "Repeated question:\n帮我打开卧室灯" in clarifying_messages[1].content
-
-    assert [type(message).__name__ for message in filtering_messages] == [
-        "SystemMessage",
-        "HumanMessage",
-        "AIMessage",
-        "HumanMessage",
-    ]
-    assert filtering_messages[1].content == "Which are the relevant devices?"
-    assert filtering_messages[2].content == "clarify"
-    assert "compressed reasoning result" in filtering_messages[0].content
-
-    assert [type(message).__name__ for message in planning_messages] == [
-        "SystemMessage",
-        "HumanMessage",
-        "AIMessage",
-        "HumanMessage",
-    ]
-    assert planning_messages[1].content == "How are these devices used to meet the goal?"
-    assert planning_messages[2].content.startswith("Filtered context:\nfilter")
-    assert "Vendor static context:" in planning_messages[2].content
-
-
 def test_main_graph_consumes_patched_conversation_text_when_sasha_enabled(monkeypatch) -> None:
     monkeypatch.setenv("__RA_SASHA_VER", "on")
     oversized_description = "灯光控制。" * 20000

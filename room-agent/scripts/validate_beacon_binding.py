@@ -13,7 +13,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from config.room_mapping import ROOM_ID_MAPPING, ROOM_NAMES
+from room_mapping import ROOM_ID_MAPPING, ROOM_NAMES
 
 
 def load_room_agent_config(config_path: str) -> dict:
@@ -38,7 +38,7 @@ def validate_beacon_binding(room_config: dict) -> tuple[bool, list[str]]:
     beacon_config = room_config.get("beacon", {})
 
     room_id = agent_config.get("room_id")
-    beacon_uuid = beacon_config.get("uuid")
+    beacon_id = beacon_config.get("beacon_id")
     beacon_major = beacon_config.get("major")
     beacon_minor = beacon_config.get("minor")
     measured_power = beacon_config.get("measured_power")
@@ -58,14 +58,15 @@ def validate_beacon_binding(room_config: dict) -> tuple[bool, list[str]]:
                 f"❌ beacon.major配置错误: 期望{expected_major} (对应{room_id}), 实际{beacon_major}"
             )
 
-    # 验证3: UUID格式
-    if beacon_uuid:
-        try:
-            import uuid as uuid_lib
-            uuid_obj = uuid_lib.UUID(beacon_uuid)
-            print(f"✅ UUID格式正确: {beacon_uuid}")
-        except ValueError:
-            errors.append(f"❌ UUID格式错误: {beacon_uuid}")
+    # 验证3: beacon_id必须与Personal Agent扫描端生成的String(major)一致
+    if beacon_major is not None:
+        expected_beacon_id = str(beacon_major)
+        if beacon_id != expected_beacon_id:
+            errors.append(
+                f"❌ beacon.beacon_id配置错误: 期望{expected_beacon_id} (String(major)), 实际{beacon_id}"
+            )
+        else:
+            print(f"✅ beacon.beacon_id有效: {beacon_id}")
 
     # 验证4: Major范围
     if beacon_major is not None:
@@ -110,7 +111,7 @@ def print_binding_summary(room_config: dict):
 
     room_id = agent_config.get("room_id")
     agent_id = agent_config.get("id")
-    beacon_uuid = beacon_config.get("uuid")
+    beacon_id = beacon_config.get("beacon_id")
     beacon_major = beacon_config.get("major")
 
     print("\n" + "="*60)
@@ -123,7 +124,7 @@ def print_binding_summary(room_config: dict):
     print(f"  Agent ID:     {agent_id}")
 
     print(f"\nBeacon配置:")
-    print(f"  UUID:         {beacon_uuid}")
+    print(f"  Beacon ID:    {beacon_id}")
     print(f"  Major (房间): {beacon_major} → {room_id}")
     print(f"  Minor (区域): {beacon_config.get('minor')}")
     print(f"  Measured Power: {beacon_config.get('measured_power')} dBm")

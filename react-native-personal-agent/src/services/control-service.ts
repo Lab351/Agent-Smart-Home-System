@@ -95,6 +95,92 @@ export class ControlService {
     });
   }
 
+  async queryRoomState(
+    roomId: string,
+    utterance: string,
+    options?: {
+      metadata?: Record<string, unknown>;
+    }
+  ): Promise<ControlDispatchResult> {
+    return this.queryRoom(roomId, utterance, 'room_state', options);
+  }
+
+  async queryRoomDevices(
+    roomId: string,
+    utterance: string,
+    options?: {
+      metadata?: Record<string, unknown>;
+    }
+  ): Promise<ControlDispatchResult> {
+    return this.queryRoom(roomId, utterance, 'room_devices', options);
+  }
+
+  private async queryRoom(
+    roomId: string,
+    utterance: string,
+    queryType: 'room_state' | 'room_devices',
+    options?: {
+      metadata?: Record<string, unknown>;
+    }
+  ): Promise<ControlDispatchResult> {
+    const roomAgentId = this.getAgentIdForRoom(roomId);
+    if (!roomAgentId || !this.transport.isConnected()) {
+      return {
+        success: false,
+        taskId: null,
+        contextId: null,
+        state: 'unknown',
+        isTerminal: true,
+        isInterrupted: false,
+        detail: '查询通道尚未建立',
+        action: null,
+        raw: null,
+      };
+    }
+
+    return this.transport.sendQuery({
+      roomId,
+      roomAgentId,
+      utterance,
+      queryType,
+      metadata: options?.metadata,
+      sourceAgent: this.personalAgentId,
+    });
+  }
+
+  async sendRoomMessage(
+    roomId: string,
+    utterance: string,
+    options?: {
+      messageType?: 'generic' | 'control' | 'room_state' | 'room_devices';
+      metadata?: Record<string, unknown>;
+    }
+  ): Promise<ControlDispatchResult> {
+    const roomAgentId = this.getAgentIdForRoom(roomId);
+    if (!roomAgentId || !this.transport.isConnected()) {
+      return {
+        success: false,
+        taskId: null,
+        contextId: null,
+        state: 'unknown',
+        isTerminal: true,
+        isInterrupted: false,
+        detail: '消息通道尚未建立',
+        action: null,
+        raw: null,
+      };
+    }
+
+    return this.transport.sendMessage({
+      roomId,
+      roomAgentId,
+      utterance,
+      messageType: options?.messageType ?? 'generic',
+      metadata: options?.metadata,
+      sourceAgent: this.personalAgentId,
+    });
+  }
+
   async subscribeToState(
     roomId: string,
     callback: (state: ControlTaskStateUpdate) => void
