@@ -291,6 +291,57 @@ def test_agent_call_model_and_finalize_output_use_bound_chat_model() -> None:
     assert finalized == {"final_output": {"message": "卧室灯已打开。"}}
 
 
+def test_agent_call_model_pushes_model_message_before_tool_call(monkeypatch: Any) -> None:
+    class ThoughtBeforeToolModel(FakePowerfulModel):
+        async def _ainvoke(self, messages: list[BaseMessage], tools: list[BaseTool]) -> AIMessage:
+            _ = messages
+            return AIMessage(
+                content="我先查询卧室灯状态。",
+                tool_calls=[
+                    {
+                        "name": tools[0].name,
+                        "args": {"entity_id": "light.bedroom"},
+                        "id": "call-1",
+                        "type": "tool_call",
+                    }
+                ],
+            )
+
+    class FakeUpdater:
+        def __init__(self) -> None:
+            self.status_updates: list[tuple[Any, Any]] = []
+
+        def new_agent_message(self, *, parts: list[Any]) -> Any:
+            return SimpleNamespace(parts=parts)
+
+        async def update_status(self, state: Any, message: Any) -> None:
+            self.status_updates.append((state, message))
+
+    calls: list[str] = []
+    tool = build_light_control_tool(calls)
+    updater = FakeUpdater()
+    monkeypatch.setattr(
+        "graph.subgraphs.agent_execution.entry.get_current_updater",
+        lambda: updater,
+    )
+    _initialize_runtime(powerful=ThoughtBeforeToolModel())
+
+    result = asyncio.run(
+        agent_call_model(
+            {
+                "messages": [SystemMessage(content="sys"), HumanMessage(content="帮我打开卧室灯")],
+                "step_count": 0,
+                "step_limit": 6,
+            },
+            tool_instances=[tool],
+        )
+    )
+
+    assert result["messages"][0].tool_calls[0]["name"] == "light_control"
+    assert len(updater.status_updates) == 1
+    assert updater.status_updates[0][1].parts[0].root.text == "我先查询卧室灯状态。"
+
+
 def test_agent_execution_retries_after_tool_error_until_final_output() -> None:
     class RetryAfterToolErrorModel:
         def bind(self, **kwargs: Any) -> _FakeBoundModel:

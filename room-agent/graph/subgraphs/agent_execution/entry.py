@@ -151,6 +151,8 @@ async def agent_call_model(
         else model.bind(temperature=0)
     )
     response = await runnable.ainvoke(state.get("messages", []))
+    if response.tool_calls:
+        await _send_model_status_update(response)
     return {
         "messages": [response],
         "step_count": state.get("step_count", 0) + 1,
@@ -294,7 +296,8 @@ async def _build_system_prompt(
 3. 用户提到的设备未必完全匹配工具列表中的设备名称。传入 Hass tool 的 `name` 字段**必须**来源于<mcp_prompt>中提供的设备名字。区域名字同理。**严禁**不经考虑将用户提到的实体直接传入。
 4. 工具调用失败时，允许重试 1 - 2 次；若仍失败，必须明确告知失败原因或限制。
 5. 严禁编造工具结果、设备状态或执行记录。
-6. 无论是否调用工具，最后都必须给出一段面向用户的自然语言回复。
+6. 当你需要调用工具时，**必须**在输出 toolcall 前先给出一段简短思考，思考内容**严禁**超过 100 字。
+7. 无论是否调用工具，最后都必须给出一段面向用户的自然语言回复。
 
 回复风格要求：简洁、明确、可执行；若已完成操作，要说明关键结果；若未完成，要说明下一步建议。
 """
@@ -391,6 +394,21 @@ async def _send_tool_status_update(text: str) -> None:
 
     message = updater.new_agent_message(parts=[create_text_part(text)])
     await updater.update_status(TaskState.working, message)
+
+
+async def _send_model_status_update(message: AIMessage) -> None:
+    text = normalize_message_content(message).strip()
+    if not text:
+        return
+
+    try:
+        updater = get_current_updater()
+    except RuntimeError:
+        logger.debug("No TaskUpdater available; skip model status update.")
+        return
+
+    status_message = updater.new_agent_message(parts=[create_text_part(text)])
+    await updater.update_status(TaskState.working, status_message)
 
 
 def _build_tool_error_command(
