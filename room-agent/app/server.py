@@ -7,8 +7,11 @@ import contextlib
 import logging
 import os
 import argparse
-from dataclasses import asdict, dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+
+from starlette.middleware.cors import CORSMiddleware
 
 import uvicorn
 
@@ -25,6 +28,7 @@ if __name__ == "__main__" and (__package__ is None or __package__ == ""):
 from .a2a_server import build_a2a_application
 from config.settings import HomeAssistantMCPSettings, LLMRole, Settings, load_settings
 from .gateway_client import GatewayClient
+from .public_url import PublicUrlResolutionError, resolve_agent_card_url
 from integrations.mcp_client import MCPToolClient, build_home_assistant_mcp_client
 from integrations.llm_provider import LLMProviderRegistry, create_llm_provider_registry
 
@@ -37,6 +41,8 @@ _CONFIG_PATH: str | None = None
 _LLM_CONFIG_PATH: str | None = None
 ROOM_AGENT_HOST_ENV = "ROOM_AGENT_HOST"
 ROOM_AGENT_PORT_ENV = "ROOM_AGENT_PORT"
+DEFAULT_ROOM_AGENT_HOST = "127.0.0.1"
+DEFAULT_ROOM_AGENT_PORT = 10000
 
 
 @dataclass(slots=True)
@@ -90,8 +96,12 @@ def get_mcp_health_status() -> dict[str, object | None]:
     return asdict(_MCP_HEALTH_STATUS)
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(
+    argv: Sequence[str] | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> argparse.Namespace:
     """Parse command-line arguments for runtime configuration."""
+    env = os.environ if environ is None else environ
     parser = argparse.ArgumentParser(description="Run RoomAgent runtime service.")
     parser.add_argument(
         "--config-path",
@@ -105,7 +115,46 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help="Path to room-agent LLM config file.",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--host",
+        dest="host",
+        default=env.get(ROOM_AGENT_HOST_ENV, DEFAULT_ROOM_AGENT_HOST),
+        help=(
+            "Bind host for the A2A HTTP service. "
+            f"Defaults to ${ROOM_AGENT_HOST_ENV} or {DEFAULT_ROOM_AGENT_HOST}. "
+            "Use 0.0.0.0 for LAN testing."
+        ),
+    )
+    parser.add_argument(
+        "--port",
+        dest="port",
+        type=int,
+        default=_read_port_from_env(env),
+        help=(
+            "Bind port for the A2A HTTP service. "
+            f"Defaults to ${ROOM_AGENT_PORT_ENV} or {DEFAULT_ROOM_AGENT_PORT}."
+        ),
+    )
+    return parser.parse_args(argv)
+
+
+def _read_port_from_env(environ: Mapping[str, str]) -> int:
+    value = environ.get(ROOM_AGENT_PORT_ENV)
+    if value is None or not value.strip():
+        return DEFAULT_ROOM_AGENT_PORT
+
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise ValueError(f"{ROOM_AGENT_PORT_ENV} must be an integer, got {value!r}.") from exc
+
+
+def _default_host_from_env() -> str:
+    return os.getenv(ROOM_AGENT_HOST_ENV, DEFAULT_ROOM_AGENT_HOST)
+
+
+def _default_port_from_env() -> int:
+    return _read_port_from_env(os.environ)
 
 
 def get_llm_provider_registry() -> LLMProviderRegistry:
@@ -163,9 +212,10 @@ async def probe_home_assistant_mcp(
 class ServiceRuntime:
     """Coordinates the long-lived tasks hosted by the RoomAgent process."""
 
-    host: str = os.getenv(ROOM_AGENT_HOST_ENV, "127.0.0.1")
-    port: int = int(os.getenv(ROOM_AGENT_PORT_ENV, "10000"))
+    host: str = field(default_factory=_default_host_from_env)
+    port: int = field(default_factory=_default_port_from_env)
     business_poll_interval_seconds: float = 30.0
+    gateway_registration_startup_delay_seconds: float = 0.1
     gateway_client: GatewayClient | None = None
 
     async def run(self) -> None:
@@ -182,7 +232,7 @@ class ServiceRuntime:
         )
         gateway_client = self.gateway_client
         if settings.agent.gateway and gateway_client is None:
-            gateway_client = GatewayClient(settings.agent.gateway.url)
+            gateway_client = GatewayClient(bind_host=self.host, port=self.port)
             self.gateway_client = gateway_client
         logger.info(
             "RoomAgent settings loaded for agent=%s room=%s powerful_provider=%s low_cost_provider=%s",
@@ -209,19 +259,19 @@ class ServiceRuntime:
             _MCP_HEALTH_STATUS.error,
         )
 
-        if (
-            settings.agent.gateway
-            and settings.agent.gateway.register_on_startup
-            and gateway_client is not None
-        ):
-            await gateway_client.register_agent(settings.agent)
-
         stop_event = asyncio.Event()
         tasks = [
             asyncio.create_task(self.run_a2a_http_server(stop_event), name="roomagent-a2a-http"),
             asyncio.create_task(self.run_business_loop(stop_event), name="roomagent-business-loop"),
         ]
-        if settings.agent.gateway and gateway_client is not None:
+
+        if (
+            settings.agent.gateway
+            and settings.agent.gateway.register_on_startup
+            and gateway_client is not None
+        ):
+            await asyncio.sleep(self.gateway_registration_startup_delay_seconds)
+            await gateway_client.register_agent(settings)
             tasks.append(
                 asyncio.create_task(
                     self.run_gateway_heartbeat_loop(stop_event),
@@ -254,9 +304,22 @@ class ServiceRuntime:
 
     async def run_a2a_http_server(self, stop_event: asyncio.Event) -> None:
         """Run the RoomAgent A2A HTTP service until shutdown is requested."""
+        settings = get_settings()
+        public_url = None
+        try:
+            public_url = resolve_agent_card_url(settings, self.host, self.port)
+        except PublicUrlResolutionError as exc:
+            logger.warning("Unable to resolve RoomAgent public URL for agent-card: %s", exc)
+        app = build_a2a_application(host=self.host, port=self.port, public_url=public_url).build()
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
         server = uvicorn.Server(
             uvicorn.Config(
-                build_a2a_application(host=self.host, port=self.port).build(),
+                app,
                 host=self.host,
                 port=self.port,
                 log_level="info",
@@ -264,7 +327,12 @@ class ServiceRuntime:
         )
         server_task = asyncio.create_task(server.serve(), name="roomagent-uvicorn")
 
-        logger.info("RoomAgent A2A HTTP server started on http://%s:%s", self.host, self.port)
+        logger.info(
+            "RoomAgent A2A HTTP server started on http://%s:%s agent_card_url=%s",
+            self.host,
+            self.port,
+            public_url or f"http://{self.host}:{self.port}/",
+        )
         try:
             await stop_event.wait()
         finally:
@@ -300,15 +368,17 @@ class ServiceRuntime:
             gateway.heartbeat_interval,
         )
         while not stop_event.is_set():
-            if self.gateway_client is not None:
-                await self.gateway_client.send_heartbeat(settings.agent)
             try:
                 await asyncio.wait_for(
                     stop_event.wait(),
                     timeout=gateway.heartbeat_interval,
                 )
             except TimeoutError:
-                continue
+                pass
+            if stop_event.is_set():
+                break
+            if self.gateway_client is not None:
+                await self.gateway_client.send_heartbeat(settings)
         logger.info("Gateway heartbeat loop stopped.")
 
     async def tick_business_jobs(self) -> None:
@@ -316,13 +386,13 @@ class ServiceRuntime:
         return None
 
 
-async def main() -> None:
+async def main(*, host: str = DEFAULT_ROOM_AGENT_HOST, port: int = DEFAULT_ROOM_AGENT_PORT) -> None:
     """Module-level async entrypoint."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
     )
-    await ServiceRuntime().run()
+    await ServiceRuntime(host=host, port=port).run()
 
 
 def cli() -> None:
@@ -334,7 +404,7 @@ def cli() -> None:
     _CONFIG_PATH = args.config_path
     _LLM_CONFIG_PATH = args.llm_config_path
     with contextlib.suppress(KeyboardInterrupt):
-        asyncio.run(main())
+        asyncio.run(main(host=args.host, port=args.port))
 
 
 if __name__ == "__main__":

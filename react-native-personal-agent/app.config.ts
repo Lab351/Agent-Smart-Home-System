@@ -75,8 +75,6 @@ const config: ExpoConfig = {
     },
     userId: process.env.EXPO_PUBLIC_USER_ID ?? 'user1',
     backendUrl: process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://120.78.228.69:3088',
-    mqttHost: process.env.EXPO_PUBLIC_MQTT_HOST ?? '120.78.228.69',
-    mqttWsPort: Number(process.env.EXPO_PUBLIC_MQTT_WS_PORT ?? '9002'),
     beaconUuid:
       process.env.EXPO_PUBLIC_BEACON_UUID ?? '01234567-89AB-CDEF-0123456789ABCDEF',
   },

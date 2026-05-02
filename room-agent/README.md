@@ -96,9 +96,32 @@ uv run serve \
   --llm-config-path /path/to/private-llm.yaml
 ```
 
-环境变量：
+局域网 / 手机联调时需要让 HTTP 服务监听 LAN 网卡：
 
-- 服务进程直接读取 `ROOM_AGENT_HOST` 和 `ROOM_AGENT_PORT`
+```bash
+cd room-agent
+.venv/bin/serve \
+  --host 0.0.0.0 \
+  --port 10000 \
+  --config-path config/examples/room_agent.example.yaml \
+  --llm-config-path /path/to/private-llm.yaml
+```
+
+如果使用 `uv`：
+
+```bash
+cd room-agent
+env UV_CACHE_DIR=/tmp/uv-cache uv run serve \
+  --host 0.0.0.0 \
+  --port 10000 \
+  --config-path config/examples/room_agent.example.yaml \
+  --llm-config-path /path/to/private-llm.yaml
+```
+
+启动配置：
+
+- 服务进程支持 `--host` / `--port`，也会读取 `ROOM_AGENT_HOST` 和 `ROOM_AGENT_PORT`
+- `--host` / `--port` 优先级高于环境变量
 - `server.sh` 还会读取 `ROOM_AGENT_CONFIG_PATH` 和 `ROOM_AGENT_LLM_CONFIG_PATH`
 - 这些变量的默认值和用途都汇总在 [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)
 
@@ -131,6 +154,13 @@ cd room-agent
 uv run a2at --url http://127.0.0.1:10000 card
 ```
 
+如果使用局域网访问，把 URL 换成当前机器的 LAN IP：
+
+```bash
+cd room-agent
+uv run a2at --url http://<LAN_IP>:10000 card
+```
+
 ```bash
 cd room-agent
 uv run a2at --url http://127.0.0.1:10000 send "你好"
@@ -146,6 +176,8 @@ uv run a2at --url http://127.0.0.1:10000 get-task <task_id>
 - 直接执行 `python app/server.py` 或 `python -m app.server` 会在 `__main__` 下创建独立模块实例，graph 节点读取不到同一份全局配置。当前入口已显式禁止这种启动方式。
 - 如果你看到 `room-agent config path is required.`，先检查是不是绕过了 `serve` console script。
 - 在 Codex 沙箱里，本地端口绑定可能需要提权；服务起不来时先区分是代码问题还是沙箱限制。
+- `localhost` 能访问但 LAN IP 不能访问时，优先确认启动时是否使用了 `--host 0.0.0.0` 或 `ROOM_AGENT_HOST=0.0.0.0`。
+- 如果 agent-card 能通过 LAN IP 拉取，但 A2A `send` 失败，检查 card 里的 `url` 字段；必要时在 Room Agent 配置中设置 `gateway.agent_host: "http://<LAN_IP>:10000"`。
 - A2A 调试时优先先打 `card`，确认服务已监听，再打 `send`。不要一开始就把错误归因到 graph 逻辑。
 - 如果仓库被移动到新的 workspace 或复制了旧环境，先删除并重建 `room-agent/.venv/`，避免旧绝对路径残留导致解释器或依赖异常。
 

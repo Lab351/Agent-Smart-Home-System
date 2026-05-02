@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import OpenAI from 'openai';
 
 type ChatCompletionMessageParam = OpenAI.ChatCompletionMessageParam;
@@ -70,13 +70,19 @@ export class QwenService {
     conversationHistory: ChatCompletionMessageParam[] = [],
     systemPrompt: string = 'You are a helpful assistant.',
   ): Promise<string> {
-	    if(typeof conversationHistory === "string"){
-    		conversationHistory = JSON.parse(conversationHistory)
-	    }
+    if (typeof userMessage !== 'string' || userMessage.trim().length === 0) {
+      this.logger.warn('Rejected empty user message before calling model');
+      throw new BadRequestException('message/text is required');
+    }
+
+    if (typeof conversationHistory === 'string') {
+      conversationHistory = JSON.parse(conversationHistory);
+    }
+
     const messages: ChatCompletionMessageParam[] = [
       { role: 'system', content: systemPrompt },
       ...conversationHistory,
-      { role: 'user', content: userMessage },
+      { role: 'user', content: userMessage.trim() },
     ];
 
     this.logger.log(`Starting chat with ${messages.length} messages`);

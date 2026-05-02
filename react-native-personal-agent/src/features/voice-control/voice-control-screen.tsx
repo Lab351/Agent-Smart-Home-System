@@ -63,12 +63,7 @@ export function VoiceControlScreen({
   onOpenTaskAction,
   onToggleRecording,
 }: VoiceControlScreenProps) {
-  const routeLabel =
-    lastCommandExecution?.route === 'home-agent'
-      ? 'Home-Agent'
-      : lastCommandExecution?.route === 'room-agent'
-        ? 'Room-Agent'
-        : '待路由';
+  const routeLabel = resolveRouteLabel(lastCommandExecution?.route);
   const isCommandBusy = isExecutingCommand || isRecognizingSpeech || isAwaitingCommandResult;
   const recordButtonLabel = isRecognizingSpeech ? '识别中' : isRecording ? '停止录音' : '开始录音';
   const taskStateLabel = formatTaskStateLabel(lastCommandExecution?.taskState);
@@ -101,7 +96,7 @@ export function VoiceControlScreen({
     <ScreenShell
       eyebrow="Voice Control"
       title="语音控制"
-      subtitle="录音、ASR、意图解析、路由和执行结果现在共用同一条执行主链路。">
+      subtitle="录音、ASR、直接回复与 Agent 转发现在共用同一条执行主链路。">
       <SectionCard title="连接状态">
         <View style={styles.statusRow}>
           <StatusBadge label={currentRoomName ?? '未绑定房间'} tone="neutral" />
@@ -118,7 +113,7 @@ export function VoiceControlScreen({
 
       <SectionCard
         title="Room-Agent 快照"
-        description="这里展示 agent-card 返回的代理描述，用来区分“可路由能力”与“任务执行结果”。">
+        description="这里展示 agent-card 返回的代理描述，用来区分“代理描述快照”与“真实执行回复”。">
         {roomAgentSnapshot ? (
           <View style={styles.snapshotCard}>
             <View style={styles.snapshotHeader}>
@@ -266,7 +261,7 @@ export function VoiceControlScreen({
 
       <SectionCard
         title="调试指令"
-        description="文本调试仍然保留，用来在录音链路之外直接复用 Intent / Discovery / A2A 主执行路径。">
+        description="文本调试仍然保留，用来在录音链路之外直接复用“直接回复 / Agent 转发”主执行路径。">
         <View style={styles.debugPanel}>
           <View style={styles.debugHeader}>
             <StatusBadge label={currentRoomName ?? '未绑定房间'} tone="neutral" />
@@ -356,11 +351,11 @@ export function VoiceControlScreen({
                   value={lastCommandExecution.agentId ?? 'home-agent / unresolved'}
                 />
                 <ResultInfo
-                  label="设备"
+                  label="设备提示"
                   value={lastCommandExecution.intent.device ?? '未识别'}
                 />
                 <ResultInfo
-                  label="动作"
+                  label="动作提示"
                   value={lastCommandExecution.intent.action ?? '未识别'}
                 />
               </View>
@@ -572,13 +567,7 @@ export function VoiceControlScreen({
                 <View style={styles.historyMetaRow}>
                   <ResultChip
                     label="路由"
-                    value={
-                      item.route === 'home-agent'
-                        ? 'Home-Agent'
-                        : item.route === 'room-agent'
-                          ? 'Room-Agent'
-                          : '未路由'
-                    }
+                    value={resolveRouteLabel(item.route)}
                   />
                   <ResultChip
                     label="房间"
@@ -695,6 +684,23 @@ function resolveExecutionTone(
   }
 
   return result.success ? 'success' : 'error';
+}
+
+function resolveRouteLabel(
+  route: VoiceCommandExecutionResult['route'] | null | undefined
+): string {
+  switch (route) {
+    case 'home-agent':
+      return 'Home-Agent';
+    case 'query':
+      return 'Room-Agent 查询';
+    case 'chat':
+      return '直接回复';
+    case 'room-agent':
+      return 'Room-Agent';
+    default:
+      return '待路由';
+  }
 }
 
 const styles = StyleSheet.create({

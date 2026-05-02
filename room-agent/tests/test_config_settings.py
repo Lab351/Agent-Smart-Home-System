@@ -34,7 +34,7 @@ gateway:
 
 beacon:
   enabled: true
-  uuid: "01234567-89AB-CDEF-0123456789ABCDEF"
+  beacon_id: "2"
   major: 2
   minor: 0
   measured_power: -59
@@ -59,6 +59,11 @@ runtime:
     assert settings.agent.gateway.register_on_startup is True
     assert settings.agent.gateway.heartbeat_interval == 45
     assert settings.agent.gateway.agent_host == "http://room-agent.local"
+    assert settings.beacon is not None
+    assert settings.beacon.enabled is True
+    assert settings.beacon.beacon_id == "2"
+    assert settings.beacon.major == 2
+    assert settings.beacon.minor == 0
     assert settings.agent.home_assistant_mcp is not None
     assert settings.agent.home_assistant_mcp.enabled is True
     assert settings.agent.home_assistant_mcp.server_name == "home_assistant"
@@ -69,3 +74,32 @@ runtime:
     assert settings.agent.home_assistant_mcp.health_check.enabled is True
     assert settings.runtime.room_agent_config_path == str(config_path)
     assert settings.runtime.log_level == "DEBUG"
+
+
+def test_load_settings_allows_omitted_gateway_agent_host(tmp_path: Path) -> None:
+    config_path = tmp_path / "room_agent.yaml"
+    config_path.write_text(
+        """
+agent:
+  id: "room-agent-bedroom"
+  room_id: "bedroom"
+
+gateway:
+  url: "http://backend.test"
+  register_on_startup: true
+  heartbeat_interval: 45
+
+beacon:
+  enabled: true
+  beacon_id: "2"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    settings = load_settings(
+        config_path=str(config_path),
+        llm_config_path=str(LLM_CONFIG),
+    )
+
+    assert settings.agent.gateway is not None
+    assert settings.agent.gateway.agent_host is None

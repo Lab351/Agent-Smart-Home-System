@@ -36,6 +36,7 @@ esp32-ble-beacon/build/
 
 # codex daily report
 report
+.runtime/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

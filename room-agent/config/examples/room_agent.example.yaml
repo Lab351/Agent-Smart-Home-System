@@ -16,15 +16,17 @@ agent:
 
 # qwen-backend / AI Gateway 注册配置
 gateway:
-  url: "http://home-gateway.local"
+  url: "http://<qwen-backend-ip>:3088"
   register_on_startup: true
   heartbeat_interval: 60
-  agent_host: "http://room-agent.local"
+  # agent_host is optional. Omit it to auto-detect the LAN IP at startup/heartbeat.
+  # Set it only for fixed domains, reverse proxies, tunnels, or static IP deployments.
+  # agent_host: "http://<room-agent-lan-ip>:10000"
 
 # Beacon 绑定配置，仅用于空间绑定声明和 ESP32 固件生成
 beacon:
   enabled: true
-  uuid: "01234567-89AB-CDEF-0123456789ABCDEF"
+  beacon_id: "2"
   major: 2
   minor: 0
   measured_power: -59

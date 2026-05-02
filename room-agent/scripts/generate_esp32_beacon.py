@@ -14,7 +14,7 @@ sys.path.insert(0, str(project_root))
 
 import yaml
 import datetime
-from room_mapping import ROOM_NAMES, get_major_for_room
+from room_mapping import ROOM_NAMES
 
 
 def generate_esp32_beacon_config(room_config_path: str) -> str:
@@ -125,121 +125,6 @@ static uint8_t scan_rsp_raw_data[] = {{
  * 3. 广播间隔在 main.c 的 adv_params 中设置（默认20ms)
  */
 
-"""
-
-    return code
-
-
-def generate_esp32_main_snippet(room_config_path: str) -> str:
-    """生成ESP32主程序代码片段
-
-    Args:
-        room_config_path: Room Agent配置文件路径
-
-    Returns:
-        str: 生成的C代码片段
-    """
-    # 加载配置
-    config_path = Path(project_root) / room_config_path
-    with open(config_path, 'r') as f:
-        room_config = yaml.safe_load(f)
-
-    agent_config = room_config.get("agent", {})
-    beacon_config = room_config.get("beacon", {})
-
-    room_id = agent_config.get("room_id")
-    major = beacon_config.get("major")
-
-    code = f"""/*
- * ESP32主程序 - BLE Beacon广播
- * 房间: {room_id}
- */
-
-#include "esp_log.h"
-#include "esp32_beacon_config.h"  // 使用生成的配置头文件
-#include "esp_gap_ble_api.h"
-#include "esp_wifi.h"
-
-static const char *TAG = "ESP32_BEACON";
-
-// 外设句柄
-static uint16_t ble_beacon_gap_handle = 0;
-
-// Beacon参数（从配置文件加载）
-static esp_ble_beacon_data_t beacon_data = {{
-    .set_min_adv_interval_ms = {beacon_config.get('interval', 1) * 1000},
-    .set_max_adv_interval_ms = {beacon_config.get('interval', 1) * 1000},
-}};
-
-// 广播数据（iBeacon格式）
-static uint8_t beacon_payload[25] = {{
-    // Flags
-    0x02, 0x01,
-    // UUID (16字节)
-    0x12, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
-    0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
-    // Major (房间ID) - 小端序
-    (uint8_t)({major} & 0xFF),
-    (uint8_t)({major} >> 8),
-    // Minor (区域ID) - 小端序
-    (uint8_t)({beacon_config.get('minor', 0)} & 0xFF),
-    (uint8_t)({beacon_config.get('minor', 0)} >> 8),
-    // Measured Power
-    {beacon_config.get('measured_power', -59)}
-}};
-
-void app_main(void)
-{{
-    ESP_LOGI(TAG, "初始化ESP32 BLE Beacon...");
-    ESP_LOGI(TAG, "房间ID: %u, Major: %u", {major}, {major});
-
-    // 打印配置
-    print_beacon_config();
-
-    // 初始化BLE
-    ESP_ERROR_CHECK(esp_nvic_alloc_irq_handler(BLE_DYNAMIC_IRQ, ESP_IRQ_PRIORITY_DEFAULT, NULL, NULL, 0));
-
-    // 初始化GAP
-    esp_ble_beacon_config_t ble_beacon_cfg = {{
-        .beacon_type = BEACON_TYPE_IBEACON,
-    }};
-
-    ESP_ERROR_CHECK(
-        esp_ble_beacon_config(&ble_beacon_cfg) == ESP_OK,
-        "配置BLE Beacon失败"
-    );
-
-    // 设置广播参数
-    ESP_ERROR_CHECK(
-        esp_ble_beacon_start(&ble_beacon_gap_handle, &beacon_data) == ESP_OK,
-        "启动BLE Beacon失败"
-    );
-
-    // 设置广播数据
-    struct esp_ble_beacon_data  beacon_data_struct = {{
-        .flag = 0x4,
-        .uuid_size = 16,
-        .uuid = beacon_config.uuid,
-        .major = beacon_config.major,
-        .minor = beacon_config.minor,
-        .power = beacon_config.measured_power,
-    }};
-
-    ESP_ERROR_CHECK(
-        esp_ble_beacon_set_data(&ble_beacon_gap_handle, &beacon_data_struct) == ESP_OK,
-        "设置BLE Beacon数据失败"
-    );
-
-    ESP_LOGI(TAG, "BLE Beacon启动成功");
-    ESP_LOGI(TAG, "正在广播beacon信号...");
-    ESP_LOGI(TAG, "房间: %s, Major: %u, Minor: %u",
-              "{room_id}", {major}, {beacon_config.get('minor', 0)});
-
-    // 保持运行
-    while (1) {{
-        vTaskDelay(pdMS_TO_TICKS({beacon_config.get('interval', 1) * 1000}));
-    }}
-}}
 """
 
     return code

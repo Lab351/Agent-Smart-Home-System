@@ -13,6 +13,22 @@ export class HomeAgentService {
     try {
       const response = await this.http.post<HomeTaskResponse>('/api/home/tasks', {
         source_agent: appEnv.personalAgentId,
+        text: intent.text,
+        routing: intent.routing
+          ? {
+              target: intent.routing.target,
+              room_id: intent.routing.roomId ?? null,
+              agent_id: intent.routing.agentId ?? null,
+              reason: intent.routing.reason ?? null,
+            }
+          : null,
+        query: intent.query
+          ? {
+              type: intent.query.type,
+              room_id: intent.query.roomId ?? null,
+              reason: intent.query.reason ?? null,
+            }
+          : null,
         intent: {
           room: intent.room,
           device: intent.device,

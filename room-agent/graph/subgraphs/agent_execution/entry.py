@@ -104,9 +104,7 @@ async def subgraph_input_transform(
     user_input = state.get("user_input", "").strip()
     prompt_input = state.get("conversation_text", "").strip() or user_input
     conversation_text = prompt_input
-    system_prompt = state.get("subagent_system_prompt", "").strip() or await _build_system_prompt(
-        selected_tools=selected_tools,
-    )
+    system_prompt = state.get("subagent_system_prompt", "").strip() or await _build_system_prompt()
 
     return {
         "user_input": user_input,
@@ -145,14 +143,20 @@ async def agent_call_model(
         }
 
     model = _get_powerful_model()
+    retry_context_message = HumanMessage(
+        content=_build_model_retry_context_message(state)
+    )
+    messages = list(state.get("messages", [])) + [retry_context_message]
     runnable = (
         model.bind_tools(tool_instances, temperature=0)
         if tool_instances
         else model.bind(temperature=0)
     )
-    response = await runnable.ainvoke(state.get("messages", []))
+    response = await runnable.ainvoke(messages)
+    if response.tool_calls:
+        await _send_model_status_update(response)
     return {
-        "messages": [response],
+        "messages": [retry_context_message, response],
         "step_count": state.get("step_count", 0) + 1,
     }
 
@@ -256,18 +260,8 @@ def subgraph_output_transform(state: AgentExecutionState) -> AgentExecutionState
     }
 
 
-async def _build_system_prompt(
-    *,
-    selected_tools: list[dict[str, Any]],
+async def _build_system_prompt(    
 ) -> str:
-    tool_names = ", ".join(
-        str(tool.get("name", "")).strip()
-        for tool in selected_tools
-        if str(tool.get("name", "")).strip()
-    )
-    if not tool_names:
-        tool_names = "(none)"
-
     mcp_prompt = ""
     try:
         client = get_mcp_client()
@@ -291,14 +285,16 @@ async def _build_system_prompt(
    - 设备控制/状态查询：优先通过工具执行。
    - 闲聊或纯知识问答（与设备无关）：可直接自然语言回复。
 2. 当用户未明确下达设备指令，但描述了行为或场景时，需要推断其隐含控制目标，并执行最合理的操作。
-3. 用户提到的设备未必完全匹配工具列表中的设备名称。传入 Hass tool 的 `name` 字段**必须**来源于<mcp_prompt>中提供的设备名字。区域名字同理。**严禁**不经考虑将用户提到的实体直接传入。
-4. 工具调用失败时，允许重试 1 - 2 次；若仍失败，必须明确告知失败原因或限制。
+3. 用户提到的设备未必完全匹配工具列表中的设备名称。传入 Hass tool 的 `name` 字段**必须**来源于<mcp_prompt>中提供的设备名字。区域名字同理。**严禁**不经考虑将用户提到的实体直接传入。调用所有工具之前必须调用 getLiveContext.
+4. 工具调用失败时，如果报错明确是参数原因（名字不对、不支持能力等）自行重试。
 5. 严禁编造工具结果、设备状态或执行记录。
-6. 无论是否调用工具，最后都必须给出一段面向用户的自然语言回复。
+6. 当你需要调用工具时，**必须**在输出 toolcall 前先给出一段简短思考，思考内容**严禁**超过 100 字。
+7. 无论是否调用工具，最后都必须给出一段面向用户的自然语言回复。
+
+做事要谨慎。一切传参、区域、楼层等必须要在 static context 里提到了才能用。否则，如果用户提到多个设备就逐个操作。
 
 回复风格要求：简洁、明确、可执行；若已完成操作，要说明关键结果；若未完成，要说明下一步建议。
 """
-        f"\n候选工具: {tool_names}"
         f"\n以下是厂商提示词（可参考并与上述规则结合使用）:\n{mcp_prompt}"
     )
 
@@ -393,6 +389,21 @@ async def _send_tool_status_update(text: str) -> None:
     await updater.update_status(TaskState.working, message)
 
 
+async def _send_model_status_update(message: AIMessage) -> None:
+    text = normalize_message_content(message).strip()
+    if not text:
+        return
+
+    try:
+        updater = get_current_updater()
+    except RuntimeError:
+        logger.debug("No TaskUpdater available; skip model status update.")
+        return
+
+    status_message = updater.new_agent_message(parts=[create_text_part(text)])
+    await updater.update_status(TaskState.working, status_message)
+
+
 def _build_tool_error_command(
     *,
     tool_name: str,
@@ -420,6 +431,35 @@ def _normalize_tool_error_message(error_content: Any) -> str:
     else:
         text = _summarize_value(error_content, limit=500)
     return text or "Tool execution failed."
+
+
+def _build_model_retry_context_message(state: AgentExecutionState) -> str:
+    tool_call_count = _count_tool_calls(state.get("messages", []))
+    failure_count = _count_tool_failures(state.get("messages", []))
+    remaining_attempts = max(
+        0,
+        state.get("step_limit", DEFAULT_STEP_LIMIT) - state.get("step_count", 0),
+    )
+    return (
+        f"你已经调用了 {tool_call_count} 个工具，失败了 {failure_count} 次，"
+        f"还能尝试 {remaining_attempts} 次"
+    )
+
+
+def _count_tool_calls(messages: list[BaseMessage]) -> int:
+    total = 0
+    for message in messages:
+        if isinstance(message, AIMessage):
+            total += len(message.tool_calls)
+    return total
+
+
+def _count_tool_failures(messages: list[BaseMessage]) -> int:
+    return sum(
+        1
+        for message in messages
+        if isinstance(message, ToolMessage) and message.status == "error"
+    )
 
 
 def _summarize_value(value: Any, *, limit: int = 400) -> str:

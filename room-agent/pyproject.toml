@@ -1,6 +1,6 @@
 [project]
 name = "room-agent"
-version = "1.0.2"
+version = "1.0.4"
 description = "房间智能体, 支持 Google A2A 服务协议."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -16,7 +16,7 @@ dependencies = [
     "tiktoken>=0.12.0",
     "langchain-mcp-adapters>=0.1.0",
     "paho-mqtt>=2.1.0",
-    "a2a-sdk[http-server]>=0.3.25",
+    "a2a-sdk[http-server]>=0.3.25,<1.0",
     "llm-json-parse>=0.1.0",
 ]
 

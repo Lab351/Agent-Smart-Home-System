@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -18,13 +17,11 @@ from a2a.types import (
     Message,
     Part,
     Task,
-    TaskState,
     TextPart,
     UnsupportedOperationError,
 )
 from a2a.utils import new_task
 from a2a.utils.errors import ServerError
-
 
 logger = logging.getLogger(__name__)
 SUPPORTED_CONTENT_TYPES = ["text", "text/plain"]
@@ -67,7 +64,7 @@ class RoomAgentExecutor(AgentExecutor):
         logger.info("Received RoomAgent A2A request: %s", user_input)
 
         try:
-            await self.invoke_roomagent_entrypoint(
+            execution_result = await self.invoke_roomagent_entrypoint(
                 user_input=user_input,
                 context_id=task.context_id,
                 task_id=task.id,
@@ -76,6 +73,14 @@ class RoomAgentExecutor(AgentExecutor):
                     current_message=context.message,
                 ),
             )
+            if isinstance(execution_result, dict) and execution_result.get("unfinished"):
+                logger.warning(
+                    "RoomAgent A2A task finished unfinished task_id=%s context_id=%s",
+                    task.id,
+                    task.context_id,
+                )
+        except Exception:
+            raise
         finally:
             _CURRENT_UPDATER = None
 
@@ -97,11 +102,13 @@ class RoomAgentExecutor(AgentExecutor):
             {
                 "user_input": user_input,
                 "conversation_text": (conversation_text or user_input).strip() or user_input,
-                "metadata": {
-                    "context_id": context_id,
-                    "task_id": task_id,
-                    "source": "a2a",
-                },
+                "metadata": (
+                    {
+                        "context_id": context_id,
+                        "task_id": task_id,
+                        "source": "a2a",
+                    }
+                ),
             }
         )
 
@@ -191,28 +198,33 @@ def _compile_graph():
     return compile_graph()
 
 
-def build_a2a_application(*, host: str, port: int) -> A2AStarletteApplication:
+def build_a2a_application(
+    *,
+    host: str,
+    port: int,
+    public_url: str | None = None,
+) -> A2AStarletteApplication:
     """Create the RoomAgent A2A Starlette application."""
     request_handler = DefaultRequestHandler(
         agent_executor=RoomAgentExecutor(),
         task_store=InMemoryTaskStore(),
     )
     return A2AStarletteApplication(
-        agent_card=build_agent_card(host=host, port=port),
+        agent_card=build_agent_card(host=host, port=port, public_url=public_url),
         http_handler=request_handler,
     )
 
 
-def build_agent_card(*, host: str, port: int) -> AgentCard:
+def build_agent_card(*, host: str, port: int, public_url: str | None = None) -> AgentCard:
     """Create the RoomAgent agent card for A2A discovery."""
     return AgentCard(
         name="RoomAgent",
         description="负责查询和修改家居终端状态，并可安排房间级自动化规则的 RoomAgent A2A 服务。",
-        url=f"http://{host}:{port}/",
+        url=_normalize_public_url(public_url) or f"http://{host}:{port}/",
         version="0.1.0",
         default_input_modes=SUPPORTED_CONTENT_TYPES,
         default_output_modes=SUPPORTED_CONTENT_TYPES,
-        capabilities=AgentCapabilities(streaming=False, push_notifications=False),
+        capabilities=AgentCapabilities(streaming=True, push_notifications=False),
         skills=[
             AgentSkill(
                 id="home_device_control_and_automation",
@@ -224,3 +236,14 @@ def build_agent_card(*, host: str, port: int) -> AgentCard:
             )
         ],
     )
+
+
+def _normalize_public_url(public_url: str | None) -> str | None:
+    if not public_url:
+        return None
+
+    stripped = public_url.strip()
+    if not stripped:
+        return None
+
+    return stripped.rstrip("/") + "/"

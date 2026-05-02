@@ -27,7 +27,18 @@ class GatewaySettings(BaseModel):
     url: str
     register_on_startup: bool = True
     heartbeat_interval: int = 60
-    agent_host: str
+    agent_host: str | None = None
+
+
+class BeaconSettings(BaseModel):
+    enabled: bool = True
+    beacon_id: str
+    major: int | None = None
+    minor: int | None = None
+    measured_power: int = -59
+    interval: int = 1
+    esp32_device_id: str = ""
+    esp32_mac: str = ""
 
 
 class MCPHealthCheckSettings(BaseModel):
@@ -108,6 +119,7 @@ class RuntimeSettings(BaseModel):
 
 class Settings(BaseModel):
     agent: AgentSettings = Field(default_factory=AgentSettings)
+    beacon: BeaconSettings | None = None
     llm: LLMSettings = Field(default_factory=LLMSettings)
     runtime: RuntimeSettings = Field(default_factory=RuntimeSettings)
 
@@ -185,6 +197,7 @@ def load_settings(
     gateway_data = (
         yaml_data.get("gateway", {}) if isinstance(yaml_data.get("gateway"), dict) else {}
     )
+    beacon_data = yaml_data.get("beacon", {}) if isinstance(yaml_data.get("beacon"), dict) else {}
     runtime_data = (
         yaml_data.get("runtime", {}) if isinstance(yaml_data.get("runtime"), dict) else {}
     )
@@ -204,6 +217,7 @@ def load_settings(
                 HomeAssistantMCPSettings.model_validate(ha_mcp_data) if ha_mcp_data else None
             ),
         ),
+        beacon=BeaconSettings.model_validate(beacon_data) if beacon_data else None,
         llm=_load_llm_settings(Path(llm_config_path)),
         runtime=RuntimeSettings(
             room_agent_config_path=resolved_config_path,

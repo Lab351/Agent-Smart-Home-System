@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
 """测试Room Agent心跳监听"""
-import paho.mqtt.client as mqtt
 import json
+import sys
 from datetime import datetime
+
+try:
+    import paho.mqtt.client as mqtt
+except ImportError:
+    print(
+        "此脚本是 legacy MQTT 调试工具。如需运行旧 MQTT 心跳监听脚本，请单独安装 paho-mqtt。",
+        file=sys.stderr,
+    )
+    print("例如：python -m pip install paho-mqtt", file=sys.stderr)
+    raise SystemExit(1)
 
 # MQTT配置
 BROKER = "120.78.228.69"

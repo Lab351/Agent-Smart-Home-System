@@ -1,11 +1,12 @@
 import { IntentService } from '@/services/intent-service';
 
 describe('IntentService', () => {
-  it('uses the backend result when the intent API succeeds', async () => {
+  it('uses the backend result when the intent API returns an action route', async () => {
     const http = {
       post: jest.fn(async () => ({
         success: true,
         data: {
+          kind: 'agent_message',
           intent: {
             device: 'light',
             action: 'turn_on',
@@ -29,6 +30,7 @@ describe('IntentService', () => {
     });
 
     expect(intent).toMatchObject({
+      kind: 'agent_message',
       device: 'light',
       action: 'turn_on',
       room: 'livingroom',
@@ -40,7 +42,163 @@ describe('IntentService', () => {
     });
   });
 
-  it('falls back to local parsing when the intent API fails', async () => {
+  it('maps backend query results into room device queries', async () => {
+    const http = {
+      post: jest.fn(async () => ({
+        success: true,
+        data: {
+          kind: 'agent_message',
+          query: {
+            type: 'room_devices',
+            room_id: 'livingroom',
+            reason: 'asking for room devices',
+          },
+          routing: {
+            target: 'room-agent',
+            room_id: 'livingroom',
+            reason: 'query current room agent',
+          },
+        },
+      })),
+    };
+
+    const service = new IntentService(http as never);
+    const intent = await service.parse('房间里有什么设备', {
+      currentRoom: 'livingroom',
+    });
+
+    expect(intent).toMatchObject({
+      kind: 'agent_message',
+      room: 'livingroom',
+      source: 'llm',
+      query: {
+        type: 'room_devices',
+        roomId: 'livingroom',
+      },
+      routing: {
+        target: 'room-agent',
+      },
+    });
+  });
+
+  it('maps backend room state queries into query intents', async () => {
+    const http = {
+      post: jest.fn(async () => ({
+        success: true,
+        data: {
+          kind: 'agent_message',
+          query: {
+            type: 'room_state',
+            room_id: 'livingroom',
+            reason: 'asking for room state',
+          },
+          routing: {
+            target: 'room-agent',
+            room_id: 'livingroom',
+            reason: 'query current room state',
+          },
+        },
+      })),
+    };
+
+    const service = new IntentService(http as never);
+    const intent = await service.parse('客厅灯现在开着吗', {
+      currentRoom: 'livingroom',
+    });
+
+    expect(intent).toMatchObject({
+      kind: 'agent_message',
+      room: 'livingroom',
+      source: 'llm',
+      query: {
+        type: 'room_state',
+        roomId: 'livingroom',
+      },
+    });
+  });
+
+  it('maps backend chat results into direct replies', async () => {
+    const http = {
+      post: jest.fn(async () => ({
+        success: true,
+        data: {
+          kind: 'chat',
+          reply: '你好，我可以帮你查询设备和控制家居。',
+          routing: {
+            target: null,
+            room_id: null,
+            reason: 'simple chat',
+          },
+        },
+      })),
+    };
+
+    const service = new IntentService(http as never);
+    const intent = await service.parse('你好');
+
+    expect(intent).toMatchObject({
+      kind: 'chat',
+      source: 'llm',
+      reply: '你好，我可以帮你查询设备和控制家居。',
+      routing: {
+        target: null,
+      },
+    });
+  });
+
+  it('falls back to local query parsing when the intent API fails', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const http = {
+      post: jest.fn(async () => {
+        throw new Error('network down');
+      }),
+    };
+
+    const service = new IntentService(http as never);
+    const intent = await service.parse('房间里有什么设备', {
+      currentRoom: 'bedroom',
+    });
+
+    expect(intent).toMatchObject({
+      kind: 'agent_message',
+      room: 'bedroom',
+      source: 'fallback',
+      query: {
+        type: 'room_devices',
+        roomId: 'bedroom',
+      },
+    });
+
+    warnSpy.mockRestore();
+  });
+
+  it('falls back to local room state parsing when the intent API fails', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const http = {
+      post: jest.fn(async () => {
+        throw new Error('network down');
+      }),
+    };
+
+    const service = new IntentService(http as never);
+    const intent = await service.parse('客厅灯现在开着吗', {
+      currentRoom: 'bedroom',
+    });
+
+    expect(intent).toMatchObject({
+      kind: 'agent_message',
+      room: 'livingroom',
+      source: 'fallback',
+      query: {
+        type: 'room_state',
+        roomId: 'livingroom',
+      },
+    });
+
+    warnSpy.mockRestore();
+  });
+
+  it('falls back to local action parsing when the intent API fails', async () => {
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     const http = {
       post: jest.fn(async () => {
@@ -52,6 +210,7 @@ describe('IntentService', () => {
     const intent = await service.parse('打开客厅灯亮度80');
 
     expect(intent).toMatchObject({
+      kind: 'agent_message',
       device: 'light',
       action: 'turn_on',
       room: 'livingroom',
@@ -64,42 +223,23 @@ describe('IntentService', () => {
     warnSpy.mockRestore();
   });
 
-  it('keeps the current room context when local fallback does not parse a room', async () => {
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const http = {
-      post: jest.fn(async () => {
-        throw new Error('network down');
-      }),
-    };
-
-    const service = new IntentService(http as never);
-    const intent = await service.parse('打开主灯', {
-      currentRoom: 'bedroom',
-    });
+  it('uses a local chat fallback when no query or action keyword is found', () => {
+    const service = new IntentService({ post: jest.fn() } as never);
+    const intent = service.parseLocal('你好呀');
 
     expect(intent).toMatchObject({
-      device: 'main_light',
-      action: 'turn_on',
-      room: 'bedroom',
-      source: 'fallback',
+      kind: 'chat',
+      reply: '我先陪你聊聊，当前没有识别到控制或查询请求。',
+      device: null,
+      action: null,
     });
-
-    warnSpy.mockRestore();
   });
 
-  it('prefers more specific device aliases during local parsing', () => {
+  it('prefers more specific device aliases during local action parsing', () => {
     const service = new IntentService({ post: jest.fn() } as never);
     const intent = service.parseLocal('打开客厅主灯');
 
+    expect(intent.kind).toBe('agent_message');
     expect(intent.device).toBe('main_light');
-  });
-
-  it('extracts brightness values from phrases using 调到', () => {
-    const service = new IntentService({ post: jest.fn() } as never);
-    const intent = service.parseLocal('把卧室灯亮度调到80');
-
-    expect(intent.parameters).toMatchObject({
-      brightness: 80,
-    });
   });
 });

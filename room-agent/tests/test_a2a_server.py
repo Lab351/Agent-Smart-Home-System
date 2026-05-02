@@ -59,6 +59,16 @@ def test_build_agent_card_exposes_roomagent_business_capabilities() -> None:
     assert "自动化规则" in agent_card.skills[0].description
 
 
+def test_build_agent_card_uses_public_url_when_configured() -> None:
+    agent_card = build_agent_card(
+        host="0.0.0.0",
+        port=10000,
+        public_url="http://192.168.1.20:10000",
+    )
+
+    assert agent_card.url == "http://192.168.1.20:10000/"
+
+
 def test_invoke_roomagent_entrypoint_forwards_graph_input_and_returns_execution_result() -> None:
     captured: dict[str, object] = {}
 

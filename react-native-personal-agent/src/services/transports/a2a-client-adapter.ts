@@ -56,13 +56,26 @@ export class A2AClientAdapter implements IA2AClientAdapter {
 
   async createSession(agentUrl: string): Promise<A2AClientSession> {
     const serviceBaseUrl = normalizeA2AServiceBaseUrl(agentUrl);
+    const agentCardUrl = buildA2AAgentCardUrl(serviceBaseUrl);
+    console.debug('[A2AClientAdapter] Creating A2A client session', {
+      agentUrl,
+      serviceBaseUrl,
+      agentCardUrl,
+    });
+
     const client = await this.factory.createFromUrl(serviceBaseUrl);
     const agentCard = await client.getAgentCard();
+    console.debug('[A2AClientAdapter] Agent card fetched', {
+      name: agentCard.name,
+      url: agentCard.url,
+      version: agentCard.version,
+      skillCount: agentCard.skills?.length ?? 0,
+    });
 
     return {
       client,
       serviceBaseUrl,
-      agentCardUrl: buildA2AAgentCardUrl(serviceBaseUrl),
+      agentCardUrl,
       agentCard,
     };
   }
