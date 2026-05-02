@@ -293,8 +293,12 @@ def test_agent_call_model_and_finalize_output_use_bound_chat_model() -> None:
 
 def test_agent_call_model_pushes_model_message_before_tool_call(monkeypatch: Any) -> None:
     class ThoughtBeforeToolModel(FakePowerfulModel):
+        def __init__(self) -> None:
+            super().__init__()
+            self.seen_messages: list[BaseMessage] = []
+
         async def _ainvoke(self, messages: list[BaseMessage], tools: list[BaseTool]) -> AIMessage:
-            _ = messages
+            self.seen_messages = list(messages)
             return AIMessage(
                 content="我先查询卧室灯状态。",
                 tool_calls=[
@@ -340,6 +344,9 @@ def test_agent_call_model_pushes_model_message_before_tool_call(monkeypatch: Any
     assert result["messages"][0].tool_calls[0]["name"] == "light_control"
     assert len(updater.status_updates) == 1
     assert updater.status_updates[0][1].parts[0].root.text == "我先查询卧室灯状态。"
+    assert isinstance(result["messages"][0], HumanMessage)
+    assert result["messages"][0].content == "你已经调用了 0 个工具，失败了 0 次，还能尝试 6 次"
+    assert model.seen_messages[-1].content == "你已经调用了 0 个工具，失败了 0 次，还能尝试 6 次"
 
 
 def test_agent_execution_retries_after_tool_error_until_final_output() -> None:
@@ -468,3 +475,4 @@ def test_agent_execution_passes_outer_system_prompt_into_model_messages() -> Non
     assert result["status"] == "completed"
     assert model.seen_messages[0].content == "来自外层的系统提示"
     assert model.seen_messages[1].content == "帮我打开卧室灯"
+    assert model.seen_messages[2].content == "你已经调用了 0 个工具，失败了 0 次，还能尝试 6 次"
